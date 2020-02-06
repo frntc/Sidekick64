@@ -1,0 +1,82 @@
+
+no-prefetch.elf:     file format elf64-littleaarch64
+
+
+Disassembly of section .text:
+
+0000000000400000 <_start>:
+  400000:	d2a80000 	mov	x0, #0x40000000            	// #1073741824
+  400004:	b900001f 	str	wzr, [x0]
+  400008:	52b00001 	mov	w1, #0x80000000            	// #-2147483648
+  40000c:	b9000801 	str	w1, [x0, #8]
+  400010:	d539b040 	mrs	x0, s3_1_c11_c0_2
+  400014:	d2800441 	mov	x1, #0x22                  	// #34
+  400018:	aa010000 	orr	x0, x0, x1
+  40001c:	d519b040 	msr	s3_1_c11_c0_2, x0
+  400020:	58000440 	ldr	x0, 4000a8 <boot_kernel+0x10>
+  400024:	d51be000 	msr	cntfrq_el0, x0
+  400028:	d51ce07f 	msr	cntvoff_el2, xzr
+  40002c:	d2867fe0 	mov	x0, #0x33ff                	// #13311
+  400030:	d51e1140 	msr	cptr_el3, x0
+  400034:	d280b620 	mov	x0, #0x5b1                 	// #1457
+  400038:	d51e1100 	msr	scr_el3, x0
+  40003c:	d2800800 	mov	x0, #0x40                  	// #64
+  400040:	d519f220 	msr	s3_1_c15_c2_1, x0
+  400044:	d539f200 	mrs	x0, s3_1_c15_c2_0
+  400048:	9270f000 	and	x0, x0, #0xffffffffffff1fff
+  40004c:	d519f200 	msr	s3_1_c15_c2_0, x0
+  400050:	58000300 	ldr	x0, 4000b0 <boot_kernel+0x18>
+  400054:	d51c1000 	msr	sctlr_el2, x0
+  400058:	d2807920 	mov	x0, #0x3c9                 	// #969
+  40005c:	d51e4000 	msr	spsr_el3, x0
+  400060:	10000060 	adr	x0, 40006c <in_el2>
+  400064:	d51e4020 	msr	elr_el3, x0
+  400068:	d69f03e0 	eret
+
+000000000040006c <in_el2>:
+  40006c:	d53800a6 	mrs	x6, mpidr_el1
+  400070:	924004c6 	and	x6, x6, #0x3
+  400074:	b40000e6 	cbz	x6, 400090 <primary_cpu>
+  400078:	10000305 	adr	x5, 4000d8 <spin_cpu0>
+
+000000000040007c <secondary_spin>:
+  40007c:	d503205f 	wfe
+  400080:	f86678a4 	ldr	x4, [x5, x6, lsl #3]
+  400084:	b4ffffc4 	cbz	x4, 40007c <secondary_spin>
+  400088:	d2800000 	mov	x0, #0x0                   	// #0
+  40008c:	14000003 	b	400098 <boot_kernel>
+
+0000000000400090 <primary_cpu>:
+  400090:	18000364 	ldr	w4, 4000fc <kernel_entry32>
+  400094:	18000320 	ldr	w0, 4000f8 <dtb_ptr32>
+
+0000000000400098 <boot_kernel>:
+  400098:	d2800001 	mov	x1, #0x0                   	// #0
+  40009c:	d2800002 	mov	x2, #0x0                   	// #0
+  4000a0:	d2800003 	mov	x3, #0x0                   	// #0
+  4000a4:	d61f0080 	br	x4
+  4000a8:	0124f800 	.word	0x0124f800
+  4000ac:	00000000 	.word	0x00000000
+  4000b0:	30c50830 	.word	0x30c50830
+	...
+
+00000000004000d8 <spin_cpu0>:
+	...
+
+00000000004000e0 <spin_cpu1>:
+	...
+
+00000000004000e8 <spin_cpu2>:
+	...
+
+00000000004000f0 <spin_cpu3>:
+  4000f0:	5afe570b 	.word	0x5afe570b
+
+00000000004000f4 <stub_version>:
+  4000f4:	00000000 	.word	0x00000000
+
+00000000004000f8 <dtb_ptr32>:
+  4000f8:	00000000 	.word	0x00000000
+
+00000000004000fc <kernel_entry32>:
+  4000fc:	00080000 	.word	0x00080000
