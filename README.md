@@ -1,6 +1,11 @@
 # Sidekick64
 
-Sidekick64 is a versatile cartridge/expansion for the C64 and C128 whose functionality is entirely defined by software running on a Raspberry Pi 3 (RPi). The connecting circuitry is quite simple and does not include any programmable ICs. Example use cases are connecting the RPi to the expansion port where it can emulate a GeoRAM/NeoRAM-compatible memory expansion, a (freezer or Easyflash) cartridge, or run a Dual-SID plus FM emulation (the SID emulation would also work when connecting the RPi to the SID-socket on the board). But many more things are imaginable, e.g. 80 column cards with HDMI video output, custom accelerators/coprocessors etc. 
+Sidekick64 is a versatile cartridge/expansion for the C64 and C128 whose functionality is entirely defined by software running on a Raspberry Pi 3 (RPi). The connecting circuitry is quite simple and does not include any programmable ICs. Example use cases are connecting the RPi to the expansion port where it can emulate 
+- a GeoRAM/NeoRAM-compatible memory expansion, 
+- a (freezer or Easyflash) cartridge, or 
+- run a (Dual-)SID plus FM emulation (the SID emulation would also work when connecting the RPi to the SID-socket on the board). 
+
+But many more things are imaginable, e.g. 80 column cards with HDMI video output, custom accelerators/coprocessors etc. 
 
 Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+.
 
@@ -54,13 +59,15 @@ From the menu you can select/browse (should be self-explanatory), please RESET f
 
 IMPORTANT: when using a SID (or replacement) which supports register reading (= essentially all but the non-Ultimate SwinSIDs) then run the SID+FM emulation only with “register read” in the settings menu turned OFF. Otherwise the RPi and the SID may write to the bus at the same time, and this may not be a good idea.
 
+Although the circuitry has pull-ups/pull-downs to not mess with the bus at boot time, I recommend to boot the RPi first and then turn on the C64. The RPi is ready when the splash screen appears.
+
 ## Known limitations/bugs
 
 Please keep in mind that you're not reading about a product, but my personal playground that I'm sharing. Not all kinds of .CRTs are supported (in fact only generic carts, Easyflash (without EAPI), Magic Desk, Final Cartidge 3 and Action Replay). Not all kinds of disk images are supported (I only tried D64, D71 might work, D81 not). At (hopefully rare occasions) there might be some glitches due to cache misses, e.g. a EF-CRT might not start on the first try, the FC3 freezer might crash, or launching a PRG does not work right away (press reset in all cases and it should be all fine afterwards).
 
 ## Building the code (if you want to)
 
-Setup your Circle40+ and gcc-arm environment, then you can compile Sidekick64 almost like any other example program (the repository contains the build settings for Circle that I use -- make sure you use them, otherwise it will probably not work). Use "make -kernel={sid|cart|ram|ef|fc3|ar|menu}" to build the different kernels, then put the kernel together with the Raspberry Pi firmware on an SD(HC) card with FAT file system and boot your RPi with it (the "menu"-kernel is the aforementioned main software). Although the circuitry has pull-ups/pull-downs to not mess with the bus at boot time, I recommend to boot the RPi first and then turn on the C64. The RPi is ready when the splash screen appears.
+Setup your Circle40+ and gcc-arm environment, then you can compile Sidekick64 almost like any other example program (the repository contains the build settings for Circle that I use -- make sure you use them, otherwise it will probably not work). Use "make -kernel={sid|cart|ram|ef|fc3|ar|menu}" to build the different kernels, then put the kernel together with the Raspberry Pi firmware on an SD(HC) card with FAT file system and boot your RPi with it (the "menu"-kernel is the aforementioned main software). 
 
 The C64 code is compiled using cc65 and 64tass.
 
