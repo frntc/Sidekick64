@@ -75,10 +75,10 @@ Be careful not to damage your RPi or C64, or anything attached to it. I am not r
 
 ## Misc 
 
-Last but not least I would like to thank a few people:
+Last but not least I would like to thank a few people and give proper credits:
 
-Kinzi / Forum64 for lots of discussions and explanations on electronics and how a C64 actually works, Kim Jørgensen for chats on weird bus timings and freezers, and hints on how to get things right, and the testers on F64 (emulaThor and bigby).
-Rene Stange (the author of Circle) for his framework and patiently answering questions on it. Retrofan for sharing his new system font which is also used in this release (https://compidiaries.wordpress.com/).
+kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works, Kim Jørgensen for chats on weird bus timings and freezers, and hints on how to get things right, and the testers on F64 (bigby, emulaThor, kinzi).
+Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in this release.
 The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED  (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic.
 
 
