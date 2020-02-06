@@ -4,6 +4,8 @@ Sidekick64 is a versatile cartridge for the C64 and C128 whose functionality is 
 
 Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. Currently it is set up to work with a Raspberry Pi 3A+ or 3B+.
 
+<img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
+  
 ## How does it work?
 
 On the hardware side connecting the C64 to the RPi requires level shifting to interface the 5V bus with the 3.3V GPIOs of the RPi. However, things get a bit more complicated: communication on the data lines needs to be bidirectional, the RPi needs to get hands off the bus when it's not its turn. And even worse, there are too few GPIOs on a standard RPi 3B/3B+ to simply connect to all signals! For the aforementioned use cases where we need to read address lines A0-A12, IO1, IO2, ROML, ROMH, Phi2, Reset, SID-chipselect, R/W and read/write data lines D0-D7 (plus GPIOs for controlling the circuitry). This makes the use of multiplexers necessary. Additionally we would also need to control GAME, EXROM, NMI, DMA and RESET, and, very important :-), drive a tiny OLED display and LEDs.
@@ -16,7 +18,6 @@ I implemented the communication in a fast interrupt handler (FIQ) which handles 
 In the repo you’ll find Gerber files to produce the Sidekick64-PCB, which plugs to the C64’s expansion port on one side, and to the Raspberry Pi 3B+ (currently the full set of features is set up for the 3B+-model only) on the other one.
 It also contains various smaller example programs, I recommend looking at kernel_cart and kernel_georam first – and also the Sidekick64 software which glues together various functionalities (RAM expansion, sound emulation, kernal replacement, Easyflash/MagicDesk .CRT, and PRG launching). This also requires some code compiled to run on the C64. For convenience, I added a complete image which you can copy to an SD-card and get started right away.
 
-![SidekickC64](Interface/sidekick64.jpg)
 
 ## Setting up the hardware
 
