@@ -44,12 +44,13 @@ Step 1 is obviously building the PCB, it only uses simple (SMD) components:
 | other caps	| 0805 100nF| 
 | J5		| connection to HIRAM-pin of the CPU, close jumper if you don't connect| 
 | J10		| connection to SID chip select, close jumper if you don't connect| 
+| d=0..3		| jumper for configuring signal delays (see below) | 
 
 You also need some pinheaders (obviously), a 2x20 female pin header, and buttons. And optionally (but recommended) a SSD1306 OLED (4 pin connector).
 
 J5 and J10 provide pins to connect the Sidekick64-PCB to the HIRAM-signal of the CPU (pin 28, required for kernal-replacement) and the SID chip-select (pin 8, required for SID-emulation). These two signals are unfortunately not available at the expansion port. If you do not connect one (or both) use a jumper to connect then to GND.
 
-d=0..3 is an external delay of the multiplexer switching signal. Right now you only need to connect the center one to d=0.
+d=0..3 is an external delay of the multiplexer switching signal. Right now you only need to connect the center one to d=0. The other options are for potential future use cases.
 
 
 
