@@ -47,17 +47,19 @@ Step 1 is obviously building the PCB, it only uses simple (SMD) components:
 
 You also need some pinheaders (obviously), a 2x20 female pin header, and buttons. And optionally (but recommended) a SSD1306 OLED (4 pin connector).
 
+J5 and J10 provide pins to connect the Sidekick64-PCB to the HIRAM-signal of the CPU (pin 28, required for kernal-replacement) and the SID chip-select (pin 8, required for SID-emulation). These two signals are unfortunately not available at the expansion port. If you do not connect one (or both) use a jumper to connect then to GND.
+
 d=0..3 is an external delay of the multiplexer switching signal. Right now you only need to connect the center one to d=0.
 
 
 
 ## Quick start
 
-The easiest way (and probably the one most will use) is to copy the image onto an SD card. It contains the main Sidekick64-software combining various functionality accessibly from a menu. You can configure this menu by editing SD:C64/sidekick64.cfg and copying your Easyflash/MagicDesk/CBM80 .CRTs (others not supported), .PRG, .D64s, Final Cartridge 3/Action Replay >4.x CRTs and Kernal ROMs (.bin raw format) to the respective subdirectories.
+The easiest way (and probably the one most will use) is to copy the image onto an SD card. It contains the main Sidekick64-software combining various functionality accessibly from a menu. You can configure this menu by editing SD:C64/sidekick64.cfg and copying your Easyflash/MagicDesk/CBM80 .CRTs (others not supported), .PRG, .D64s, Final Cartridge 3/Action Replay >4.x CRTs and kernal ROMs (.bin raw format) to the respective subdirectories.
 
-From the menu you can select/browse (should be self-explanatory), please RESET for 1-2 seconds to get back to the main menu from other functionality. Sometimes “button 2” has extra function (e.g. freezing, reactivating Sideback after exit to basic, toggle LEDs in sound emulation, ...). You can also combine Geo/NeoRAM with Kernal-replacement and then launch a program, or use sound emulation (currently: analog output) with the .PRG launcher.
+From the menu you can select/browse (should be self-explanatory), by pressing RESET ('button #1') for 1-2 seconds you get back to the main menu from other functionality. Sometimes 'button #2' has extra function (e.g. freezing, reactivating Sideback after exit to basic, toggle LEDs in sound emulation, ...). You can also combine Geo/NeoRAM with kernal-replacement and then launch a program, or use sound emulation (currently: analog output) with the .PRG launcher.
 
-IMPORTANT: when using a SID (or replacement) which supports register reading (= essentially all but the non-Ultimate SwinSIDs) then run the SID+FM emulation only with “register read” in the settings menu turned OFF. Otherwise the RPi and the SID may write to the bus at the same time, and this may not be a good idea.
+IMPORTANT: when using a SID (or replacement) which supports register reading (= essentially all but the non-Ultimate SwinSIDs) then run the SID+FM emulation only with *register read* in the settings menu turned *OFF*. Otherwise the RPi and the SID may write to the bus at the same time, and this may not be a good idea.
 
 Although the circuitry has pull-ups/pull-downs to not mess with the bus at boot time, I recommend to boot the RPi first and then turn on the C64. The RPi is ready when the splash screen appears.
 
