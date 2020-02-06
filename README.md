@@ -34,8 +34,8 @@ Step 1 is obviously building the PCB, it only uses simple (SMD) components:
 | U1 		| 74LVX573 Package_SO:SO-20_12.8x7.5mm_P1.27mm | 
 | U2,U3 		| 74LVC245 Package_SO:SO-20_12.8x7.5mm_P1.27mm| 
 | U5, U7, U8 	| 74LVC257 Package_SO:SSOP-16_4.4x5.2mm_P0.65mm| 
-| U9 		| 74HCT30 Package_SO:SOIC-14_3.9x8.7mm_P1.27mm| 
 | U6 		| 74LVC07 Package_SO:SOIC-14_3.9x8.7mm_P1.27mm| 
+| U9 		| 74HCT30 Package_SO:SOIC-14_3.9x8.7mm_P1.27mm| 
 | D1-D4 		| LEDs (the side closer to the push bottons is GND)| 
 | R1-R4 		| 0805 resistors for LEDs (I used 1.8k)| 
 | R5, R6 		| 0805 10k-20k pullups| 
