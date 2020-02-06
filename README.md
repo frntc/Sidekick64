@@ -7,7 +7,7 @@ Sidekick64 is a versatile cartridge/expansion for the C64 and C128 whose functio
 
 But many more things are imaginable, e.g. 80 column cards with HDMI video output, custom accelerators/coprocessors etc. 
 
-Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+.
+Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with PAL-machines (C64 various revisions, C128).
 
 <img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
   
