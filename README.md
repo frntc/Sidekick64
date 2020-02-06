@@ -82,6 +82,6 @@ Rene Stange (the author of Circle) for his framework and patiently answering que
 The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED  (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic.
 
 
-Trademarks
+### Trademarks
 
 Raspberry Pi is a trademark of the Raspberry Pi Foundation.
