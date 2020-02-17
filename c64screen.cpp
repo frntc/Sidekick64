@@ -671,11 +671,11 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 			settings[ curSettingsLine ] --;
 				//+= rangeSettings[ curSettingsLine ] - 1;
 			if ( rangeSettings[ curSettingsLine ] < 15 )
-      {
-        if ( settings[ curSettingsLine ] < 0 )
-          settings[ curSettingsLine ] = rangeSettings[ curSettingsLine ] - 1;
-      }
-      else
+			{
+				if ( settings[ curSettingsLine ] < 0 )
+					settings[ curSettingsLine ] = rangeSettings[ curSettingsLine ] - 1;
+			}
+			else
 				//settings[ curSettingsLine ] %= rangeSettings[ curSettingsLine ]; else
 				settings[ curSettingsLine ] = max( 0, settings[ curSettingsLine ] );
 
