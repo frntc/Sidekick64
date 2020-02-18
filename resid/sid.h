@@ -24,7 +24,11 @@
 
 #include "resid-config.h"
 #include "voice.h"
+#if NEW_8580_FILTER
+#include "filter8580new.h"
+#else
 #include "filter.h"
+#endif
 #include "extfilt.h"
 #include "pot.h"
 
@@ -55,12 +59,6 @@ public:
   // Read/write registers.
   reg8 read(reg8 offset);
   void write(reg8 offset, reg8 value);
-
-  unsigned int getCyclesPerSample()
-  {
-	  return cycles_per_sample;
-  }
-
 
   // Read/write state.
   class State
