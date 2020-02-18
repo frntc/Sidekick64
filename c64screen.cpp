@@ -671,7 +671,12 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 			settings[ curSettingsLine ] --;
 				//+= rangeSettings[ curSettingsLine ] - 1;
 			if ( rangeSettings[ curSettingsLine ] < 15 )
-				settings[ curSettingsLine ] %= rangeSettings[ curSettingsLine ]; else
+			{
+				if ( settings[ curSettingsLine ] < 0 )
+					settings[ curSettingsLine ] = rangeSettings[ curSettingsLine ] - 1;
+			}
+			else
+				//settings[ curSettingsLine ] %= rangeSettings[ curSettingsLine ]; else
 				settings[ curSettingsLine ] = max( 0, settings[ curSettingsLine ] );
 
 		} else
@@ -913,12 +918,11 @@ void renderC64()
 			if ( previousMenuScreen == MENU_BROWSER )
 				convert = 3;
 
-			printC64( 0, 10, "שששששששששששששששששששששששששששששששששששששששש", skinValues.SKIN_ERROR_BAR, 0, 1 );
+			printC64( 0, 10, "\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9", skinValues.SKIN_ERROR_BAR, 0, 1 );
 			printC64( 0, 11, "                                        ", skinValues.SKIN_ERROR_TEXT, 0 );
 			printC64( 0, 12, errorMsg, skinValues.SKIN_ERROR_TEXT, 0, convert );
 			printC64( 0, 13, "                                        ", skinValues.SKIN_ERROR_TEXT, 0 );
-			printC64( 0, 14, "רררררררררררררררררררררררררררררררררררררררר", skinValues.SKIN_ERROR_BAR, 0, 1 );
+			printC64( 0, 14, "\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8", skinValues.SKIN_ERROR_BAR, 0, 1 );
 		}
 	}
 }
-
