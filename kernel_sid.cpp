@@ -175,6 +175,11 @@ void initSID()
 		ringTime[ i ] = 0;
 }
 
+void quitSID()
+{
+	for ( int i = 0; i < NUM_SIDS; i++ )
+		delete sid[ i ];
+}
 
 unsigned long long cycleCountC64;
 
@@ -395,7 +400,14 @@ void CKernel::Run( void )
 	while ( true )
 	{
 		#ifdef COMPILE_MENU
-		TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
+		//TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
+		if ( cycleCountC64 > 2000000 && resetCounter > 500000 ) {
+				EnableIRQs();
+				m_InputPin.DisableInterrupt();
+				m_InputPin.DisconnectInterrupt();
+				quitSID();
+				return;
+			}
 		#endif
 
 		if ( resetCounter > 3 && resetReleased )
@@ -719,6 +731,14 @@ void CKernel::FIQHandler (void *pParam)
 			fmFakeOutput = 0xc0 - fmFakeOutput;
 
 			WRITE_D0to7_TO_BUS( D )
+
+			FINISH_BUS_HANDLING
+			return;
+		} else
+		// reading of the external Sound Expander Keyboard => we don't have it, return 0xFF
+		if ( ( CPU_READS_FROM_BUS && IO2_ACCESS ) && ( GET_IO12_ADDRESS >= 0x08 ) && ( GET_IO12_ADDRESS <= 0x0F ) )
+		{
+			WRITE_D0to7_TO_BUS( 0xFF )
 
 			FINISH_BUS_HANDLING
 			return;
