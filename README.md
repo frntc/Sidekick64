@@ -74,6 +74,10 @@ Setup your Circle40+ and gcc-arm environment, then you can compile Sidekick64 al
 
 The C64 code is compiled using cc65 and 64tass.
 
+## Videos
+
+I added two videos showing life captures of the C64 screen where the RPi is used as a "graphics coprocessor" for rendering an image using rasterization or path tracing (light transport simulation). This is just meant to show case that the RPi can be used for more than just emulating existing cartridges/hardware. The source code is not yet included in the repository, contact me if you are interested.
+
 ## Disclaimer
 
 Be careful not to damage your RPi or C64, or anything attached to it. I am not responsible if you or your hardware gets damaged. In principle, you can attach the RPi and other cartridges at the same time, as long as they do not conflict (e.g. in IO ranges or driving signals). I recommend to NOT do this. For example, using Sidekick and an Easyflash 3 will very likely destroy the EF3's CPLD. Again, I'm not taking any responsibility -- if you don't know what you're doing, better don't... use everything at your own risk.
