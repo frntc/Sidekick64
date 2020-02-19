@@ -251,12 +251,12 @@ static double log1p(double x)
 // ----------------------------------------------------------------------------
 Filter::Filter()
 {
-  static bool class_init = 0;
+  //static bool class_init = 0;
 
   for ( int i = 0; i < 16; i++ )
 	resonance[i] = new unsigned short [1 << 16];
 
-  if (!class_init) 
+  //if (!class_init) 
   {
     double tmp_n_param[2];
 
@@ -267,6 +267,11 @@ Filter::Filter()
     for (int m = 0; m < 2; m++) {
       model_filter_init_t& fi = model_filter_init[m];
       model_filter_t& mf = model_filter[m];
+
+	  mf.summer = new unsigned short [ 1310720 ];
+	  for ( int i = 0; i < 16; i++ )
+		mf.gain[ i ] = new unsigned short [1 << 16];
+	  mf.mixer = new unsigned short [ 1835009 ];
 
       // Convert op-amp voltage transfer to 16 bit values.
       double vmin = fi.opamp_voltage[0][0];
@@ -375,6 +380,10 @@ Filter::Filter()
         }
       }
 
+      //mf.summer = new unsigned short[ 1310720 ];
+      //mf.mixer = new unsigned short[ 1835009 ];
+
+#if 1
       // The filter summer operates at n ~ 1, and has 5 fundamentally different
       // input configurations (2 - 6 input "resistors").
       //
@@ -395,6 +404,27 @@ Filter::Filter()
         }
         offset += size;
       }
+#endif
+
+#if 0
+// if we don't overwrite mf.mixer with our externally precomputed table the rpi crashes... WTF!
+      if ( m == 0 )
+      {
+          //for ( int i = 0; i < SUMMER_SIZE0; i++ )
+            //mf.summer[ i ] = summer_0[ i ];
+          for ( int i = 0; i < MIXER_SIZE0; i++ )
+            mf.mixer[ i ] = mixer_0[ i ];
+      } else
+	  //if ( m == 1 )
+      {
+          //for ( int i = 0; i < SUMMER_SIZE1; i++ )
+            //mf.summer[ i ] = summer_1[ i ];
+          for ( int i = 0; i < MIXER_SIZE1; i++ )
+            mf.mixer[ i ] = mixer_1[ i ];
+      }
+#endif
+
+#if 1
 
       // The audio mixer operates at n ~ 8/6, and has 8 fundamentally different
       // input configurations (0 - 7 input "resistors").
@@ -413,6 +443,7 @@ Filter::Filter()
         }
         int x = mf.ak;
         for (int vi = 0; vi < size; vi++) 
+        //if ( (offset + vi) < 1835009 )
         {
           mf.mixer[offset + vi] = 
             solve_gain(opamp, n_idiv, vi/idiv, x, mf);
@@ -420,6 +451,7 @@ Filter::Filter()
         offset += size;
         size = (l + 1) << 16;
       }
+#endif
 
       // Create lookup table mapping capacitor voltage to op-amp input voltage:
       // vc -> vx
@@ -537,7 +569,7 @@ Filter::Filter()
       }
     }
 
-    class_init = true;
+    //class_init = true;
   }
 
   enable_filter(true);
