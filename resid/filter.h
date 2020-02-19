@@ -612,9 +612,14 @@ protected:
     // Reverse op-amp transfer function.
     unsigned short opamp_rev[1 << 16];
     // Lookup tables for gain and summer op-amps in output stage / filter.
-    unsigned short summer[summer_offset<5>::value];
-    unsigned short gain[16][1 << 16];
-    unsigned short mixer[mixer_offset<8>::value];
+    //unsigned short summer[summer_offset<5>::value];
+    //unsigned short summer[ 1310720 ];
+    unsigned short *summer;
+    //unsigned short gain[16][1 << 16];
+    unsigned short *gain[16];
+    //unsigned short mixer[mixer_offset<8>::value];
+    //unsigned short mixer[ 1835009 ];
+    unsigned short *mixer;
     // Cutoff frequency DAC output voltage table. FC is an 11 bit register.
     unsigned short f0_dac[1 << 11];
   } model_filter_t;

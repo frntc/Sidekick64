@@ -175,9 +175,6 @@ EnvelopeGenerator::EnvelopeGenerator()
   // Counter's odd bits are high on powerup
   envelope_counter = 0xaa;
 
-  // just to avoid uninitialized access with delta clocking
-  next_state = RELEASE;
-
   reset();
 }
 
@@ -234,17 +231,8 @@ void EnvelopeGenerator::writeCONTROL_REG(reg8 control)
     // Gate bit on: Start attack, decay, sustain.
     // Gate bit off: Start release.
     next_state = gate_next ? ATTACK : RELEASE;
-    if (next_state == ATTACK) {
-        // The decay register is "accidentally" activated during first cycle of attack phase
-        state = DECAY_SUSTAIN;
-        rate_period = rate_counter_period[decay];
-        state_pipeline = 2;
-        if (reset_rate_counter || exponential_pipeline == 2) {
-            envelope_pipeline = exponential_counter_period == 1 || exponential_pipeline == 2 ? 2 : 4;
-        }
-        else if (exponential_pipeline == 1) { state_pipeline = 3; }
-    }
-    else if(!hold_zero){state_pipeline = envelope_pipeline > 0 ? 3 : 2;}
+    state_pipeline = 2;
+
     gate = gate_next;
   }
 }
