@@ -1,9 +1,22 @@
 #
 # Makefile
 #
-EXTRACLEAN = OLED/*.o resid/*.o
+EXTRACLEAN = OLED/*.o resid/*.o resid_vice_trunk/*.o
 
 CIRCLEHOME = ../..
+
+ifeq ($(resid), vice)
+RESIDLOC = resid_vice_trunk
+NEW_8580_FILTER = 0
+else ifeq ($(sid), vice_nf)
+RESIDLOC = resid_vice_trunk
+RESIDFILTER = filter8580new.o
+NEW_8580_FILTER = 1
+else
+RESIDLOC = resid
+RESIDFILTER = filter.o
+endif
+
 OBJS = lowlevel_arm64.o gpio_defs.o helpers.o latch.o oled.o ./OLED/ssd1306xled.o ./OLED/ssd1306xled8x16.o ./OLED/num2str.o 
 
 ifeq ($(kernel), menu)
@@ -11,7 +24,10 @@ CFLAGS += -DCOMPILE_MENU=1
 OBJS += kernel_menu.o kernel_kernal.o kernel_launch.o kernel_ef.o kernel_fc3.o kernel_ar.o crt.o dirscan.o config.o kernel_rkl.o c64screen.o
 
 CFLAGS += -DCOMPILE_MENU_WITH_SOUND=1
-OBJS += kernel_sid.o sound.o ./resid/dac.o ./resid/filter.o ./resid/envelope.o ./resid/extfilt.o ./resid/pot.o ./resid/sid.o ./resid/version.o ./resid/voice.o ./resid/wave.o fmopl.o 
+OBJS += kernel_sid.o sound.o ./$(RESIDLOC)/dac.o ./$(RESIDLOC)/$(RESIDFILTER) \
+				./$(RESIDLOC)/envelope.o ./$(RESIDLOC)/extfilt.o ./$(RESIDLOC)/pot.o \
+				./$(RESIDLOC)/sid.o ./$(RESIDLOC)/version.o ./$(RESIDLOC)/voice.o \
+				./$(RESIDLOC)/wave.o fmopl.o
 CFLAGS += -DUSE_VCHIQ_SOUND=$(USE_VCHIQ_SOUND) 
 
 LIBS	= $(CIRCLEHOME)/addon/vc4/sound/libvchiqsound.a \
@@ -49,7 +65,10 @@ OBJS += kernel_georam.o
 endif
 
 ifeq ($(kernel), sid)
-OBJS += kernel_sid.o sound.o ./resid/dac.o ./resid/filter.o ./resid/envelope.o ./resid/extfilt.o ./resid/pot.o ./resid/sid.o ./resid/version.o ./resid/voice.o ./resid/wave.o fmopl.o 
+OBJS += kernel_sid.o sound.o ./$(RESIDLOC)/dac.o ./$(RESIDLOC)/$(RESIDFILTER) \
+				./$(RESIDLOC)/envelope.o ./$(RESIDLOC)/extfilt.o ./$(RESIDLOC)/pot.o \
+				./$(RESIDLOC)/sid.o ./$(RESIDLOC)/version.o ./$(RESIDLOC)/voice.o \
+				./$(RESIDLOC)/wave.o fmopl.o 
 endif
 
 ifeq ($(kernel), sid)

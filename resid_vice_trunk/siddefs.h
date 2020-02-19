@@ -34,7 +34,7 @@
 #define RESID_BRANCH_HINTS 0
 
 //#define NEW_8580_FILTER @NEW_8580_FILTER@
-#define NEW_8580_FILTER 0
+//NEW_8580_FILTER is set in Sidekick's Makefile
 
 // Compiler specifics.
 #define HAVE_BOOL 1
