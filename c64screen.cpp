@@ -70,6 +70,8 @@ char errorMessages[5][41] = {
 u32 menuScreen = 0, 
 	previousMenuScreen = 0;
 u32 updateMenu = 1;
+u32 typeInName = 0;
+u32 typeCurPos = 0;
 
 int cursorPos = 0;
 int scrollPos = 0;
@@ -295,6 +297,20 @@ extern void deactivateCart();
 u32 curSettingsLine = 0;
 s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 3, 2, 16, 15, 4, 4, 16, 15, 2, 16, 15 };
 s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 15, 7 };
+u8  geoRAM_SlotNames[ 10 ][ 21 ];
+
+void writeSettingsFile()
+{
+	char cfg[ 16384 ];
+	u32 cfgBytes = 0;
+    memset( cfg, 0, 16384 );
+	cfgBytes = sizeof( s32 ) * MAX_SETTINGS;
+	memcpy( cfg, settings, cfgBytes );
+	memcpy( &cfg[ cfgBytes ], geoRAM_SlotNames, sizeof( u8 ) * 10 * 21 );
+	cfgBytes += sizeof( u8 ) * 10 * 21;
+
+	writeFile( logger, DRIVE, SETTINGS_FILE, (u8*)cfg, cfgBytes );
+}
 
 void readSettingsFile()
 {
@@ -303,11 +319,13 @@ void readSettingsFile()
     memset( cfg, 0, 16384 );
 
 	memset( settings, 0, sizeof( s32 ) * MAX_SETTINGS );
+	memset( geoRAM_SlotNames, 32, sizeof( u8 ) * 10 * 21 );
 
 	if ( !readFile( logger, DRIVE, SETTINGS_FILE, (u8*)cfg, &cfgBytes ) )
-		writeFile( logger, DRIVE, SETTINGS_FILE, (u8*)settings, sizeof( s32 ) * MAX_SETTINGS );
+		writeSettingsFile();
 
 	memcpy( settings, cfg, sizeof( s32 ) * MAX_SETTINGS );
+	memcpy( geoRAM_SlotNames, &cfg[ sizeof( s32 ) * MAX_SETTINGS ], sizeof( u8 ) * 10 * 21 );
 }
 
 void applySIDSettings()
@@ -316,11 +334,6 @@ void applySIDSettings()
 	extern void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3 );
 	setSIDConfiguration( 0, settings[2], settings[6], settings[7]-1, settings[3], settings[7], settings[10],
 						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12] );
-}
-
-void writeSettingsFile()
-{
-	writeFile( logger, DRIVE, SETTINGS_FILE, (u8*)settings, sizeof( u32 ) * MAX_SETTINGS );
 }
 
 
@@ -665,6 +678,44 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 			return;
 		}
 
+		if ( ( ( k == 'n' || k == 'N' ) || ( k == 13 && curSettingsLine == 1 ) )&& typeInName == 0 )
+		{
+			typeInName = 1;
+			// currently selected georam slot is 'settings[ 1 ]'
+			typeCurPos = 0;
+			while ( typeCurPos < 19 && geoRAM_SlotNames[ settings[ 1 ] ][ typeCurPos ] != 0 ) typeCurPos ++;
+		} else
+		if ( typeInName == 1 )
+		{
+			int key = k;
+			if ( key >= 'a' && key <= 'z' )
+				key = key + 'A' - 'a';
+			switch ( k )
+			{
+			case 13:
+				typeInName = 0; 
+				break;
+			case 157: 
+				if ( typeCurPos > 0 ) 
+					typeCurPos --; 
+				break;
+			case 20: 
+				if ( typeCurPos > 0 ) 
+					typeCurPos --; 
+				geoRAM_SlotNames[ settings[ 1 ] ][ typeCurPos ] = 32; 
+				break;
+			case 29: 
+				if ( typeCurPos < 18 ) 
+					typeCurPos ++; 
+				break;
+			default:
+				// normal character
+				geoRAM_SlotNames[ settings[ 1 ] ][ typeCurPos ] = k;
+				if ( typeCurPos < 17 ) 
+					typeCurPos ++; 
+				break;
+			}
+		} else
 		// left
 		if ( k == 157 )
 		{
@@ -838,6 +889,11 @@ void printSettingsScreen()
 	char t[ 64 ];
 	sprintf( t, "SD:GEORAM/slot%02d.ram", settings[ 1 ] );
 	printC64( x2+10, y1+6, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==1)?0x80:0 );
+
+	printC64( x2+10, y1+7, (const char*)"\"                  \"", skinValues.SKIN_MENU_TEXT_ITEM, (typeInName==1)?0x80:0 );
+	printC64( x2+11, y1+7, (const char*)geoRAM_SlotNames[ settings[ 1 ] ], skinValues.SKIN_MENU_TEXT_ITEM, (typeInName==1)?0x80:0 );
+	if ( typeInName )
+		c64color[ x2+11+typeCurPos + (y1+7)*40 ] = skinValues.SKIN_MENU_TEXT_CATEGORY;
 
 	printC64( x+1,  y2+9, "SID+FM (using reSID and fmopl)", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
 
