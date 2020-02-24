@@ -5,13 +5,13 @@ EXTRACLEAN = OLED/*.o resid/*.o resid_vice_trunk/*.o
 
 CIRCLEHOME = ../..
 
-ifeq ($(resid), vice)
+ifeq ($(sid), resid_vice)
 RESIDLOC = resid_vice_trunk
-NEW_8580_FILTER = 0
-else ifeq ($(sid), vice_nf)
+RESIDFILTER = filter.o
+else ifeq ($(sid), resid_vice_nf)
 RESIDLOC = resid_vice_trunk
 RESIDFILTER = filter8580new.o
-NEW_8580_FILTER = 1
+CFLAGS += -DNEW_8580_FILTER
 else
 RESIDLOC = resid
 RESIDFILTER = filter.o
