@@ -752,7 +752,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 				curSettingsLine = MAX_SETTINGS - 1; else
 				curSettingsLine --;
 		}
-		if( k == 's' || k == 'S' )
+		if( (k == 's' || k == 'S') && typeInName == 0 )
 		{
 			writeSettingsFile();
 			errorMsg = errorMessages[ 4 ];
