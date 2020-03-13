@@ -54,7 +54,7 @@ You also need some pinheaders (obviously), a 2x20 female pin header, and buttons
 
 J5 and J10 provide pins to connect the Sidekick64-PCB to the HIRAM-signal of the CPU (pin 28, required for kernal-replacement) and the SID chip-select (pin 8, required for SID-emulation). These two signals are unfortunately not available at the expansion port. If you do not connect one (or both) use a jumper to connect then to GND.
 
-d=0..3 is an external delay of the multiplexer switching signal. Right now you only need to connect the center one to d=0. The other options are for potential future use cases.
+d=0..3 is an external delay of the multiplexer switching signal. For the C64/C128 connect the center one to d=0. For the C16/+4 connect the center on to d=3!
 
 
 
@@ -78,7 +78,7 @@ Sidekick264 requires a passive adapter (Gerber files and schematics are in the r
 
 Attention: the adapter PCB has not yet been tested, and Sidekick264 requires to overclock your RPi (see config.txt). Please be aware that this may void warranty.
 
-The PCB has one pin "C1Hi" which you need to connect to the Sidekick64 pin "SID CS". Note that this is only required if you want to use cartridges which use the C1Lo and C1Hi range. 
+The PCB has one pin "C1Hi" which you need to connect to the Sidekick64 pin "SID CS". Note that this is only required if you want to use cartridges which use the C1Lo and C1Hi range. Please double check that you set the d=3 jumper on the Sidekick64 PCB (see above).
 
 
 ## Building the code (if you want to)
