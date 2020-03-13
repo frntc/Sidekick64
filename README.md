@@ -13,7 +13,7 @@ Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the fra
 
 ## Updates
 
-Sidekick264 can also be used with the C16/+4 now with the very same PCB plus a simple adapter! (read more below) 
+Sidekick264 can also be used with the C16/+4 now, with the very same PCB plus a simple adapter! (read more below) 
 
 ## How does it work?
 
