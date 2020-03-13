@@ -10,7 +10,11 @@ But many more things are imaginable, e.g. 80 column cards with HDMI video output
 Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with PAL-machines (C64 various revisions, C128).
 
 <img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
-  
+
+## Updates
+
+Sidekick264 can also be used with the C16/+4 now with the very same PCB plus a simple adapter! (read more below) 
+
 ## How does it work?
 
 On the hardware side connecting the C64 to the RPi requires level shifting to interface the 5V bus with the 3.3V GPIOs of the RPi. However, things get a bit more complicated: communication on the data lines needs to be bidirectional, the RPi needs to get hands off the bus when it's not its turn. And even worse, there are too few GPIOs on a standard RPi to simply connect to all signals! For the aforementioned use cases, we need to read address lines A0-A12, IO1, IO2, ROML, ROMH, Phi2, Reset, SID-chipselect, R/W and read/write data lines D0-D7 (plus GPIOs for controlling the circuitry). This makes the use of multiplexers necessary. Additionally we also need to control GAME, EXROM, NMI, DMA and RESET, and, very important :-), drive a tiny OLED display and LEDs.
@@ -68,6 +72,15 @@ Although the circuitry has pull-ups/pull-downs to not mess with the bus at boot 
 
 Please keep in mind that you're not reading about a product, but my personal playground that I'm sharing. Not all kinds of .CRTs are supported (in fact only generic carts, Easyflash (without EAPI), Magic Desk, Final Cartidge 3 and Action Replay). Not all kinds of disk images are supported (I only tried D64, D71 might work, D81 not). At (hopefully rare occasions) there might be some glitches due to cache misses, e.g. a EF-CRT might not start on the first try, the FC3 freezer might crash, or launching a PRG does not work right away (press reset in all cases and it should be all fine afterwards).
 
+## Sidekick264 for C16 and +4
+
+Sidekick264 requires a passive adapter (Gerber files and schematics are in the repo) to be put between the C16/+4 expansion port and the Sidekick64. The Sidekick264 provides the very same menu and browser as the C64 version, and supports PRG loading and C1low/C1high cartridges. As a bonus it can be used as Dual-SID-card (addresses $FD40 and $FE80), as FM-card (I chose address $FDE2), and -- completely without any use case :-) -- a Geo/NeoRAM-compatible memory expansion (registers at $FDE8-$FDEA, memory window at $FE00-$FE7F). The SD Card contains example programs with source to demonstrate these functionalities.
+
+Attention: the adapter PCB has not yet been tested, and Sidekick264 requires to overclock your RPi (see config.txt). Please be aware that this may void warranty.
+
+The PCB has one pin "C1Hi" which you need to connect to the Sidekick64 pin "SID CS". Note that this is only required if you want to use cartridges which use the C1Lo and C1Hi range. 
+
+
 ## Building the code (if you want to)
 
 Setup your Circle40+ and gcc-arm environment, then you can compile Sidekick64 almost like any other example program (the repository contains the build settings for Circle that I use -- make sure you use them, otherwise it will probably not work). Use "make -kernel={sid|cart|ram|ef|fc3|ar|menu}" to build the different kernels, then put the kernel together with the Raspberry Pi firmware on an SD(HC) card with FAT file system and boot your RPi with it (the "menu"-kernel is the aforementioned main software). 
@@ -94,7 +107,7 @@ Last but not least I would like to thank a few people and give proper credits:
 
 kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works, Kim Jørgensen for chats on weird bus timings and freezers, and hints on how to get things right, and the testers on F64 (bigby, emulaThor, kinzi).
 Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in this release.
-The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED  (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic.
+The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED  (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic. The C16/+4 SID and FM examples are based on code by Mr.Mouse/Xentax and Antti Hannula's (flex) 2sid tune "Eternity" (original mod by Matt Simmonds); the FM songs are Koere and Like Galway by Jesper Olson (jo). The C16 cartridge startup code is based on CBMHARDWARE's example.
 
 
 ### Trademarks
