@@ -1,0 +1,175 @@
+;      _________.__    .___      __   .__        __        
+;     /   _____/|__| __| _/____ |  | _|__| ____ |  | __    
+;     \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /    
+;     /        \|  / /_/ \  ___/|    <|  \  \___|    <     
+;    /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \    
+;            \/         \/    \/     \/       \/     \/    
+;    
+;     cart264.a
+;    
+;     RasPiC64 - A framework for interfacing the C64 (and C16/+4) and a Raspberry Pi 3B/3B+
+;              - code of a cart to download and launch a .PRG from the RPi
+;              - significant parts taken from http://www.cbmhardware.de/show.php?r=4&id=29 by CBMHARDWARE
+;     Copyright (c) 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;    
+;     Logo created with http://patorjk.com/software/taag/
+;     
+;     This program is free software: you can redistribute it and/or modify
+;     it under the terms of the GNU General Public License as published by
+;     the Free Software Foundation, either version 3 of the License, or
+;     (at your option) any later version.
+;    
+;     This program is distributed in the hope that it will be useful,
+;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;     GNU General Public License for more details.
+;     
+;     You should have received a copy of the GNU General Public License
+;     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+t_lo         = $fe
+t_hi         = $ff 
+temp         = $332
+trampoline   = $333
+
+
+*=$8000
+
+ jmp $800b
+ jmp browser
+
+.byte $01                 ; module number: $00:basic  
+.byte $43,$42,$4d         ; "CBM"
+
+*=$800b
+       sei
+       ldx #$ff
+       txs 
+       lda $fb
+       pha
+       ldx #$02         ; cartrige 1 lo, kernal
+       sta $FDD0,X
+       jsr $FF84        ; Initialize I/O devices 
+       jsr $FF87        ; RAM Test
+       pla
+       sta $FB
+       jsr $FF8A        ; Restore vectors to initial values
+       jsr $FF81        ; Initialize screen editor
+       lda #<browser    ; cartridge jump in
+       sta $02FE
+       lda #>browser 
+       sta $02FF
+       lda #$F1         ; irq -> banking-routines 
+       sta $0314
+       lda #$FC
+       sta $0315
+       cli
+       jmp *
+
+browser:
+       ; single cycle mode (more relaxed for the RPi!)
+       lda $ff13
+       sta temp
+       ora #2
+       sta $ff13
+
+       lda #$00
+       sta $ff15
+       sta $ff19
+
+
+       lda #$01                ; set current file ("read" from drive 8)
+       ldx #$08
+       tay
+       jsr $ffba               ; set file parameters
+
+       ; current color and flashing off
+       lda #0
+       sta $53b
+       sta $53c
+
+       ldx #$74         ; copy trampoline-code
+cpy2   lda $8100,x
+       sta trampoline,x
+       dex
+       bpl cpy2
+
+       jmp trampoline
+
+*=$8100                 ; trampoline code 
+       sei 
+       lda #$00
+       sta $02FE       
+       sta $02FF
+       lda #$a4         ;  nativ irq 
+       sta $0314
+       lda #$f2
+       sta $0315
+       lda #$00         ; basic , kernal
+       sta $FDD0        ; function rom off
+       sta $fb
+
+       ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+       ; "download" .PRG
+       lda #03
+       sta $fde5
+
+       ; number of 256-byte pages to copy
+       ldx $fde5
+
+       ; get loading address
+       lda $fde5
+       sta t_lo  
+       lda $fde5
+       sta t_hi  
+
+   LOOPs0
+       ldy #$00
+   LOOPs1
+       ;inc $ff19
+       lda $fde5
+       sta (t_lo),y
+       iny
+       bne LOOPs1
+
+       inc t_hi
+
+       dex
+       bne LOOPs0
+
+       ;; disable Sidekick64-transfer
+       lda #123
+       sta $fde5
+       ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+       lda $fb  
+       jsr $FF84        ; Initialize I/O devices 
+
+       ; --- reset values and restart ROMs
+       jsr $FF8A        ; Restore vectors to initial values
+       jsr $8117        ; restore vectors !
+       jsr $FF81        ; Initialize screen editor  
+       cli
+;       ldy #$00
+;w2     ldx #$00         ; wait ..
+;w1      inx              ; .. long ..    
+;       bne w1            ; ..time .. 
+;       iny              ; .. for .. 
+;       bne w2           ; .. drive reset
+       jsr $802e        ; init Basic RAM
+       jsr $8818        ; prg link
+       jsr $8bbe        ; prg mode  
+       lda #$03         ; hide cursor
+       sta $FF0C
+       ora #$ff
+       sta $FF0D      
+
+       lda #8                  ; last used device = 8
+       sta $ba
+
+       lda temp
+       sta $ff13
+
+       jsr $8bea        ; start 
+       rts   
+

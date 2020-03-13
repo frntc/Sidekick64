@@ -378,3 +378,31 @@ void scanDirectories( char *DRIVE )
 		logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: %s", DRIVE );
 }
 
+void scanDirectories264( char *DRIVE )
+{
+	FATFS m_FileSystem;
+
+	// mount file system
+	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
+
+	u32 head;
+	nDirEntries = 0;
+
+	#define APPEND_SUBTREE( NAME, PATH  )					\
+		head = nDirEntries ++;								\
+		strcpy( (char*)dir[ head ].name, NAME );			\
+		dir[ head ].f = DIR_DIRECTORY;						\
+		dir[ head ].parent = 0xffffffff;					\
+		readDirectory( PATH, dir, &nDirEntries, head, 1 );	\
+		dir[ head ].next = nDirEntries;
+
+	//APPEND_SUBTREE( "CRT", "SD:CRT" )
+	APPEND_SUBTREE( "D264", "SD:D264" )
+	APPEND_SUBTREE( "PRG264", "SD:PRG264" )
+
+	// unmount file system
+	if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: %s", DRIVE );
+}
+

@@ -32,6 +32,7 @@
 
 #include <circle/types.h>
 
+#ifndef MACHINE_C264
 extern u32 WAIT_FOR_SIGNALS;
 extern u32 WAIT_CYCLE_MULTIPLEXER;
 extern u32 WAIT_CYCLE_READ;
@@ -45,6 +46,9 @@ extern u32 WAIT_RELEASE_DMA;
 
 extern u32 modeC128;
 extern u32 modeVIC;
+#endif
+
+extern u32 machine264;
 
 // #cycles the C64 is delayed for prefetching data (a little bit less should be OK)
 #define NUM_DMA_CYCLES (10)		
