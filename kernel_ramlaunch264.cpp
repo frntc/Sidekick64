@@ -48,9 +48,9 @@ u32 geoSizeKB = 4096;
 typedef struct
 {
 	// GeoRAM registers
-	// $dffe : selection of 256 Byte-window in 16 Kb-block
-	// $dfff : selection of 16 Kb-nlock
-	// 3rd register: bit 7 indicates if lower or higher 128-byte of GeoRAM window is mapped to $fe00-fe7f
+	// $fde8 : selection of 256 Byte-window in 16 Kb-block
+	// $fde9 : selection of 16 Kb-nlock
+	// $fdea : bit 7 indicates if lower or higher 128-byte of GeoRAM window is mapped to $fe00-fe7f
 	u8 reg[ 3 ];	
 	u8 padding1[ 5 ];
 
