@@ -53,7 +53,9 @@ extern int writeFile( CLogger *logger, const char *DRIVE, const char *FILENAME, 
 #define C1HI_ACCESS			(!(g2&bCS))
 
 // fixed timings
-#define WAIT_CYCLE_READ (265*14/10)
-#define WAIT_CYCLE_WRITEDATA (300*14/10)
+//#define WAIT_CYCLE_READ (265*14/10)
+//#define WAIT_CYCLE_WRITEDATA (300*14/10)
+#define WAIT_CYCLE_READ (350)
+#define WAIT_CYCLE_WRITEDATA (400)
 
 #endif

@@ -170,13 +170,14 @@ void CKernelRL::Run( void )
 	// setup FIQ
 	DisableIRQs();
 	m_InputPin.ConnectInterrupt( FIQ_HANDLER, FIQ_PARENT );
-	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
 
 	h_nRegOffset = m_InputPin.nRegOffset();
 	h_nRegMask = m_InputPin.nRegMask();
 
 	// warm caches
 	launchPrepareAndWarmCache();
+
+	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
 
 	for ( u32 i = 0; i < 4; i++ )
 	{
