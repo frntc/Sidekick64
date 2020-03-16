@@ -1,6 +1,6 @@
 # Sidekick64
 
-Sidekick64 is a versatile cartridge/expansion for the C64 and C128 whose functionality is entirely defined by software running on a Raspberry Pi 3 (RPi). The connecting circuitry is quite simple and does not include any programmable ICs. Example use cases are connecting the RPi to the expansion port where it can emulate 
+Sidekick64 is a versatile cartridge/expansion for the C64 and C128 (and new: C16/+4) whose functionality is entirely defined by software running on a Raspberry Pi 3 (RPi). The connecting circuitry is quite simple and does not include any programmable ICs. Example use cases are connecting the RPi to the expansion port where it can emulate 
 - a GeoRAM/NeoRAM-compatible memory expansion, 
 - a (freezer or Easyflash) cartridge, or 
 - run a (Dual-)SID plus FM emulation (the SID emulation would also work when connecting the RPi to the SID-socket on the board). 
@@ -11,9 +11,9 @@ Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the fra
 
 <img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
 
-## Updates
+## Updates: C16/+4 support
 
-Sidekick264 can also be used with the C16/+4 now, with the very same PCB plus a simple adapter! (read more below) 
+Sidekick264 can also be used with the C16/+4 now, with the very same PCB plus a simple adapter! (see more below) 
 
 ## How does it work?
 
