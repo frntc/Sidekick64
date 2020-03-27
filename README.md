@@ -76,7 +76,7 @@ Please keep in mind that you're not reading about a product, but my personal pla
 
 Sidekick264 requires a passive adapter (Gerber files and schematics are in the repo) to be put between the C16/+4 expansion port and the Sidekick64. The Sidekick264 provides the very same menu and browser as the C64 version, and supports PRG loading and C1low/C1high cartridges. As a bonus it can be used as Dual-SID-card (addresses $FD40 and $FE80), as FM-card (I chose address $FDE2), and -- completely without any use case :-) -- a Geo/NeoRAM-compatible memory expansion (registers at $FDE8-$FDEA, memory window at $FE00-$FE7F). The SD Card contains example programs with source to demonstrate these functionalities.
 
-Attention: the adapter PCB has not yet been tested, and Sidekick264 requires to overclock your RPi (see config.txt). Please be aware that this may void warranty.
+Attention: Sidekick264 requires to overclock your RPi (see config.txt). Please be aware that this may void warranty.
 
 The PCB has one pin "C1Hi" which you need to connect to the Sidekick64 pin "SID CS". Note that this is only required if you want to use cartridges which use the C1Lo and C1Hi range. Please double check that you set the d=3 jumper on the Sidekick64 PCB (see above).
 
