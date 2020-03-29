@@ -1,9 +1,10 @@
 #
 # Makefile
 #
+CIRCLEHOME ?= circle
+
 EXTRACLEAN = OLED/*.o resid/*.o
 
-CIRCLEHOME = ../..
 OBJS = lowlevel_arm64.o gpio_defs.o helpers.o latch.o oled.o ./OLED/ssd1306xled.o ./OLED/ssd1306xled8x16.o ./OLED/num2str.o 
 
 ### MENU C64 ###
@@ -86,4 +87,4 @@ LIBS += $(CIRCLEHOME)/lib/usb/libusb.a \
 	    $(CIRCLEHOME)/lib/sched/libsched.a \
         $(CIRCLEHOME)/lib/libcircle.a 
 
-include ../Rules.mk
+include $(CIRCLEHOME)/Rules.mk

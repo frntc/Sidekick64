@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# Check parameters
+if [[ $# != 1 && $# != 2 && $# != 3 ]] ; then
+	echo "Usage: $0 rasppi [ prefix [ aarch ] ]"
+	echo
+	echo "rasppi  Major revision number of the Raspberry Pi to build for (1, 2, 3 or 4)"
+	echo "prefix  Path and prefix of the toolchain commands (e.g. /path/arm-eabi-)"
+	echo "aarch   Bit size of ARM architecture (32 or 64, default 32)"
+
+	exit
+fi
+
+if [[ $1 != "1" && $1 != "2" && $1 != "3" && $1 != "4" ]] ; then
+	echo "Invalid revision number ($1)"
+
+	exit
+fi
+
+prefix=
+if [[ $# == 2 || $# == 3 ]] ; then
+	prefix=$2
+fi
+
+$prefix"gcc" --version > /dev/null 2> /dev/null
+if [[ $? != 0 ]] ; then
+	echo "Invalid toolchain prefix ($prefix)"
+
+	exit
+fi
+
+aarch=32
+if [[ $# == 3 ]] ; then
+	aarch=$3
+fi
+
+if [[ $aarch != "32" && $aarch != "64" ]] ; then
+	echo "Invalid ARM architecture ($aarch)"
+
+	exit
+fi
+
+# Write circle/Config.mk
+cd circle || exit
+
+echo "RASPPI = $1" > Config.mk
+if [[ $aarch == "32" ]] ; then
+	echo "PREFIX = $prefix" >> Config.mk
+else
+	echo "PREFIX64 = $prefix" >> Config.mk
+fi
+echo "AARCH = $aarch" >> Config.mk
+echo "DEFINE += -DSAVE_VFP_REGS_ON_IRQ" >> Config.mk
+if [[ $1 != "1" ]] ; then
+	echo "DEFINE += -DARM_ALLOW_MULTI_CORE" >> Config.mk
+fi
+
+#
+# SideKick64 needs to overrule two defines in
+# circles sysconfig.h 
+#
+
+echo "DEFINE += -DREALTIME" >> Config.mk
+echo "DEFINE += -DKERNEL_MAX_SIZE=0x10000000" >> Config.mk
+
+echo "circle/Config.mk successfully created:"
+cat Config.mk
+

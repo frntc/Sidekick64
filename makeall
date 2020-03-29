@@ -1,0 +1,41 @@
+#!/bin/bash
+
+cd circle
+./makeall --nosample $1 $2 || exit
+
+cd addon
+
+cd SDCard
+make $1 $2 || exit
+cd ..
+
+cd fatfs
+make $1 $2 || exit
+cd ..
+
+cd vc4
+
+cd sound
+make $1 $2 || exit
+cd ..
+
+cd vchiq
+make $1 $2 || exit
+cd ..
+
+cd ..
+
+cd linux
+make $1 $2 || exit
+
+#leaving linux
+cd ..
+
+#leaving addon
+cd ..
+
+#leaving circle
+cd ..
+
+make $1 $2 || exit
+cd ..
