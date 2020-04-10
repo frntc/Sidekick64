@@ -78,6 +78,8 @@ Sidekick264 requires a passive adapter (Gerber files and schematics are in the r
 
 Attention: Sidekick264 requires to overclock your RPi (see config.txt). Please be aware that this may void warranty.
 
+Note that on a +4 you will need to press the computer's own reset button after selecting a cartridge or program in the menu. This is annoying, it seems that the +4 does not reboot on a reset signal at the expansion port. It seems I'm missing something here.
+
 The PCB has one pin "C1Hi" which you need to connect to the Sidekick64 pin "SID CS". Note that this is only required if you want to use cartridges which use the C1Lo and C1Hi range. Please double check that you set the d=3 jumper on the Sidekick64 PCB (see above).
 
 
