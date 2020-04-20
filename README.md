@@ -15,6 +15,8 @@ Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the fra
 
 Sidekick264 can also be used with the C16/+4 now, with the very same PCB plus a simple adapter! (see more below) 
 
+I also comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue!
+
 ## How does it work?
 
 On the hardware side connecting the C64 to the RPi requires level shifting to interface the 5V bus with the 3.3V GPIOs of the RPi. However, things get a bit more complicated: communication on the data lines needs to be bidirectional, the RPi needs to get hands off the bus when it's not its turn. And even worse, there are too few GPIOs on a standard RPi to simply connect to all signals! For the aforementioned use cases, we need to read address lines A0-A12, IO1, IO2, ROML, ROMH, Phi2, Reset, SID-chipselect, R/W and read/write data lines D0-D7 (plus GPIOs for controlling the circuitry). This makes the use of multiplexers necessary. Additionally we also need to control GAME, EXROM, NMI, DMA and RESET, and, very important :-), drive a tiny OLED display and LEDs.
@@ -74,11 +76,11 @@ Please keep in mind that you're not reading about a product, but my personal pla
 
 ## Sidekick264 for C16 and +4
 
-Sidekick264 requires a passive adapter (Gerber files and schematics are in the repo) to be put between the C16/+4 expansion port and the Sidekick64. The Sidekick264 provides the very same menu and browser as the C64 version, and supports PRG loading and C1low/C1high cartridges. As a bonus it can be used as Dual-SID-card (addresses $FD40 and $FE80), as FM-card (I chose address $FDE2), and -- completely without any use case :-) -- a Geo/NeoRAM-compatible memory expansion (registers at $FDE8-$FDEA, memory window at $FE00-$FE7F). The SD Card contains example programs with source to demonstrate these functionalities.
+Sidekick264 requires a passive adapter (Gerber files and schematics are in the repo) to be put between the C16/+4 expansion port and the Sidekick64. The Sidekick264 provides the very same menu and browser as the C64 version, and supports PRG loading and C1low/C1high cartridges. As a bonus it can be used as Dual-SID-card (addresses $FD40 and $FE80), as FM-card (I chose address $FDE2), can emulate TED-sound and Digiblaster output. And -- until recently without any use case :-) -- a Geo/NeoRAM-compatible memory expansion (registers at $FDE8-$FDEA, memory window at $FE00-$FE7F). The latest update of Sidekick264 contains Alpharay and Pet's Rescue modified to run directly off the emulated NeoRAM! The SD Card contains example programs with source to demonstrate these functionalities.
 
 Attention: Sidekick264 requires to overclock your RPi (see config.txt). Please be aware that this may void warranty.
 
-Note that on a +4 you will need to press the computer's own reset button after selecting a cartridge or program in the menu. This is annoying, it seems that the +4 does not reboot on a reset signal at the expansion port. Maybe I'm missing something here. In any case, I have a software workaround which I will add to the repository soon.
+Note that on a +4 you will need to press the computer's own reset button instead of the one on the Sidekick PCB. This is annoying and because the +4 does not reboot on a reset signal at the expansion port. There is a simple hardware fix which would require to bridge pin 2 and 12 of a 7406 to make /RESET = /BRESET (thanks for this hint kinzi!), e.g. using a wire with test hooks. Note this is not needed, the Sidekick software will work around if you use the computer's reset button.
 
 The PCB has one pin "C1Hi" which you need to connect to the Sidekick64 pin "SID CS". Note that this is only required if you want to use cartridges which use the C1Lo and C1Hi range. Please double check that you set the d=3 jumper on the Sidekick64 PCB (see above).
 
@@ -108,7 +110,7 @@ The PCB is work licensed under a Creative Commons Attribution-NonCommercial-Shar
 Last but not least I would like to thank a few people and give proper credits:
 
 kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works, Kim Jørgensen for chats on weird bus timings and freezers, and hints on how to get things right, and the testers on F64 (bigby, emulaThor, kinzi).
-Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in this release.
+Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in all recent releases, and for the Sidekick logo (currently used in the Sidekick264 menu and when starting Alpharay and Pet's Rescue). And of course thanks a lot to Mad^BKN for porting Alpharay and Pet's Rescue in an amazingly short time! 
 The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED  (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic. The C16/+4 SID and FM examples are based on code by Mr.Mouse/Xentax and Antti Hannula's (flex) 2sid tune "Eternity" (original mod by Matt Simmonds); the FM songs are Koere and Like Galway by Jesper Olson (jo). The C16 cartridge startup code is based on CBMHARDWARE's example.
 
 
