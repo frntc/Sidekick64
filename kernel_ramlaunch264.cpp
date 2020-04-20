@@ -81,7 +81,7 @@ static u32 h_nRegMask;
 // geoRAM helper routines
 static void geoRAM_Init()
 {
-	geo.reg[ 0 ] = geo.reg[ 1 ] = 0;
+	geo.reg[ 0 ] = geo.reg[ 1 ] = geo.reg[ 2 ] = 0;
 	geo.RAM = (u8*)( ( (u64)&geoRAM_Pool[0] + 128 ) & ~127 );
 	memset( geo.RAM, 0, geoSizeKB * 1024 );
 
@@ -128,7 +128,13 @@ void CKernelRL::Run( void )
 	#endif
 
 	#ifdef USE_OLED
-	splashScreen( raspi_ram_splash );
+	char fn[ 1024 ];
+	// attention: this assumes that the filename ending is always ".neocrt"!
+	memset( fn, 0, 1024 );
+	strncpy( fn, FILENAME_RAM, strlen( FILENAME_RAM ) - 7 );
+	strcat( fn, ".logo" );
+	if ( !splashScreenFile( (char*)DRIVE, fn ) )
+		splashScreen( raspi_ram_splash );
 	#endif
 
 	// GeoRAM initialization
@@ -261,7 +267,12 @@ void CKernelRL::FIQHandler( void *pParam )
 	{
 		READ_D0to7_FROM_BUS( D )
 		GEORAM_WINDOW[ geo.reg[2] + (addr2 & 127) ] = D;
-	} 
+	} else
+	// this is an ugly hack to signal the menu code that it can reset (only necessary on a +4)
+	if ( BUS_AVAILABLE264 && CPU_READS_FROM_BUS && GET_ADDRESS264 >= 0xfd90 && GET_ADDRESS264 <= 0xfd97 )
+	{
+		PUT_DATA_ON_BUS_AND_CLEAR257( GET_ADDRESS264 - 0xfd90 + 1 )
+	}
 
 	PeripheralEntry();
 	write32( ARM_GPIO_GPEDS0 + h_nRegOffset, h_nRegMask );

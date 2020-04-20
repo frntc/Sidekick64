@@ -84,7 +84,7 @@ if ( renderDone == 0 )
 			u32 xpos = scopeXOLED - 8;
 			//memset( oledFrameBuffer, 0, 128 * 64 / 8 );
 
-			s32 y = 32 + min( 29, max( -29, ( left + right ) / 4 / 192 ) );
+			s32 y = 32 + min( 29, max( -29, ( left + right ) / 2 / 192 ) );
 
 			oledSetPixel( xpos, y );
 			//oledClearPixel( xpos, y - 2 );

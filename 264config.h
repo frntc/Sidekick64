@@ -41,11 +41,17 @@ const char timingNames[TIMING_NAMES][32] = {
 	"WAIT_CYCLE_WRITEDATA",
 };
 
-#define CATEGORY_NAMES 3
+#define CATEGORY_NAMES 4
 const char categoryNames[CATEGORY_NAMES][32] = {
 	"SPECIAL",
 	"PRG", 
 	"CRT", 
+};
+
+const char categoryNamesPrint[CATEGORY_NAMES][32] = {
+	"SPECIAL",
+	"PRG", 
+	"NEORAM/CRT", 
 };
 
 #define SKIN_NAMES 18

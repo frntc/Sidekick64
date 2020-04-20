@@ -142,7 +142,7 @@ extern void wait4IRQ();
 
 int main (void)
 {
-	unsigned char machine, a;
+	unsigned char machine, a, b, c;
 
 	// force single clock mode
 	*(unsigned char*)(0xff13) |= 2;
@@ -181,6 +181,74 @@ int main (void)
 	{
         __asm__ ("lda %v", a); 
         wait4IRQ(); // also uploads the keypress stored in A
+
+        // this is a very hacky solution:
+        // - on the C16, Sidekick264 can reset the machine on the expansion port
+        // - on the +4 this is not possible, and thus the following code checks whether the menu is still running...
+        //   + if not, then it tests for a while if one of the sub-kernels on the RPi have launched and then resets the machine
+        if ( *(unsigned char*)(0xfd91) != 1 || *(unsigned char*)(0xfd92) != 2 )
+        {
+            for ( a = 0; a < 255; a++ )
+            {
+                for ( b = 0; b < 32; b++ )
+                {
+                    for ( c = 0; c < 8; c++ )
+                    {
+                        __asm__ ("wait:");
+                        __asm__ ("lda $ff1d");
+                        __asm__ ("cmp #250");
+                        __asm__ ("bne wait");
+                    }
+
+                    // fade out color RAM
+                    __asm__ ("lda #$01");
+                    __asm__ ("sta $fde5");
+
+                    __asm__ ("lda #$00");
+                    __asm__ ("sta $fc");
+                    __asm__ ("lda #$08");
+                    __asm__ ("sta $fd");
+
+                    __asm__ ("ldy #$00");
+                __asm__ ("loopfc:");
+                    __asm__ ("lda ($fc),y");
+                    __asm__ ("and #15");
+                    __asm__ ("sta $ff");
+                    __asm__ ("lda ($fc),y");
+                    __asm__ ("cmp #16");
+                    __asm__ ("bmi skipfc");
+                    __asm__ ("clc");
+                    __asm__ ("sbc #16");
+                __asm__ ("skipfc:");
+                    __asm__ ("ora $ff");
+                    __asm__ ("sta ($fc),y");
+                    
+                    __asm__ ("iny");
+                    __asm__ ("bne loopfc");
+
+                    __asm__ ("inc $fd");
+                    __asm__ ("lda $fd");
+                    __asm__ ("cmp #$0c");
+                    __asm__ ("bne loopfc");	
+
+                    if ( *(unsigned char*)(0xfd91) == 2 && *(unsigned char*)(0xfd92) == 3 )
+                        goto doReset;
+                }
+            }
+           
+
+        doReset:
+            for ( c = 0; c < 8; c++ )
+            {
+                __asm__ ("wait2:");
+                __asm__ ("lda $ff1d");
+                __asm__ ("cmp #250");
+                __asm__ ("bne wait2");
+            }
+
+            __asm__ ("jmp $f2a4" ); 
+        }
+
 		updateScreen();
 		a = cgetc();
 	}

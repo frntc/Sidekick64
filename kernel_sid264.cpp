@@ -48,8 +48,8 @@
 #include "resid/sid.h"
 using namespace reSID;
 
-//u32 CLOCKFREQ = 1391884; //1791036; //1773447;//886723;
-u32 CLOCKFREQ = 1773447;//886723;
+//u32 CLOCKFREQ = 1773447;//886723;
+u32 CLOCKFREQ = 2*985248;	
 
 //MUX zum TESTEN auf IO1
 //IO1 kann man später einsparen, in dem man verODERt mit ROMH (C1low und C1high) und dann die Adresse ausdekodiert
@@ -84,6 +84,8 @@ u32 resetCounter,
 	cyclesSinceReset,  
 	resetPressed, resetReleased;
 
+s32 outputDigiblaster = 0, digiblasterVolume = 256, tedVolume = 0;
+
 // hack
 static u32 h_nRegOffset;
 static u32 h_nRegMask;
@@ -99,7 +101,7 @@ s32 cfgVolSID1_Left, cfgVolSID1_Right;
 s32 cfgVolSID2_Left, cfgVolSID2_Right;
 s32 cfgVolOPL_Left, cfgVolOPL_Right;
 
-void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3 )
+void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 digiblasterVol, s32 sidfreq, s32 tedVol )
 {
 	SID_MODEL[ 0 ] = ( sid1 == 0 ) ? 6581 : 8580;
 	SID_DigiBoost[ 0 ] = ( sid1 == 2 ) ? 1 : 0;
@@ -124,7 +126,6 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	if ( addr == 0 ) cfgSID2_PlaySameAsSID1 = 1; else cfgSID2_PlaySameAsSID1 = 0;
 	if ( mode == 0 ) cfgMixStereo = 1; else cfgMixStereo = 0;
 
-//	if ( sid2addr == 0 )
 	if ( addr == 0 )
 		cfgSID2_Addr = 0xfd40; else
 		cfgSID2_Addr = 0xfe80; 
@@ -137,7 +138,21 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	{
 		cfgVolOPL_Left = cfgVolOPL_Right = 0;
 	}
+	digiblasterVolume = 255 * digiblasterVol / 15;
+	if ( sidfreq == 0 )
+		CLOCKFREQ = 1773447; else
+		CLOCKFREQ = 2*985248;	
+
+	tedVolume = 255 * tedVol / 15;
 }
+
+
+//___  ___  __      ___                      ___    __       
+// |  |__  |  \    |__   |\/| |  | |     /\   |  | /  \ |\ | 
+// |  |___ |__/    |___  |  | \__/ |___ /~~\  |  | \__/ | \| 
+// taken directly from Yape, please see license in the header file                                                           
+#include "TEDsound.h"
+
 
 //  __     __                __      ___                   ___ 
 // /__` | |  \     /\  |\ | |  \    |__   |\/|    | |\ | |  |  
@@ -181,10 +196,15 @@ void initSID()
 	}
 #endif
 
+	outputDigiblaster = 0;
+
 	// ring buffer init
 	ringWrite = 0;
 	for ( int i = 0; i < RING_SIZE; i++ )
 		ringTime[ i ] = 0;
+
+
+	tedSoundInit( SAMPLERATE );
 }
 
 void quitSID()
@@ -400,7 +420,8 @@ void CKernel::Run( void )
 	} 
 	#endif
 
-	resetCounter = cycleCountC64 = 0;
+	resetCounter = 0;
+	cycleCountC64 = 0;
 	nCyclesEmulated = 0;
 	samplesElapsed = 0;
 	ringRead = 0;
@@ -513,6 +534,12 @@ void CKernel::Run( void )
 					unsigned char A, D;
 					decodeGPIO( ringBufGPIO[ ringRead ], &A, &D );
 
+					u32 tedCommand = ( ringBufGPIO[ ringRead ] >> A6 ) & 1;
+
+					if ( tedCommand )
+					{
+						writeSoundReg( A, D );
+					} else
 					#ifdef EMULATE_OPL2
 					if ( cfgEmulateOPL2 && (ringBufGPIO[ ringRead ] & bIO2) )
 					{
@@ -567,10 +594,15 @@ void CKernel::Run( void )
 			// mixer
 			//
 			s32 left, right;
-			
+
+			short tedV = 0;
+
+			if ( tedVolume > 0 )
+				tedV = TEDcalcNextSample();
+
 			// yes, it's 1 byte shifted in the buffer, need to fix
-			right = ( val1 * cfgVolSID1_Left  + val2 * cfgVolSID2_Left  + valOPL * cfgVolOPL_Left ) >> 8;
-			left  = ( val1 * cfgVolSID1_Right + val2 * cfgVolSID2_Right + valOPL * cfgVolOPL_Right ) >> 8;
+			right = ( val1 * cfgVolSID1_Left  + val2 * cfgVolSID2_Left  + valOPL * cfgVolOPL_Left + 2 * outputDigiblaster * digiblasterVolume + tedV * tedVolume ) >> 8;
+			left  = ( val1 * cfgVolSID1_Right + val2 * cfgVolSID2_Right + valOPL * cfgVolOPL_Right + 2 * outputDigiblaster * digiblasterVolume + tedV * tedVolume ) >> 8;
 
 			right = max( -32767, min( 32767, right ) );
 			left  = max( -32767, min( 32767, left ) );
@@ -588,7 +620,7 @@ void CKernel::Run( void )
 			
 			if ( vu_Mode != 2 )
 			{
-				float t = (left+right) / (float)32768.0f * 0.2f;
+				float t = (left+right) / (float)32768.0f * 0.8f;
 				vu_Sum[ 0 ] += t * t * 1.0f;
 
 				vu_Sum[ 1 ] += val2 * val2 / (float)32768.0f / (float)32768.0f * 0.25f;
@@ -627,8 +659,6 @@ void CKernel::Run( void )
 }
 
 
-static u32 firstFIQCall = 1;
-
 #ifdef USE_PWM_DIRECT
 static unsigned long long samplesElapsedBeforeFIQ = 0;
 #endif
@@ -657,6 +687,18 @@ void CKernel::FIQHandler (void *pParam)
 	if ( CPU_WRITES_TO_BUS )
 	{
 		READ_D0to7_FROM_BUS( D )
+	} else
+
+ 	// this is an ugly hack to signal the menu code that it can reset (only necessary on a +4)
+	if ( /*BUS_AVAILABLE264 && CPU_READS_FROM_BUS && */GET_ADDRESS264 >= 0xfd90 && GET_ADDRESS264 <= 0xfd97 )
+	{
+		WRITE_D0to7_TO_BUS( GET_ADDRESS264 - 0xfd90 + 1 )
+		PeripheralEntry();
+		write32( ARM_GPIO_GPEDS0 + h_nRegOffset, h_nRegMask );
+		PeripheralExit();
+		write32( ARM_GPIO_GPCLR0, bCTRL257 );
+		FINISH_BUS_HANDLING
+		return;
 	}
 
 	PeripheralEntry();
@@ -672,19 +714,20 @@ void CKernel::FIQHandler (void *pParam)
 	}
 
 	// this is a weird attempt of correctly mapping the clock cycles
-	if ( !firstFIQCall )
 	{
-		if ( armCycleCounter > 700 * 15/10 )
+		if ( armCycleCounter > 500 * 15/10 )
 			cycleCountC64 ++;
 	}
 	
-	firstFIQCall = 0;
+	RESET_CPU_CYCLE_COUNTER
+	armCycleCounter = 0;
 
 	static u32 fCount = 0;
 	fCount ++;
 	fCount &= 255;
 
 	cycleCountC64 ++;
+
 	u32 swizzle = 0;
 
 	#ifdef COMPILE_MENU
@@ -692,6 +735,8 @@ void CKernel::FIQHandler (void *pParam)
 	if ( !( launchPrg_l264 && !disableCart_l264 ) )
 	{
 		CACHE_PRELOADL1STRMW( &ringWrite );
+		//CACHE_PRELOADL1STRMW( &ringBufGPIO[ ringWrite ] );
+		//CACHE_PRELOADL1STRMW( &ringTime[ ringWrite ] );
 		CACHE_PRELOADL1STRM( &sampleBuffer[ smpLast ] );
 		CACHE_PRELOADL1STRM( &outRegisters[ 0 ] );
 		CACHE_PRELOADL1STRM( &outRegisters[ 16 ] );
@@ -707,8 +752,9 @@ void CKernel::FIQHandler (void *pParam)
 		u32 A = ( g2 >> A0 ) & 31;
 		u32 D = outRegisters[ A ];
 		WRITE_D0to7_TO_BUS( D )
-		FINISH_BUS_HANDLING
-		return;
+		//FINISH_BUS_HANDLING
+		//return;
+		goto get_out;
 	} else
 
 	//  __   ___       __      ___       
@@ -757,8 +803,9 @@ void CKernel::FIQHandler (void *pParam)
 			ringWrite ++;
 			ringWrite &= ( RING_SIZE - 1 );
 
-			FINISH_BUS_HANDLING
-			return;
+			//FINISH_BUS_HANDLING
+			//return;
+		goto get_out;
 		} 
 		#endif // EMULATE_OPL2
 	} 
@@ -771,7 +818,10 @@ void CKernel::FIQHandler (void *pParam)
 		register u32 A = GET_ADDRESS264 - 0xfd40;
 		register u32 remapAddr = (A&31) << A0;
 
+		#pragma GCC diagnostic push
+		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 		ringBufGPIO[ ringWrite ] = ( remapAddr | ( D << D0 ) ) & ~bIO2;
+		#pragma GCC diagnostic pop
 		ringTime[ ringWrite ] = cycleCountC64;
 		ringWrite ++;
 		ringWrite &= ( RING_SIZE - 1 );
@@ -783,7 +833,7 @@ void CKernel::FIQHandler (void *pParam)
 		goto get_out;
 	}
 
-	if ( cfgSID2_Addr == 0xfe80 && GET_ADDRESS264 >= 0xfe80 && GET_ADDRESS264 <= 0xfe98 && CPU_WRITES_TO_BUS )
+	if ( BUS_AVAILABLE264 && cfgSID2_Addr == 0xfe80 && GET_ADDRESS264 >= 0xfe80 && GET_ADDRESS264 <= 0xfe98 && CPU_WRITES_TO_BUS )
 	{
 		register u32 A = GET_ADDRESS264 - 0xfe80;
 		register u32 remapAddr = (A&31) << A0;
@@ -798,6 +848,39 @@ void CKernel::FIQHandler (void *pParam)
 		ringWrite &= ( RING_SIZE - 1 );
 		goto get_out;
 	}
+
+	if ( BUS_AVAILABLE264 && ( GET_ADDRESS264 == 0xfd5e ) && CPU_WRITES_TO_BUS )
+	{
+		#pragma GCC diagnostic push
+		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+		outputDigiblaster = (s32)D - 128;
+		#pragma GCC diagnostic pop
+		goto get_out;
+	}
+
+	if ( tedVolume > 0 && BUS_AVAILABLE264 && ( GET_ADDRESS264 >= 0xff0e && GET_ADDRESS264 <= 0xff12 ) && CPU_WRITES_TO_BUS )
+	{
+		#pragma GCC diagnostic push
+		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
+		register u32 A = GET_ADDRESS264 - 0xff0e;
+		register u32 remapAddr = (A&31) << A0;
+		remapAddr |= 1 << A6;
+
+		#pragma GCC diagnostic push
+		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+		ringBufGPIO[ ringWrite ] = ( remapAddr | ( D << D0 ) );
+		#pragma GCC diagnostic pop
+		ringTime[ ringWrite ] = cycleCountC64;
+		ringWrite ++;
+		ringWrite &= ( RING_SIZE - 1 );
+
+		#pragma GCC diagnostic pop
+		goto get_out;
+	}
+
+	
+
 
 	//  ___                      ___    __                     ___    __  
 	// |__   |\/| |  | |     /\   |  | /  \ |\ |    | |\ |    |__  | /  \ 
@@ -869,16 +952,7 @@ void CKernel::FIQHandler (void *pParam)
 	}
 	#endif
 
-	swizzle = 
-		( (fCount & 128) >> 7 ) |
-		( (fCount & 64) >> 5 ) |
-		( (fCount & 32) >> 3 ) |
-		( (fCount & 16) >> 1 ) |
-		( (fCount & 8) << 1 ) |
-		( (fCount & 4) << 3 ) |
-		( (fCount & 2) << 5 ) |
-		( (fCount & 1) << 7 );
-
+#if 1
 	if ( vu_Mode == 0 )
 	{
 		setLatchFIQ( LATCH_ON[ vu_nLEDs ] );
@@ -892,6 +966,16 @@ void CKernel::FIQHandler (void *pParam)
 	} else
 	if ( vu_Mode == 2 )
 	{
+		swizzle = 
+			( (fCount & 128) >> 7 ) |
+			( (fCount & 64) >> 5 ) |
+			( (fCount & 32) >> 3 ) |
+			( (fCount & 16) >> 1 ) |
+			( (fCount & 8) << 1 ) |
+			( (fCount & 4) << 3 ) |
+			( (fCount & 2) << 5 ) |
+			( (fCount & 1) << 7 );
+
 		u32 led =
 			( ( swizzle < vuMeter[ 1 ] ) ? LATCH_LED1 : 0 ) |
 			( ( swizzle < vuMeter[ 2 ] ) ? LATCH_LED2 : 0 ) |
@@ -901,6 +985,7 @@ void CKernel::FIQHandler (void *pParam)
 		clrLatchFIQ( ( (~led) & LATCH_LED_ALL ) | LATCH_LED0 );		
 	} else
 		clrLatchFIQ( LATCH_LED_ALL );		
+#endif
 
 get_out:
 
@@ -909,7 +994,8 @@ get_out:
 		disableCart_l264 = transferStarted_l264 = 0;
 	}
 
-	FINISH_BUS_HANDLING
+	//FINISH_BUS_HANDLING
+	write32( ARM_GPIO_GPCLR0, bCTRL257 );
 }
 
 #ifndef COMPILE_MENU

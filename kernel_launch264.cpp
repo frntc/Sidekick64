@@ -110,13 +110,13 @@ void CKernelLaunch::Run( void )
 		#ifdef COMPILE_MENU
 		TEST_FOR_JUMP_TO_MAINMENU( c64CycleCount, resetCounter )
 
-		if ( exitToMainMenu )
+		/*if ( exitToMainMenu )
 		{
 			EnableIRQs();
 			m_InputPin.DisableInterrupt();
 			m_InputPin.DisconnectInterrupt();
 			return;
-		}
+		}*/
 		#endif
 
 		asm volatile ("wfi");
@@ -153,12 +153,22 @@ void KernelLaunchFIQHandler( void *pParam )
 	#endif
 
 	START_AND_READ_EXPPORT264
+ 
+	// this is an ugly hack to signal the menu code that it can reset (only necessary on a +4)
+	if ( BUS_AVAILABLE264 && CPU_READS_FROM_BUS && GET_ADDRESS264 >= 0xfd90 && GET_ADDRESS264 <= 0xfd97 )
+	{
+		PUT_DATA_ON_BUS_AND_CLEAR257( GET_ADDRESS264 - 0xfd90 + 1 )
+	}
 
-	if ( BUTTON_PRESSED )
+	PeripheralEntry();
+	write32( ARM_GPIO_GPEDS0 + h_nRegOffset, h_nRegMask );
+	PeripheralExit();
+
+	/*if ( BUTTON_PRESSED )
 	{
 		latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
 		exitToMainMenu = 1;
-	}
+	}*/
 
 	if ( CPU_RESET ) 
 		resetCounter ++;
@@ -169,8 +179,6 @@ void KernelLaunchFIQHandler( void *pParam )
 		disableCart_l264 = transferStarted_l264 = 0;
 	}
 
-	write32( ARM_GPIO_GPCLR0, bCTRL257 );
-	
-	RESET_CPU_CYCLE_COUNTER
+	FINISH_BUS_HANDLING
 }
 

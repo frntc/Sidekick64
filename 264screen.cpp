@@ -280,10 +280,10 @@ int getMainMenuSelection( int key, char **FILE, char **FILE2, int *addIdx )
 
 extern void deactivateCart();
 
-#define MAX_SETTINGS 13
+#define MAX_SETTINGS 16
 u32 curSettingsLine = 0;
-s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 3, 2, 16, 15, 4, 2, 16, 15, 2, 16, 15 };
-s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 15, 7 };
+s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 3, 2, 16, 15, 4, 2, 16, 15, 2, 2, 16, 15, 16, 16 };
+s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 0, 15, 7, 15, 15 };
 u8  geoRAM_SlotNames[ 10 ][ 21 ];
 
 void writeSettingsFile()
@@ -319,9 +319,9 @@ void readSettingsFile()
 void applySIDSettings()
 {
 	// how elegant...
-	extern void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3 );
-	setSIDConfiguration( 0, settings[2], settings[6], settings[7]-1, settings[3], settings[7], settings[10],
-						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12] );
+	extern void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 digiblasterVol, s32 sidfreq, s32 tedVol );
+	setSIDConfiguration( 0, settings[2], settings[6], settings[7]-1, settings[3], settings[7], settings[11],
+						 settings[4], settings[5], settings[8], settings[9], settings[12], settings[13], settings[14], settings[10], settings[15] );
 }
 
 
@@ -706,14 +706,27 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 
 extern int subGeoRAM, subSID, subHasKernal;
 
+void printSidekickLogo()
+{
+	if ( skinFontLoaded )
+	{
+		u32 a = 91;
 
+		for ( u32 j = 0; j < 4; j++ )
+			for ( u32 i = 0; i < 7; i++ )
+			{
+				c64screen[ i + 33 + j * 40 ] = (a++);
+				c64color[ i + 33 + j * 40 ] = j < 2 ? skinValues.SKIN_MENU_TEXT_ITEM : skinValues.SKIN_MENU_TEXT_KEY;
+			}
+	}
+}
 
 
 void printMainMenu()
 {
 	clearC64();
 	//               "012345678901234567890123456789012345XXXX"
-	printC64( 0,  1, "      .- Sidekick264 - Frenetic -.      ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	printC64( 0,  1, "   .- Sidekick264 - Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 
 	extern u8 c64screen[ 40 * 25 + 1024 * 4 ]; 
 
@@ -741,7 +754,7 @@ void printMainMenu()
 	// menu headers + titels
 	for ( int i = 0; i < CATEGORY_NAMES; i++ )
 		if ( menuX[ i ] != -1 )
-			printC64( menuX[ i ], menuY[ i ], categoryNames[ i ], skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+			printC64( menuX[ i ], menuY[ i ], categoryNamesPrint[ i ], skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
 
 	for ( int i = 1; i < CATEGORY_NAMES; i++ )
 		if ( menuX[ i ] != -1 )
@@ -772,6 +785,8 @@ void printMainMenu()
 	printC64( menuX[ 0 ], menuY[ 0 ]+3, "F3", skinValues.SKIN_MENU_TEXT_KEY, 0 );
 	printC64( menuX[ 0 ]+3, menuY[ 0 ]+3, "Settings", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
 
+	printSidekickLogo();
+
 	c64screen[ 1000 ] = ((0x6800 >> 8) & 0xFC);
 	c64screen[ 1001 ] = skinValues.SKIN_MENU_BACKGROUND_COLOR;
 	c64screen[ 1002 ] = skinValues.SKIN_MENU_BORDER_COLOR;
@@ -795,31 +810,35 @@ void printSettingsScreen()
 {
 	clearC64();
 	//               "012345678901234567890123456789012345XXXX"
-	printC64( 0,  1, "      .- Sidekick264 - Frenetic -.      ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	printC64( 0,  1, "   .- Sidekick264 - Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 	printC64( 0, 23, "    F3 Back to Menu, S Save Settings    ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 
-	const u32 x = 1, x2 = 7,y1 = 1, y2 = 1;
+	u32 x = 1, x2 = 8,y1 = 1, y2 = 1;
 	u32 l = curSettingsLine;
 
 	// special menu
-	printC64( x+1, y1+3, "GeoRAM", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+	printC64( x+1, y1+3, "NeoRAM", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
 
-	printC64( x+1, y1+5, "Memory", skinValues.SKIN_MENU_TEXT_ITEM, (l==0)?0x80:0 );
+	printC64( x+1, y1+4, "Memory", skinValues.SKIN_MENU_TEXT_ITEM, (l==0)?0x80:0 );
 
 	char memStr[ 4 ][ 8 ] = { "512 KB", "1 MB", "2 MB", "4 MB" };
-	printC64( x2+10, y1+5, memStr[ settings[ 0 ] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==0)?0x80:0 );
+	printC64( x2+10, y1+4, memStr[ settings[ 0 ] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==0)?0x80:0 );
 
-	printC64( x+1, y1+6, "File on SD", skinValues.SKIN_MENU_TEXT_ITEM, (l==1)?0x80:0 );
+	printC64( x+1, y1+5, "File on SD", skinValues.SKIN_MENU_TEXT_ITEM, (l==1)?0x80:0 );
 	char t[ 64 ];
 	sprintf( t, "SD:GEORAM/slot%02d.ram", settings[ 1 ] );
-	printC64( x2+10, y1+6, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==1)?0x80:0 );
+	printC64( x2+10, y1+5, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==1)?0x80:0 );
 
-	printC64( x2+10, y1+7, (const char*)"\"                  \"", skinValues.SKIN_MENU_TEXT_ITEM, (typeInName==1)?0x80:0 );
-	printC64( x2+11, y1+7, (const char*)geoRAM_SlotNames[ settings[ 1 ] ], skinValues.SKIN_MENU_TEXT_ITEM, (typeInName==1)?0x80:0 );
+	printC64( x2+10, y1+6, (const char*)"\"                  \"", skinValues.SKIN_MENU_TEXT_ITEM, (typeInName==1)?0x80:0 );
+	printC64( x2+11, y1+6, (const char*)geoRAM_SlotNames[ settings[ 1 ] ], skinValues.SKIN_MENU_TEXT_ITEM, (typeInName==1)?0x80:0 );
 	if ( typeInName )
-		c64color[ x2+11+typeCurPos + (y1+7)*40 ] = skinValues.SKIN_MENU_TEXT_CATEGORY;
+		c64color[ x2+11+typeCurPos + (y1+6)*40 ] = skinValues.SKIN_MENU_TEXT_CATEGORY;
 
-	printC64( x+1,  y2+9, "SID+FM (using reSID and fmopl)", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+	y2 -=1;
+	printC64( x+1,  y2+9, "Sound Emulation (w/ reSID, fmopl)", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+
+	u32 textCol2 = skinValues.SKIN_MENU_TEXT_ITEM - 32;
+	y2 --;
 
 	printC64( x+1,  y2+11, "SID #1 ($FD40)", skinValues.SKIN_MENU_TEXT_ITEM, (l==2)?0x80:0 );
 	char sidStrS[ 3 ][ 20 ] = { "6581", "8580", "8580 w/ Digiboost" };
@@ -838,35 +857,53 @@ void printSettingsScreen()
 	sprintf( t, "%2d", settings[ 5 ] - 7 );
 	printC64( x2+15, y2+13, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==5)?0x80:0 );
 
-	printC64( x+1,  y2+15, "SID #2", skinValues.SKIN_MENU_TEXT_ITEM, (l==6)?0x80:0 );
+	printC64( x+1,  y2+14, "SID #2", textCol2, (l==6)?0x80:0 );
 	char sidStrS2[ 4 ][ 20 ] = { "6581", "8580", "8580 w/ Digiboost", "none" };
-	printC64( x2+10, y2+15, sidStrS2[ settings[6] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==6)?0x80:0 );
+	printC64( x2+10, y2+14, sidStrS2[ settings[6] ], textCol2, (l==6)?0x80:0 );
 
-	printC64( x+1,  y2+16, "Address", skinValues.SKIN_MENU_TEXT_ITEM, (l==7)?0x80:0 );
+	printC64( x+1,  y2+15, "Address", textCol2, (l==7)?0x80:0 );
 	char sidStrA[ 2 ][ 8 ] = { "$FD40", "$FE80" };
-	printC64( x2+10, y2+16, sidStrA[ settings[7] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==7)?0x80:0 );
+	printC64( x2+10, y2+15, sidStrA[ settings[7] ], textCol2, (l==7)?0x80:0 );
 
-	printC64( x+1,  y2+17, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==8)?0x80:0 );
-	printC64( x+1+6,  y2+17, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
-	printC64( x+1+7,  y2+17, "Panning", skinValues.SKIN_MENU_TEXT_ITEM, (l==9)?0x80:0 );
+	printC64( x+1,  y2+16, "Volume", textCol2, (l==8)?0x80:0 );
+	printC64( x+1+6,  y2+16, "/", textCol2, 0 );
+	printC64( x+1+7,  y2+16, "Panning", textCol2, (l==9)?0x80:0 );
 	sprintf( t, "%2d", settings[ 8 ] );
-	printC64( x2+10, y2+17, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==8)?0x80:0 );
-	printC64( x2+13, y2+17, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
+	printC64( x2+10, y2+16, t, textCol2, (l==8)?0x80:0 );
+	printC64( x2+13, y2+16, "/", textCol2, 0 );
 	sprintf( t, "%2d", settings[ 9 ] - 7 );
-	printC64( x2+15, y2+17, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==9)?0x80:0 );
+	printC64( x2+15, y2+16, t, textCol2, (l==9)?0x80:0 );
 
-	printC64( x+1,  y2+19, "SFX Sound Exp.", skinValues.SKIN_MENU_TEXT_ITEM, (l==10)?0x80:0 );
+	printC64( x+1,  y2+17, "SID Frequency", skinValues.SKIN_MENU_TEXT_ITEM, (l==10)?0x80:0 );
+	char sidStrFreq[ 2 ][ 12 ] = { "886 KHz", "985 KHz" };
+	printC64( x2+10, y2+17, sidStrFreq[ settings[10] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==10)?0x80:0 );
+
+	y2+=2;
+	printC64( x+1,  y2+17, "SFX Sound Exp.", skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
 	char sidStrO2[ 3 ][ 12 ] = { "off", "on ($FDE2)" };
-	printC64( x2+10, y2+19, sidStrO2[ settings[10] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==10)?0x80:0 );
+	printC64( x2+10, y2+17, sidStrO2[ settings[11] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
 
-	printC64( x+1,  y2+20, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
-	printC64( x+1+6,  y2+20, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
-	printC64( x+1+7,  y2+20, "Panning", skinValues.SKIN_MENU_TEXT_ITEM, (l==12)?0x80:0 );
-	sprintf( t, "%2d", settings[ 11 ] );
-	printC64( x2+10, y2+20, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
-	printC64( x2+13, y2+20, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
-	sprintf( t, "%2d", settings[ 12 ] - 7 );
-	printC64( x2+15, y2+20, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==12)?0x80:0 );
+	printC64( x+1,  y2+18, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==12)?0x80:0 );
+	printC64( x+1+6,  y2+18, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
+	printC64( x+1+7,  y2+18, "Panning", skinValues.SKIN_MENU_TEXT_ITEM, (l==13)?0x80:0 );
+	sprintf( t, "%2d", settings[ 12 ] );
+	printC64( x2+10, y2+18, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==12)?0x80:0 );
+	printC64( x2+13, y2+18, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
+	sprintf( t, "%2d", settings[ 13 ] - 7 );
+	printC64( x2+15, y2+18, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==13)?0x80:0 );
+	
+	y2--;
+	printC64( x+1,  y2+20, "Digiblaster Vol", textCol2, (l==14)?0x80:0 );
+	sprintf( t, "%2d", settings[ 14 ] );
+	printC64( x2+10, y2+20, t, textCol2, (l==14)?0x80:0 );
+	printC64( x2+13, y2+20, "($FDE5)", textCol2, (l==14)?0x80:0 );
+
+
+	printC64( x+1,  y2+21, "EmulaTED Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==15)?0x80:0 );
+	sprintf( t, "%02d", settings[ 15 ] );
+	printC64( x2+10, y2+21, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==15)?0x80:0 );
+
+	printSidekickLogo();
 
 	c64screen[ 1000 ] = ((0x6800 >> 8) & 0xFC);
 	c64screen[ 1001 ] = skinValues.SKIN_MENU_BACKGROUND_COLOR;

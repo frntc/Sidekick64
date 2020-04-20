@@ -32,12 +32,14 @@
 #include "dirscan.h"
 #include "config.h"
 #include "264screen.h"
+#include "charlogo.h"
 
 // we will read these files
 static const char DRIVE[] = "SD:";
 static const char FILENAME_PRG[] = "SD:C16/rpimenu16.prg";		// .PRG to start
 static const char FILENAME_CBM80[] = "SD:C16/launch16.cbm80";	// launch code (CBM80 8k cart)
 static const char FILENAME_CONFIG[] = "SD:C16/sidekick264.cfg";		
+static const char FILENAME_NEORAM[] = "SD:C16/launchNeoRAM.prg";
 
 static u32	disableCart     = 0;
 static u32	resetCounter    = 0;
@@ -220,6 +222,8 @@ boolean CKernelMenu::Initialize( void )
 	if ( skinFontFilename[0] != 0 && readFile( logger, (char*)DRIVE, (char*)skinFontFilename, charset, &t ) )
 	{
 		skinFontLoaded = 1;
+		memcpy( 1024 + charset+8*(91), skcharlogo_raw, 224 );
+		memcpy( 2048 + charset+8*(91), skcharlogo_raw, 224 );
 	} 
 
 	readSettingsFile();
@@ -321,24 +325,40 @@ void CKernelMenu::Run( void )
 			doneWithHandling = 1;
 			updateMenu = 0;
 
-			if ( launchKernel == 5 ) // launch CRT, no need to call an external RPi-kernel
+			if ( launchKernel == 5 ) 
+			// either: launch CRT, no need to call an external RPi-kernel
+			// or: NeoRAM - Autostart
 			{
-				u32 size;
-				//logger->Write( "menu", LogNotice, "reading %s", (char*)&FILENAME[0] );
-				readFile( logger, (char*)DRIVE, (char*)&FILENAME[0], &cart_c16[0], &size );
-				cartMode = 1;
-				if ( FILENAME[ 2048 ] != 0 )
+				if ( FILENAME[ 2048 ] != 0 && strcmp( &FILENAME[ 2048 ], "neoram" ) == 0 )
 				{
-					//logger->Write( "menu", LogNotice, "reading %s", (char*)&FILENAME[2048] );
-					readFile( logger, (char*)DRIVE, (char*)&FILENAME[2048], &cart_c16[0x4000], &size );
-					cartMode = 2;
+					launchKernel = 6;
+					// trigger IRQ on C16/+4 which tells the menu code that the new screen is ready
+					DELAY( 1 << 17 );
+					CLR_GPIO( bNMI );
+					pullIRQ = 64;
+					m_InputPin.DisableInterrupt();
+					m_InputPin.DisconnectInterrupt();
+					EnableIRQs();
+					return;
+				} else
+				{
+					u32 size;
+					//logger->Write( "menu", LogNotice, "reading %s", (char*)&FILENAME[0] );
+					readFile( logger, (char*)DRIVE, (char*)&FILENAME[0], &cart_c16[0], &size );
+					cartMode = 1;
+					if ( FILENAME[ 2048 ] != 0 )
+					{
+						//logger->Write( "menu", LogNotice, "reading %s", (char*)&FILENAME[2048] );
+						readFile( logger, (char*)DRIVE, (char*)&FILENAME[2048], &cart_c16[0x4000], &size );
+						cartMode = 2;
+					}
+					memcpy( cartL1, cart_c16, 32768 );
+					CLR_GPIO( bCTRL257 );
+					latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+					DELAY( 1 << 17 );
+					SET_GPIO( bNMI );
+					latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
 				}
-				memcpy( cartL1, cart_c16, 32768 );
-				CLR_GPIO( bCTRL257 );
-				latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
-				DELAY( 1 << 17 );
-				SET_GPIO( bNMI );
-				latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
 			} else
 			{
 				CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
@@ -386,7 +406,14 @@ void CGPIOPinFIQ2::FIQHandler( void *pParam )
 		PUT_DATA_ON_BUS_AND_CLEAR257( cartL1[ 0x4000 + (GET_ADDRESS264 & 0x3fff) ] )
 		goto get_out;
 	} 
-	
+
+	if ( BUS_AVAILABLE264 && CPU_READS_FROM_BUS && GET_ADDRESS264 >= 0xfd90 && GET_ADDRESS264 <= 0xfd97 )
+	{
+		PUT_DATA_ON_BUS_AND_CLEAR257( GET_ADDRESS264 - 0xfd90 + ( (cartMode==0)?0:1 ) )
+		CACHE_PRELOADL2STRM( curTransfer );
+		goto get_out;
+	}
+
 	if ( CPU_WRITES_TO_BUS )
 	{
 		READ_D0to7_FROM_BUS( D )
@@ -506,6 +533,9 @@ int main( void )
 			}
 			doActivateCart = 1;
 			disableCart = 0;
+			break;
+		case 6:
+			KernelRLRun( kernel.m_InputPin, &kernel, NULL, FILENAME_NEORAM, FILENAME, 4096, false ); 
 			break;
 		case 40:
 			if ( subSID ) {

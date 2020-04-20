@@ -65,6 +65,10 @@ extern void launchPrepareAndWarmCache();
 			PUT_DATA_ON_BUS_AND_CLEAR257( D )									\
 			goto get_out_launch264;												\
 		} 																		\
+		if ( BUS_AVAILABLE264 && CPU_READS_FROM_BUS && GET_ADDRESS264 >= 0xfd90 && GET_ADDRESS264 <= 0xfd97 ) { \
+			PUT_DATA_ON_BUS_AND_CLEAR257( GET_ADDRESS264 - 0xfd90 + 1 )			\
+			goto get_out_launch264;												\
+		}																		\
 		if ( CPU_WRITES_TO_BUS && addr2 == 0xfde5 ) {							\
 			READ_D0to7_FROM_BUS( D )											\
 			if ( D == 123 )	disableCart_l264 = 1;								\
