@@ -213,7 +213,7 @@ void printBrowserScreen()
 	{
 		char c = 102;
 		if ( t <= i && i <= b )
-			c = 96 + 128;
+			c = 96 + 128 - 64;
 		c64screen[ 38 + ( i + 3 ) * 40 ] = c;
 		c64color[ 38 + ( i + 3 ) * 40 ] = 1;
 	}
