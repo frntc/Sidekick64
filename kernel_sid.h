@@ -6,7 +6,7 @@
 /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \    /_______  /|___/_______  /
         \/         \/    \/     \/       \/     \/            \/             \/ 
  
- kernel_sid.cpp
+ kernel_sid.h
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick SID: a SID and SFX Sound Expander Emulation 

@@ -32,6 +32,7 @@
 #include "dirscan.h"
 #include "config.h"
 #include "c64screen.h"
+#include "charlogo.h"
 
 // we will read these files
 static const char DRIVE[] = "SD:";
@@ -211,6 +212,8 @@ boolean CKernelMenu::Initialize( void )
 	if ( skinFontFilename[0] != 0 && readFile( logger, (char*)DRIVE, (char*)skinFontFilename, charset, &t ) )
 	{
 		skinFontLoaded = 1;
+		memcpy( 1024 + charset+8*(91), skcharlogo_raw, 224 );
+		memcpy( 2048 + charset+8*(91), skcharlogo_raw, 224 );
 	} 
 
 	readSettingsFile();
@@ -527,8 +530,11 @@ int main( void )
 	extern void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
 	extern void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
 	extern void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 );
-
+	extern void KernelSIDRun8( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 );
 	extern void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 );
+
+	extern u32 octaSIDMode;
+
 
 	while ( true )
 	{
@@ -542,7 +548,6 @@ int main( void )
 		BEGIN_CYCLE_COUNTER
 		WAIT_UP_TO_CYCLE( 5000*1000 )
 
-		//logger->Write( "menu", LogNotice, "launch kernel %d", launchKernel );
 
 		char geoRAMFile[ 2048 ];
 		u32 geoRAMSize;
@@ -564,7 +569,11 @@ int main( void )
 			break;
 		case 4:
 			if ( subSID ) {
-				KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, false );
+				if ( octaSIDMode )
+				{
+					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, false ); 
+				} else
+					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, false ); 
 				break;
 			}
 			if ( subGeoRAM ) {
@@ -582,7 +591,9 @@ int main( void )
 			break;
 		case 40:
 			if ( subSID ) {
-				KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch );
+				if ( octaSIDMode )
+					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch ); else
+					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch );
 				break;
 			}
 			if ( subGeoRAM ) {
@@ -615,7 +626,9 @@ int main( void )
 			KernelAR6Run( kernel.m_InputPin, &kernel, FILENAME );
 			break;
 		case 8:
-			KernelSIDRun( kernel.m_InputPin, &kernel, NULL );
+			if ( octaSIDMode )
+				KernelSIDRun8( kernel.m_InputPin, &kernel, NULL ); else
+				KernelSIDRun( kernel.m_InputPin, &kernel, NULL );
 			break;
 		default:
 			break;

@@ -6,7 +6,7 @@
 /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \   |_______ (____  /____/|___|  /\___  >___|  /
         \/         \/    \/     \/       \/     \/           \/    \/           \/     \/     \/ 
 
- launch.cpp
+ launch.h
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - launch/.PRG dropper routines to be inlined in some other kernel
@@ -53,7 +53,7 @@ static unsigned char prgData[ 65536 ] AAA;
 #define LAUNCH_BYTES_TO_SKIP	0
 static unsigned char launchCode[ 65536 ] AAA;
 
-int launchGetProgram( const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 )
+static int launchGetProgram( const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 )
 {
 	if ( !hasData )
 	{
@@ -68,7 +68,7 @@ int launchGetProgram( const char *FILENAME, bool hasData = false, u8 *prgDataExt
 	}
 }
 
-void launchInitLoader( bool ultimax )
+static void launchInitLoader( bool ultimax )
 {
 	u32 size;
 	if ( ultimax )
@@ -86,7 +86,7 @@ void launchInitLoader( bool ultimax )
 	}
 }
 
-void launchPrepareAndWarmCache()
+static void launchPrepareAndWarmCache()
 {
 	disableCart = transferStarted = currentOfs = 0;
 

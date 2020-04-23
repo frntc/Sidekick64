@@ -34,7 +34,7 @@
 #include "kernel_menu.h"
 #include "launch.h"
 
-u32 launchPrg;
+static u32 launchPrg;
 #endif
 
 #undef USE_VCHIQ_SOUND
