@@ -212,7 +212,7 @@ boolean CKernelMenu::Initialize( void )
 	if ( skinFontFilename[0] != 0 && readFile( logger, (char*)DRIVE, (char*)skinFontFilename, charset, &t ) )
 	{
 		skinFontLoaded = 1;
-		memcpy( 1024 + charset+8*(91), skcharlogo_raw, 224 );
+		//memcpy( 1024 + charset+8*(91), skcharlogo_raw, 224 ); <- this is the upper case font used in the browser, skip logo to keep all PETSCII character
 		memcpy( 2048 + charset+8*(91), skcharlogo_raw, 224 );
 	} 
 
