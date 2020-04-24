@@ -11,6 +11,11 @@ Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the fra
 
 <img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
 
+## Updates: 8x SID support for C64
+
+Sidekick64 can now emulate 8 SIDs simultaneously, e.g. to play The Tuneful 8 (https://csdb.dk/release/?id=182735). To enable this experimental mode, go to the settings menu and browse through the models if 'SID #1'.
+
+
 ## Updates: C16/+4 support
 
 Sidekick264 can also be used with the C16/+4 now, with the very same PCB plus a simple adapter! (see more below) 
