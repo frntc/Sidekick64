@@ -60,6 +60,8 @@ SID::SID()
   write_pipeline = 0;
 
   databus_ttl = 0;
+
+  filter = new Filter();
 }
 
 
@@ -70,6 +72,7 @@ SID::~SID()
 {
   delete[] sample;
   delete[] fir;
+  delete filter;
 }
 
 
@@ -96,7 +99,7 @@ void SID::set_chip_model(chip_model model)
     voice[i].set_chip_model(model);
   }
 
-  filter.set_chip_model(model);
+  filter->set_chip_model(model);
 }
 
 
@@ -108,7 +111,7 @@ void SID::reset()
   for (int i = 0; i < 3; i++) {
     voice[i].reset();
   }
-  filter.reset();
+  filter->reset();
   extfilt.reset();
 
   bus_value = 0;
@@ -124,7 +127,7 @@ void SID::reset()
 void SID::input(short sample)
 {
   // The input can be used to simulate the MOS8580 "digi boost" hardware hack.
-  filter.input(sample);
+  filter->input(sample);
 }
 
 
@@ -262,16 +265,16 @@ void SID::write()
     voice[2].envelope.writeSUSTAIN_RELEASE(bus_value);
     break;
   case 0x15:
-    filter.writeFC_LO(bus_value);
+    filter->writeFC_LO(bus_value);
     break;
   case 0x16:
-    filter.writeFC_HI(bus_value);
+    filter->writeFC_HI(bus_value);
     break;
   case 0x17:
-    filter.writeRES_FILT(bus_value);
+    filter->writeRES_FILT(bus_value);
     break;
   case 0x18:
-    filter.writeMODE_VOL(bus_value);
+    filter->writeMODE_VOL(bus_value);
     break;
   default:
     break;
@@ -344,10 +347,10 @@ SID::State SID::read_state()
     state.sid_register[j + 6] = (envelope.sustain << 4) | envelope.release;
   }
 
-  state.sid_register[j++] = filter.fc & 0x007;
-  state.sid_register[j++] = filter.fc >> 3;
-  state.sid_register[j++] = (filter.res << 4) | filter.filt;
-  state.sid_register[j++] = filter.mode | filter.vol;
+  state.sid_register[j++] = filter->fc & 0x007;
+  state.sid_register[j++] = filter->fc >> 3;
+  state.sid_register[j++] = (filter->res << 4) | filter->filt;
+  state.sid_register[j++] = filter->mode | filter->vol;
 
   // These registers are superfluous, but are included for completeness.
   for (; j < 0x1d; j++) {
@@ -361,7 +364,7 @@ SID::State SID::read_state()
   state.bus_value_ttl = bus_value_ttl;
   state.write_pipeline = write_pipeline;
   state.write_address = write_address;
-  state.voice_mask = filter.voice_mask;
+  state.voice_mask = filter->voice_mask;
 
   for (i = 0; i < 3; i++) {
     state.accumulator[i] = voice[i].wave.accumulator;
@@ -400,7 +403,7 @@ void SID::write_state(const State& state)
   bus_value_ttl = state.bus_value_ttl;
   write_pipeline = state.write_pipeline;
   write_address = state.write_address;
-  filter.set_voice_mask(state.voice_mask);
+  filter->set_voice_mask(state.voice_mask);
 
   for (i = 0; i < 3; i++) {
     voice[i].wave.accumulator = state.accumulator[i];
@@ -429,7 +432,7 @@ void SID::write_state(const State& state)
 // ----------------------------------------------------------------------------
 void SID::set_voice_mask(reg4 mask)
 {
-  filter.set_voice_mask(mask);
+  filter->set_voice_mask(mask);
 }
 
 
@@ -438,7 +441,7 @@ void SID::set_voice_mask(reg4 mask)
 // ----------------------------------------------------------------------------
 void SID::enable_filter(bool enable)
 {
-  filter.enable_filter(enable);
+  filter->enable_filter(enable);
 }
 
 
@@ -449,7 +452,7 @@ void SID::enable_filter(bool enable)
 // The setting is currently only effective for 6581.
 // ----------------------------------------------------------------------------
 void SID::adjust_filter_bias(double dac_bias) {
-  filter.adjust_filter_bias(dac_bias);
+  filter->adjust_filter_bias(dac_bias);
 }
 
 
@@ -749,10 +752,10 @@ void SID::clock(cycle_count delta_t)
   }
 
   // Clock filter.
-  filter.clock(delta_t, voice[0].output(), voice[1].output(), voice[2].output());
+  filter->clock(delta_t, voice[0].output(), voice[1].output(), voice[2].output());
 
   // Clock external filter.
-  extfilt.clock(delta_t, filter.output());
+  extfilt.clock(delta_t, filter->output());
 }
 
 

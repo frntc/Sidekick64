@@ -130,7 +130,11 @@ void initSID8()
 		ringTime[ i ] = 0;
 }
 
-extern void quitSID();
+void quitSID8()
+{
+	for ( int i = 0; i < NUM_SIDS; i++ )
+		delete sid[ i ];
+}
 
 static unsigned long long cycleCountC64;
 
@@ -333,7 +337,7 @@ void CKernel::Run( void )
 				EnableIRQs();
 				m_InputPin.DisableInterrupt();
 				m_InputPin.DisconnectInterrupt();
-				quitSID();
+				quitSID8();
 				return;
 			}
 		#endif

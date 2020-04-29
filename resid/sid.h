@@ -112,7 +112,7 @@ public:
 
   chip_model sid_model;
   Voice voice[3];
-  Filter filter;
+  Filter *filter;
   ExternalFilter extfilt;
   Potentiometer potx;
   Potentiometer poty;
@@ -217,10 +217,10 @@ void SID::clock()
   }
 
   // Clock filter.
-  filter.clock(voice[0].output(), voice[1].output(), voice[2].output());
+  filter->clock(voice[0].output(), voice[1].output(), voice[2].output());
 
   // Clock external filter.
-  extfilt.clock(filter.output());
+  extfilt.clock(filter->output());
 
   // Pipelined writes on the MOS8580.
   if (unlikely(write_pipeline)) {

@@ -227,12 +227,11 @@ static model_filter_init_t model_filter_init[2] = {
   }
 };
 
-unsigned short *Filter::resonance[16];//[1 << 16];
+unsigned short Filter::resonance[16][1 << 16];
 unsigned short Filter::vcr_kVg[1 << 16];
 unsigned short Filter::vcr_n_Ids_term[1 << 16];
 int Filter::n_snake;
 int Filter::n_param;
-Filter::model_filter_t Filter::model_filter[2];
 
 #if defined(__amiga__) && defined(__mc68000__)
 #undef HAS_LOG1P
@@ -245,6 +244,14 @@ static double log1p(double x)
 }
 #endif
 
+Filter::model_filter_t Filter::model_filter[2];
+
+// ----------------------------------------------------------------------------
+// Destructor.
+// ----------------------------------------------------------------------------
+Filter::~Filter()
+{
+}
 
 // ----------------------------------------------------------------------------
 // Constructor.
@@ -253,25 +260,17 @@ Filter::Filter()
 {
   //static bool class_init = 0;
 
-  for ( int i = 0; i < 16; i++ )
-	resonance[i] = new unsigned short [1 << 16];
-
   //if (!class_init) 
   {
     double tmp_n_param[2];
 
     // Temporary tables for op-amp transfer function.
-    unsigned int* voltages = new unsigned int[1 << 16];
-    opamp_t* opamp = new opamp_t[1 << 16];
+    unsigned int voltages[1 << 16];
+    opamp_t opamp[1 << 16];
 
     for (int m = 0; m < 2; m++) {
       model_filter_init_t& fi = model_filter_init[m];
       model_filter_t& mf = model_filter[m];
-
-	  mf.summer = new unsigned short [ 1310720 ];
-	  for ( int i = 0; i < 16; i++ )
-		mf.gain[ i ] = new unsigned short [1 << 16];
-	  mf.mixer = new unsigned short [ 1835009 ];
 
       // Convert op-amp voltage transfer to 16 bit values.
       double vmin = fi.opamp_voltage[0][0];
@@ -383,7 +382,6 @@ Filter::Filter()
       //mf.summer = new unsigned short[ 1310720 ];
       //mf.mixer = new unsigned short[ 1835009 ];
 
-#if 1
       // The filter summer operates at n ~ 1, and has 5 fundamentally different
       // input configurations (2 - 6 input "resistors").
       //
@@ -404,27 +402,6 @@ Filter::Filter()
         }
         offset += size;
       }
-#endif
-
-#if 0
-// if we don't overwrite mf.mixer with our externally precomputed table the rpi crashes... WTF!
-      if ( m == 0 )
-      {
-          //for ( int i = 0; i < SUMMER_SIZE0; i++ )
-            //mf.summer[ i ] = summer_0[ i ];
-          for ( int i = 0; i < MIXER_SIZE0; i++ )
-            mf.mixer[ i ] = mixer_0[ i ];
-      } else
-	  //if ( m == 1 )
-      {
-          //for ( int i = 0; i < SUMMER_SIZE1; i++ )
-            //mf.summer[ i ] = summer_1[ i ];
-          for ( int i = 0; i < MIXER_SIZE1; i++ )
-            mf.mixer[ i ] = mixer_1[ i ];
-      }
-#endif
-
-#if 1
 
       // The audio mixer operates at n ~ 8/6, and has 8 fundamentally different
       // input configurations (0 - 7 input "resistors").
@@ -451,7 +428,6 @@ Filter::Filter()
         offset += size;
         size = (l + 1) << 16;
       }
-#endif
 
       // Create lookup table mapping capacitor voltage to op-amp input voltage:
       // vc -> vx
@@ -464,7 +440,7 @@ Filter::Filter()
     }
 
     // Free temporary table.
-    delete[] voltages;
+    //delete[] voltages;
 
     unsigned int dac_bits = 11;
 
@@ -505,7 +481,7 @@ Filter::Filter()
     }
 
     // Free temporary table.
-    delete[] opamp;
+    //delete[] opamp;
 
     {
       // 6581 only

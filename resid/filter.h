@@ -526,6 +526,7 @@ class Filter
 {
 public:
   Filter();
+  ~Filter();
 
   void enable_filter(bool enable);
   void adjust_filter_bias(double dac_bias);
@@ -549,6 +550,7 @@ public:
   short output();
 
 protected:
+
   void set_sum_mix();
   void set_w0();
   void set_Q();
@@ -612,14 +614,9 @@ protected:
     // Reverse op-amp transfer function.
     unsigned short opamp_rev[1 << 16];
     // Lookup tables for gain and summer op-amps in output stage / filter.
-    //unsigned short summer[summer_offset<5>::value];
-    //unsigned short summer[ 1310720 ];
-    unsigned short *summer;
-    //unsigned short gain[16][1 << 16];
-    unsigned short *gain[16];
-    //unsigned short mixer[mixer_offset<8>::value];
-    //unsigned short mixer[ 1835009 ];
-    unsigned short *mixer;
+    unsigned short summer[summer_offset<5>::value];
+    unsigned short gain[16][1 << 16];
+    unsigned short mixer[mixer_offset<8>::value];
     // Cutoff frequency DAC output voltage table. FC is an 11 bit register.
     unsigned short f0_dac[1 << 11];
   } model_filter_t;
@@ -640,8 +637,7 @@ protected:
   int kVgt;
 
   // Lookup tables for resonance
-  //static unsigned short resonance[16][1 << 16];
-  static unsigned short *resonance[16];
+  static unsigned short resonance[16][1 << 16];
 
   int solve_gain(opamp_t* opamp, int n, int vi_t, int& x, model_filter_t& mf);
   int solve_integrate_6581(int dt, int vi_t, int& x, int& vc, model_filter_t& mf);
