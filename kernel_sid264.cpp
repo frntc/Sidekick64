@@ -393,19 +393,19 @@ void CKernel::Run( void )
 
 	#ifdef COMPILE_MENU
 	// let's be very convincing about the caches ;-)
-	for ( u32 i = 0; i < 20; i++ )
+	for ( u32 i = 0; i < 10; i++ )
 	{
 		launchPrepareAndWarmCache();
 
 		// FIQ handler
-		CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 3*1024 );
-		FORCE_READ_LINEAR32( (void*)&FIQ_HANDLER, 3*1024 );
+		CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 4*1024 );
+		FORCE_READ_LINEAR32( (void*)&FIQ_HANDLER, 4*1024 );
 	}
 
 	if ( !launchPrg_l264 )
 		SETCLR_GPIO( bNMI | bDMA, 0 );
 
-	DELAY(10);
+	DELAY(10<<10);
 	latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
 
 	if ( launchPrg_l264 )
