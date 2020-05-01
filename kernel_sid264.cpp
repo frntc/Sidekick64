@@ -410,6 +410,10 @@ void CKernel::Run( void )
 
 	if ( launchPrg_l264 )
 	{
+		launchPrepareAndWarmCache();
+		launchPrepareAndWarmCache();
+		launchPrepareAndWarmCache();
+
 		while ( !disableCart_l264 )
 		{
 			#ifdef COMPILE_MENU

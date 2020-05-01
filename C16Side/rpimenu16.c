@@ -142,7 +142,7 @@ extern void wait4IRQ();
 
 int main (void)
 {
-	unsigned char machine, a, b, c;
+	unsigned char machine, a, b, c, d;
 
 	// force single clock mode
 	*(unsigned char*)(0xff13) |= 2;
@@ -188,6 +188,7 @@ int main (void)
         //   + if not, then it tests for a while if one of the sub-kernels on the RPi have launched and then resets the machine
         if ( *(unsigned char*)(0xfd91) != 1 || *(unsigned char*)(0xfd92) != 2 )
         {
+            d = 3;
             for ( a = 0; a < 255; a++ )
             {
                 for ( b = 0; b < 32; b++ )
@@ -231,19 +232,32 @@ int main (void)
                     __asm__ ("cmp #$0c");
                     __asm__ ("bne loopfc");	
 
-                    if ( *(unsigned char*)(0xfd91) == 2 && *(unsigned char*)(0xfd92) == 3 )
+                    if ( *(unsigned char*)(0xfd91) == 2 
+                        && *(unsigned char*)(0xfd92) == 3
+                        && *(unsigned char*)(0xfd93) == 4
+                        && *(unsigned char*)(0xfd94) == 5
+                        && *(unsigned char*)(0xfd95) == 6 
+                        && d -- == 0 )
                         goto doReset;
                 }
             }
            
 
         doReset:
-            for ( c = 0; c < 8; c++ )
+
+            // on a Plus4 we take the chance and warm up the RPi's cache before we reset
+            __asm__ ("lda #$02");
+            __asm__ ("sta $FDD2");
             {
-                __asm__ ("wait2:");
-                __asm__ ("lda $ff1d");
-                __asm__ ("cmp #250");
-                __asm__ ("bne wait2");
+                __asm__ ("ldy #$00");
+            __asm__ ("loop_hackyread1:");
+                __asm__ ("ldx #$00");
+            __asm__ ("loop_hackyread:");
+                __asm__ ("lda $8000,x");
+                __asm__ ("inx");
+                __asm__ ("bne loop_hackyread");
+                __asm__ ("iny");
+                __asm__ ("bne loop_hackyread1");
             }
 
             __asm__ ("jmp $f2a4" ); 

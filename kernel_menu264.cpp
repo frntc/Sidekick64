@@ -241,17 +241,20 @@ boolean CKernelMenu::Initialize( void )
 
 volatile u8 forceRead;
 
-__attribute__( ( always_inline ) ) inline void warmCache( void *fiqh )
+__attribute__( ( always_inline ) ) inline void warmCache( void *fiqh, bool screen=true )
 {
-	CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
-	CACHE_PRELOAD_DATA_CACHE( c64color, 1024, CACHE_PRELOADL2STRM );
-	CACHE_PRELOAD_DATA_CACHE( cartCBM80, 8192, CACHE_PRELOADL2KEEP );
+	if ( screen )
+	{
+		CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
+		CACHE_PRELOAD_DATA_CACHE( c64color, 1024, CACHE_PRELOADL2STRM );
+	}
+	//CACHE_PRELOAD_DATA_CACHE( cartCBM80, 8192, CACHE_PRELOADL2KEEP );
 	CACHE_PRELOAD_DATA_CACHE( prgData, 65536, CACHE_PRELOADL2STRM );
 	CACHE_PRELOAD_DATA_CACHE( cartL1, 32768, CACHE_PRELOADL2KEEP );
 
 	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)fiqh, 2048*2 );
 
-	FORCE_READ_LINEARa( cartCBM80, 8192, 8192 * 10 )
+	//FORCE_READ_LINEARa( cartCBM80, 8192, 8192 * 10 )
 	FORCE_READ_LINEARa( cartL1, 32768, 32768 * 10 )
 	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 4 )
 	FORCE_READ_LINEARa( (void*)fiqh, 2048*2, 65536 );
@@ -291,13 +294,13 @@ void CKernelMenu::Run( void )
 		launchKernel = 0;
 
 		warmCache( (void*)this->FIQHandler );
+		warmCache( (void*)this->FIQHandler );
+		warmCache( (void*)this->FIQHandler );
 
 		// start c64 
 		DELAY(1<<10);
 		latchSetClearImm( LATCH_RESET, 0 );
 	}
-
-
 
 	// wait forever
 	while ( true )
