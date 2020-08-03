@@ -33,12 +33,12 @@
 static const char DRIVE[] = "SD:";
 #ifndef COMPILE_MENU
 static const char FILENAME[] = "SD:C64/test.prg";		// .PRG to start
+static const bool c128PRG = false;
 #endif
 static const char FILENAME_CBM80[] = "SD:C64/launch.cbm80";	// launch code (CBM80 8k cart)
+static const char FILENAME_CBM128[] = "SD:C64/launch128.cbm80";	// launch code (C128 cart)
 
-// setting EXROM and GAME (low = 0, high = 1)
-#define EXROM_ACTIVE	0
-#define GAME_ACTIVE		1
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_launch.tga";
 
 // cartridge memory window bROML or bROMH
 #define ROM_LH		bROML
@@ -56,7 +56,7 @@ static unsigned char launchCode[ 65536 ] AAA;
 
 
 #ifdef COMPILE_MENU
-void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 )
+void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 )
 #else
 void CKernelLaunch::Run( void )
 #endif
@@ -66,22 +66,51 @@ void CKernelLaunch::Run( void )
 
 	latchSetClearImm( 0, LATCH_RESET | LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
 
-	// set GAME and EXROM as defined above (+ set NMI, DMA and latch outputs)
-	configGAMEEXROMSet = ( (GAME_ACTIVE == 0)  ? 0 : bGAME ) | ( (EXROM_ACTIVE == 0) ? 0 : bEXROM ) | bNMI | bDMA;
-	configGAMEEXROMClr = ( (GAME_ACTIVE == 0)  ? bGAME : 0 ) | ( (EXROM_ACTIVE == 0) ? bEXROM : 0 ); 
+	if ( c128PRG )
+	{
+		configGAMEEXROMSet = bGAME | bEXROM | bNMI | bDMA;
+		configGAMEEXROMClr = 0; 
+	} else
+	{
+		// set GAME and EXROM as defined above (+ set NMI, DMA and latch outputs)
+		configGAMEEXROMSet = bGAME | bNMI | bDMA;
+		configGAMEEXROMClr = bEXROM; 
+	}
 	SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
 
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
 
-	#ifdef USE_OLED
-	splashScreen( sidekick_launch_oled );
+	#ifdef COMPILE_MENU
+	if ( screenType == 0 )
+	{
+		splashScreen( sidekick_launch_oled );
+	} else
+	if ( screenType == 1 )
+	{
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+		int w, h; 
+		extern char FILENAME_LOGO_RGBA[128];
+		extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		{
+			tftBlendRGBA( tempTGA, tftBackground, 0 );
+		}
+
+		tftCopyBackground2Framebuffer();
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	}
 	#endif
 
 	// read launch code and .PRG
 	u32 size;
-	readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
+	if ( c128PRG )
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM128, launchCode, &size ); else
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
 
 	#ifdef COMPILE_MENU
 	if ( !hasData )

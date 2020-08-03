@@ -40,6 +40,12 @@ static const char FILENAME_PRG[] = "SD:C64/rpimenu.prg";		// .PRG to start
 static const char FILENAME_CBM80[] = "SD:C64/launch.cbm80";		// launch code (CBM80 8k cart)
 static const char FILENAME_CONFIG[] = "SD:C64/sidekick64.cfg";		
 
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_main.tga";		
+static const char FILENAME_SPLASH_RGB128[] = "SD:SPLASH/sk128_main.tga";		
+static const char FILENAME_TFT_FONT[] = "SD:SPLASH/PXLfont88665b-RF2.3-C64sys.bin";		
+
+static char FILENAME_LOGO_RGBA128[] = "SD:SPLASH/sk128_logo_blend.tga";
+char FILENAME_LOGO_RGBA[128] = "SD:SPLASH/sk64_logo_blend.tga";
 
 // setting EXROM and GAME (low = 0, high = 1)
 #define EXROM_ACTIVE	0
@@ -80,9 +86,11 @@ u32 first = 1;
 
 #define MAX_FILENAME_LENGTH	512
 char FILENAME[ MAX_FILENAME_LENGTH * 2 ];
+char menuItemStr[ 512 ];
 
 static u32 launchKernel = 0;
 static u32 lastChar = 0;
+static u32 startForC128 = 0;
 
 static u32 screenTransferBytes;
 static u8 *screenTransfer = &c64screen[ 0 ];
@@ -90,37 +98,166 @@ static u32 colorTransferBytes;
 static u8 *colorTransfer = &c64screen[ 0 ];
 static u8 *charsetTransfer = &charset[ 0 ];
 
+static u32 LED_DEACTIVATE_CART1_HIGH;	
+static u32 LED_DEACTIVATE_CART1_LOW;	
+static u32 LED_DEACTIVATE_CART2_HIGH;	
+static u32 LED_DEACTIVATE_CART2_LOW;	
+
+static u32 LED_ACTIVATE_CART1_HIGH;	
+static u32 LED_ACTIVATE_CART1_LOW;		
+static u32 LED_ACTIVATE_CART2_HIGH;	
+static u32 LED_ACTIVATE_CART2_LOW;		
+
+static u32 LED_INIT1_HIGH;	
+static u32 LED_INIT1_LOW;	
+static u32 LED_INIT2_HIGH;	
+static u32 LED_INIT2_LOW;	
+static u32 LED_INIT3_HIGH;	
+static u32 LED_INIT3_LOW;	
+static u32 LED_INIT4_HIGH;	
+static u32 LED_INIT4_LOW;	
+static u32 LED_INIT5_HIGH;	
+static u32 LED_INIT5_LOW;	
+static u32 LED_INITERR_HIGH;
+static u32 LED_INITERR_LOW;
+
+static void initScreenAndLEDCodes()
+{
+	if ( screenType == 0 ) // OLED with SCL and SDA (i.e. 2 Pins) -> 4 LEDs
+	{
+		 LED_DEACTIVATE_CART1_HIGH	= LATCH_LED_ALL;
+		 LED_DEACTIVATE_CART1_LOW	= 0;
+		 LED_DEACTIVATE_CART2_HIGH	= 0;
+		 LED_DEACTIVATE_CART2_LOW	= LATCH_LED_ALL;
+
+		 LED_ACTIVATE_CART1_HIGH	= LATCH_LED_ALL;
+		 LED_ACTIVATE_CART1_LOW		= 0;
+		 LED_ACTIVATE_CART2_HIGH	= 0;
+		 LED_ACTIVATE_CART2_LOW		= LATCH_LED_ALL;
+
+		 LED_INIT1_HIGH				= LATCH_LED0;
+		 LED_INIT1_LOW				= LATCH_LED1to3;
+		 LED_INIT2_HIGH				= LATCH_LED1;
+		 LED_INIT2_LOW				= 0;
+		 LED_INIT3_HIGH				= LATCH_LED2;
+		 LED_INIT3_LOW				= 0;
+		 LED_INIT4_HIGH				= LATCH_LED3;
+		 LED_INIT4_LOW				= 0;
+		 LED_INIT5_HIGH				= 0;
+		 LED_INIT5_LOW				= LATCH_LED_ALL;
+		 LED_INITERR_HIGH			= LATCH_LED_ALL;
+		 LED_INITERR_LOW			= 0;
+	} else
+	if ( screenType == 1 ) // RGB TFT with SCL, SDA, DC, RES -> 2 LEDs
+	{
+		 LED_DEACTIVATE_CART1_HIGH	= (LATCH_LED0|LATCH_LED1);
+		 LED_DEACTIVATE_CART1_LOW	= 0; 
+		 LED_DEACTIVATE_CART2_HIGH	= 0;
+		 LED_DEACTIVATE_CART2_LOW	= (LATCH_LED0|LATCH_LED1);
+
+		 LED_ACTIVATE_CART1_HIGH	= (LATCH_LED0|LATCH_LED1);
+		 LED_ACTIVATE_CART1_LOW		= 0;
+		 LED_ACTIVATE_CART2_HIGH	= 0;
+		 LED_ACTIVATE_CART2_LOW		= (LATCH_LED0|LATCH_LED1);
+
+		 LED_INIT1_HIGH				= LATCH_LED0;
+		 LED_INIT1_LOW				= LATCH_LED1;
+		 LED_INIT2_HIGH				= LATCH_LED1;
+		 LED_INIT2_LOW				= LATCH_LED0;
+		 LED_INIT3_HIGH				= LATCH_LED0;
+		 LED_INIT3_LOW				= LATCH_LED1;
+		 LED_INIT4_HIGH				= LATCH_LED1;
+		 LED_INIT4_LOW				= LATCH_LED0;
+		 LED_INIT5_HIGH				= 0;
+		 LED_INIT5_LOW				= (LATCH_LED0|LATCH_LED1);
+		 LED_INITERR_HIGH			= (LATCH_LED0|LATCH_LED1);
+		 LED_INITERR_LOW			= 0;
+	}
+}
 
 void deactivateCart()
 {
+	initScreenAndLEDCodes();
 	disableCart = 1;
-	latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LED_DEACTIVATE_CART1_HIGH, LED_DEACTIVATE_CART1_LOW | LATCH_RESET | LATCH_ENABLE_KERNAL );
 	SET_GPIO( bGAME | bEXROM | bNMI | bDMA );
 
-	for ( int j = 255; j > 63; j -- )
+	if ( screenType == 0 )
 	{
-		oledSetContrast( j );
-		flushI2CBuffer( true );
-		DELAY( 1 << 17 );
-	}
-
-	latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+		for ( int j = 255; j > 63; j -- )
+		{
+			oledSetContrast( j );
+			flushI2CBuffer( true );
+			DELAY( 1 << 17 );
+		}
+	} else
+	if ( screenType == 1 )
+	{
+		flush4BitBuffer( true );
+		tftBlendRGBA( 0, 0, 0, 128, tftFrameBuffer, 8 );
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	} 
+	
+	DELAY( 1 << 17 );
+	latchSetClearImm( LATCH_RESET | LED_DEACTIVATE_CART2_HIGH, LED_DEACTIVATE_CART2_LOW | LATCH_ENABLE_KERNAL );
 }
+
+
+// cache warmup
+
+volatile u8 forceRead;
+
+static void *pFIQ = NULL;
+
+__attribute__( ( always_inline ) ) inline void warmCache( void *fiqh )
+{
+	CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
+	CACHE_PRELOAD_DATA_CACHE( c64color, 1024, CACHE_PRELOADL2STRM );
+	CACHE_PRELOAD_DATA_CACHE( cartCBM80, 8192, CACHE_PRELOADL2KEEP );
+	CACHE_PRELOAD_DATA_CACHE( prgData, 65536, CACHE_PRELOADL2STRM );
+	CACHE_PRELOAD_DATA_CACHE( injectCode, 256, CACHE_PRELOADL2KEEP );
+
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)fiqh, 2048*2 );
+
+	FORCE_READ_LINEARa( cartCBM80, 8192, 8192 * 10 )
+	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 4 )
+	if ( fiqh )
+	{
+		FORCE_READ_LINEARa( (void*)fiqh, 2048*2, 65536 );
+	}
+}
+
 
 void activateCart()
 {
+	initScreenAndLEDCodes();
 	disableCart = 0;
 	transferStarted = 0;
 
-	latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LED_ACTIVATE_CART1_HIGH, LED_ACTIVATE_CART1_LOW | LATCH_RESET | LATCH_ENABLE_KERNAL );
 	SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr | bCTRL257 );
-	latchSetClearImm( LATCH_LED_ALL, LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LED_ACTIVATE_CART1_HIGH, LED_ACTIVATE_CART1_LOW | LATCH_ENABLE_KERNAL );
 
 	DELAY( 1 << 20 );
 
-	oledSetContrast( 255 );
-	flushI2CBuffer();
-	latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+	if ( screenType == 0 )
+	{
+		oledSetContrast( 255 );
+		flushI2CBuffer();
+	} else
+	if ( screenType == 1 )
+	{
+		flush4BitBuffer( true );
+		tftCopyBackground2Framebuffer();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	}
+	CleanDataCache();
+	InvalidateDataCache();
+	InvalidateInstructionCache();
+	warmCache( pFIQ );
+	warmCache( pFIQ );
+
+	latchSetClearImm( LATCH_RESET | LED_ACTIVATE_CART2_HIGH, LED_ACTIVATE_CART2_LOW | LATCH_ENABLE_KERNAL );
 }
 
 char filenameKernal[ 2048 ];
@@ -171,7 +308,6 @@ boolean CKernelMenu::Initialize( void )
 	if ( bOK ) bOK = m_VCHIQ.Initialize();
 	pVCHIQ = &m_VCHIQ;
 #endif
-	latchSetClearImm( LATCH_LED0, LATCH_LED1to3 );
 
 	// initialize ARM cycle counters (for accurate timing)
 	initCycleCounter();
@@ -182,7 +318,8 @@ boolean CKernelMenu::Initialize( void )
 	// initialize latch and software I2C buffer
 	initLatch();
 
-	latchSetClearImm( LATCH_LED0, LATCH_LED1to3 );
+	initScreenAndLEDCodes();
+	latchSetClearImm( LED_INIT1_HIGH, LED_INIT1_LOW );
 
 	// read launch code
 	u32 size = 0;
@@ -190,21 +327,21 @@ boolean CKernelMenu::Initialize( void )
 	cartCBM80 = (unsigned char *)( ((u64)&cart_pool+64) & ~63 );
 	readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, cartCBM80, &size );
 
-	latchSetClearImm( LATCH_LED1, 0 );
+	latchSetClearImm( LED_INIT2_HIGH, LED_INIT2_LOW );
 
 	// read .PRG
 	readFile( logger, (char*)DRIVE, (char*)FILENAME_PRG, prgData, &prgSize );
 
-	latchSetClearImm( LATCH_LED2, 0 );
+	latchSetClearImm( LED_INIT3_HIGH, LED_INIT3_LOW );
 
 	extern void scanDirectories( char *DRIVE );
 	scanDirectories( (char *)DRIVE );
 
-	latchSetClearImm( LATCH_LED3, 0 );
+	latchSetClearImm( LED_INIT4_HIGH, LED_INIT4_LOW );
 
 	if ( !readConfig( logger, (char*)DRIVE, (char*)FILENAME_CONFIG ) )
 	{
-		latchSetClearImm( LATCH_LED_ALL, 0 );
+		latchSetClearImm( LED_INITERR_HIGH, LED_INITERR_LOW );
 		logger->Write( "RaspiMenu", LogPanic, "error reading .cfg" );
 	}
 
@@ -222,7 +359,7 @@ boolean CKernelMenu::Initialize( void )
 	startInjectCode();
 	disableCart = 0;
 
-	latchSetClearImm( 0, LATCH_LED_ALL );
+	latchSetClearImm( LED_INIT5_HIGH, LED_INIT5_LOW );
 
 	return bOK;
 }
@@ -247,45 +384,26 @@ void injectPOKE( u32 a, u8 d )
 }
 
 
-// cache warmup
-
-volatile u8 forceRead;
-
-__attribute__( ( always_inline ) ) inline void warmCache( void *fiqh )
-{
-	CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
-	CACHE_PRELOAD_DATA_CACHE( c64color, 1024, CACHE_PRELOADL2STRM );
-	CACHE_PRELOAD_DATA_CACHE( cartCBM80, 8192, CACHE_PRELOADL2KEEP );
-	CACHE_PRELOAD_DATA_CACHE( prgData, 65536, CACHE_PRELOADL2STRM );
-	CACHE_PRELOAD_DATA_CACHE( injectCode, 256, CACHE_PRELOADL2KEEP );
-
-	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)fiqh, 2048*2 );
-
-	FORCE_READ_LINEARa( cartCBM80, 8192, 8192 * 10 )
-	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 4 )
-	FORCE_READ_LINEARa( (void*)fiqh, 2048*2, 65536 );
-}
+u32 updateLogo = 0;
 
 void CKernelMenu::Run( void )
 {
 	nBytesRead		= 0;
 	c64CycleCount	= 0;
 	lastChar		= 0;
+	startForC128	= 0;
 	resetCounter    = 0;
 	transferStarted = 0;
 	currentOfs      = 0;
 	launchKernel	= 0;
 	updateMenu      = 0;
+	updateLogo      = 0;
 	subGeoRAM		= 0;
 	subSID			= 0;
 	subHasKernal	= -1;
 	subHasLaunch	= -1;
 	FILENAME[0]		= 0;
 	first			= 1;
-
-	#ifdef USE_OLED
-	splashScreen( raspi_c64_splash );
-	#endif
 
 	if ( !disableCart )
 	{
@@ -294,8 +412,26 @@ void CKernelMenu::Run( void )
 		configGAMEEXROMClr = ( (GAME_ACTIVE == 0)  ? bGAME : 0 ) | ( (EXROM_ACTIVE == 0) ? bEXROM : 0 ); 
 		SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
 
-		latchSetClearImm( 0, LATCH_RESET | LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+		latchSetClearImm( 0, LATCH_RESET | LATCH_ENABLE_KERNAL );
+	}
 
+	if ( screenType == 0 )
+	{
+		splashScreen( raspi_c64_splash );
+	} else
+	if ( screenType == 1 )
+	{
+		tftLoadCharset( DRIVE, FILENAME_TFT_FONT );
+		if ( modeC128 )
+			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB128, 8 ); else
+			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 ); 
+		tftCopyBackground2Framebuffer();
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	}
+
+	if ( !disableCart )
+	{
 		// setup FIQ
 		DisableIRQs();
 		m_InputPin.ConnectInterrupt( this->FIQHandler, this );
@@ -303,10 +439,18 @@ void CKernelMenu::Run( void )
 
 		launchKernel = 0;
 
-		warmCache( (void*)this->FIQHandler );
+		CleanDataCache();
+		InvalidateDataCache();
+		InvalidateInstructionCache();
+
+		pFIQ = (void*)this->FIQHandler;
+		warmCache( pFIQ );
+		DELAY(1<<18);
+		warmCache( pFIQ );
+		DELAY(1<<18);
 
 		// start c64 
-		DELAY(1<<10);
+		SET_GPIO( bNMI | bDMA );
 		latchSetClearImm( LATCH_RESET, 0 );
 	}
 
@@ -316,9 +460,9 @@ void CKernelMenu::Run( void )
 		if ( first && nBytesRead < 32 && c64CycleCount > 1000000 )
 		{
 			first = 0;
-			latchSetClearImm( LATCH_LEDR, LATCH_RESET );
+			latchSetClearImm( LATCH_LED0, LATCH_RESET );
 			DELAY(1<<27);
-			latchSetClearImm( LATCH_RESET | LATCH_LEDR, 0 );
+			latchSetClearImm( LATCH_RESET | LATCH_LED0, 0 );
 		}
 
 		asm volatile ("wfi");
@@ -332,15 +476,35 @@ void CKernelMenu::Run( void )
 		}
 
 		static u32 refresh = 0;
-		//u32 v = 1 << ( refresh % 6 );
-		u32 v = 1 << ( ( c64CycleCount >> 18 ) % 6 );
-		u32 l_on = ( v + ( ( v & 16 ) >> 2 ) + ( ( v & 32 ) >> 4 ) ) & 15;
-		u32 l_off = ( ~l_on ) & 15;
-		latchSetClear( l_on * LATCH_LED0, l_off * LATCH_LED0 );
+		if ( screenType == 0 )
+		{
+			u32 v = 1 << ( ( c64CycleCount >> 18 ) % 6 );
+			u32 l_on = ( v + ( ( v & 16 ) >> 2 ) + ( ( v & 32 ) >> 4 ) ) & 15;
+			u32 l_off = ( ~l_on ) & 15;
+			latchSetClear( l_on * LATCH_LED0, l_off * LATCH_LED0 );
+		} else
+		if ( screenType == 1 )
+		{
+			u32 v = ( c64CycleCount >> 18 ) & 1;
+			u32 l_on  = v ? LATCH_LED0 : LATCH_LED1;
+			u32 l_off = v ? LATCH_LED1 : LATCH_LED0;
+			latchSetClear( l_on, l_off );
+		}
 
 		if ( updateMenu == 1 )
 		{
-			handleC64( lastChar, &launchKernel, FILENAME, filenameKernal );
+			if ( updateLogo )
+			{
+				updateLogo = 0;
+				if ( modeC128 )
+					tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB128, 8 ); else
+					tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 ); 
+				tftCopyBackground2Framebuffer();
+				tftSendFramebuffer16BitImm( tftFrameBuffer );
+			}
+
+			startForC128 = 0;
+			handleC64( lastChar, &launchKernel, FILENAME, filenameKernal, menuItemStr, &startForC128 );
 			lastChar = 0xfffffff;
 			refresh++;
 			renderC64();
@@ -362,6 +526,7 @@ void CKernelMenu::FIQHandler (void *pParam)
 	if ( CPU_RESET ) { 
 		resetCounter ++; 
 		FINISH_BUS_HANDLING
+		activateCart();
 		return;
 	} else  
 		resetCounter = 0; 
@@ -371,8 +536,8 @@ void CKernelMenu::FIQHandler (void *pParam)
 
 	if ( BUTTON_PRESSED )
 	{
-		activateCart();
 		FINISH_BUS_HANDLING
+		activateCart();
 		return;
 	}
 
@@ -445,6 +610,7 @@ void CKernelMenu::FIQHandler (void *pParam)
 		{
 			modeC128 = D;
 			updateMenu = 1;
+			updateLogo = 1;
 		} else
 		if ( A == 3 ) // VIC detection
 		{
@@ -512,7 +678,7 @@ void mainMenu()
 	CKernelMenu kernel;
 	if ( kernel.Initialize() )
 		kernel.Run();
-	setLatchFIQ( LATCH_LEDO );
+	//setLatchFIQ( LATCH_LEDO );
 	prepareOutputLatch();
 	outputLatch();
 }
@@ -522,16 +688,17 @@ int main( void )
 	CKernelMenu kernel;
 	kernel.Initialize();
 
-	//extern void KernelCartRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu );
 	extern void KernelKernalRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME );
 	extern void KernelGeoRAMRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu );
-	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 );
-	extern void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME );
+	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
+	extern void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr );
 	extern void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
 	extern void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
-	extern void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 );
-	extern void KernelSIDRun8( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 );
-	extern void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 );
+	extern void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
+	extern void KernelSIDRun8( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
+	extern void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
+	extern void KernelCartRun128( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr );
+
 
 	extern u32 octaSIDMode;
 
@@ -542,7 +709,7 @@ int main( void )
 
 		kernel.Run();
 
-		latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+		latchSetClearImm( LATCH_LED0, LATCH_RESET | LATCH_ENABLE_KERNAL );
 		SET_GPIO( bNMI | bDMA ); 
 
 		BEGIN_CYCLE_COUNTER
@@ -552,11 +719,15 @@ int main( void )
 		char geoRAMFile[ 2048 ];
 		u32 geoRAMSize;
 
+		if ( modeC128 )
+		{
+			strcpy( FILENAME_LOGO_RGBA, FILENAME_LOGO_RGBA128 );			
+		}
+
+		u32 loadC128PRG = 0;
+
 		switch ( launchKernel )
 		{
-		/*case 1:
-			KernelCartRun( kernel.m_InputPin, &kernel );
-			break;*/
 		case 2:
 			KernelKernalRun( kernel.m_InputPin, &kernel, FILENAME );
 			break;
@@ -564,54 +735,56 @@ int main( void )
 			settingsGetGEORAMInfo( geoRAMFile, &geoRAMSize );
 			if ( subHasKernal == -1 )
 				KernelRKLRun( kernel.m_InputPin, &kernel, NULL, NULL, geoRAMFile, geoRAMSize ); else
-				//KernelGeoRAMRun( kernel.m_InputPin, &kernel ); else
 				KernelRKLRun( kernel.m_InputPin, &kernel, filenameKernal, NULL, geoRAMFile, geoRAMSize );
 			break;
 		case 4:
+			if ( strstr( FILENAME, "PRG128" ) )
+				loadC128PRG = 1;
+
 			if ( subSID ) {
 				if ( octaSIDMode )
 				{
-					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, false ); 
+					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); 
 				} else
-					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, false ); 
+					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); 
 				break;
 			}
 			if ( subGeoRAM ) {
 				settingsGetGEORAMInfo( geoRAMFile, &geoRAMSize );
 				if ( subHasKernal == -1 ) {
-					KernelRKLRun( kernel.m_InputPin, &kernel, NULL, FILENAME, geoRAMFile, geoRAMSize, false ); 
+					KernelRKLRun( kernel.m_InputPin, &kernel, NULL, FILENAME, geoRAMFile, geoRAMSize, false, NULL, 0, loadC128PRG ); 
 					break;
 				} else {
-					KernelRKLRun( kernel.m_InputPin, &kernel, filenameKernal, FILENAME, geoRAMFile, geoRAMSize, false ); 
+					KernelRKLRun( kernel.m_InputPin, &kernel, filenameKernal, FILENAME, geoRAMFile, geoRAMSize, false, NULL, 0, loadC128PRG ); 
 					break;
 				}
 			} else {
-				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, false );
+				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG );
 			}
 			break;
-		case 40:
+		case 40: // launch something from a disk image
+			logger->Write( "RaspiMenu", LogNotice, "filename from d64: %s", FILENAME );
 			if ( subSID ) {
 				if ( octaSIDMode )
-					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch ); else
-					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch );
+					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 ); else
+					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 );
 				break;
 			}
 			if ( subGeoRAM ) {
 				settingsGetGEORAMInfo( geoRAMFile, &geoRAMSize );
 				if ( subHasKernal == -1 ) {
-					KernelRKLRun( kernel.m_InputPin, &kernel, NULL, FILENAME, geoRAMFile, geoRAMSize, true, prgDataLaunch, prgSizeLaunch );
+					KernelRKLRun( kernel.m_InputPin, &kernel, NULL, FILENAME, geoRAMFile, geoRAMSize, true, prgDataLaunch, prgSizeLaunch, startForC128 );
 					break;
 				} else {
-					KernelRKLRun( kernel.m_InputPin, &kernel, filenameKernal, FILENAME, geoRAMFile, geoRAMSize, true, prgDataLaunch, prgSizeLaunch );
-					//KernelRKLRun( kernel.m_InputPin, &kernel, filenameKernal, FILENAME, true, prgDataLaunch, prgSizeLaunch );
+					KernelRKLRun( kernel.m_InputPin, &kernel, filenameKernal, FILENAME, geoRAMFile, geoRAMSize, true, prgDataLaunch, prgSizeLaunch, startForC128 );
 					break;
 				}
 			} else {
-				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch );
+				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 );
 			}
 			break;
 		case 5:
-			KernelEFRun( kernel.m_InputPin, &kernel, FILENAME );
+			KernelEFRun( kernel.m_InputPin, &kernel, FILENAME, menuItemStr );
 			break;
 		case 6:
 			KernelFC3Run( kernel.m_InputPin, &kernel );
@@ -629,6 +802,9 @@ int main( void )
 			if ( octaSIDMode )
 				KernelSIDRun8( kernel.m_InputPin, &kernel, NULL ); else
 				KernelSIDRun( kernel.m_InputPin, &kernel, NULL );
+			break;
+		case 9:
+			KernelCartRun128( kernel.m_InputPin, &kernel, FILENAME, menuItemStr );
 			break;
 		default:
 			break;

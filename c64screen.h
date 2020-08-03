@@ -43,7 +43,7 @@ extern u32 updateMenu;
 extern void clearC64();
 extern void printC64( u32 x, u32 y, const char *t, u8 color, u8 flag = 0, u32 convert = 0, u32 maxL = 1024 );
 extern void printBrowserScreen();
-extern void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal );
+extern void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, char *menuItemStr, u32 *startForC128 );
 extern void renderC64();
 extern void readSettingsFile();
 extern void applySIDSettings();

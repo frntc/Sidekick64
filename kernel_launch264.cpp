@@ -35,6 +35,8 @@ static u32	resetCounter, c64CycleCount, exitToMainMenu;
 u32 h_nRegOffset;
 u32 h_nRegMask;
 
+static const char DRIVE[] = "SD:";
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk264_launch.tga";
 
 void KernelLaunchFIQHandler( void *pParam );
 
@@ -54,9 +56,28 @@ void CKernelLaunch::Run( void )
 	m_EMMC.Initialize();
 	#endif
 
-	#ifdef USE_OLED
-	splashScreen( sidekick_launch_oled );
-	#endif
+	if ( screenType == 0 )
+	{
+		splashScreen( sidekick_launch_oled );
+	} else
+	if ( screenType == 1 )
+	{
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+		int w, h; 
+		extern char FILENAME_LOGO_RGBA[128];
+		extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		{
+			tftBlendRGBA( tempTGA, tftBackground, 0 );
+		}
+
+		tftCopyBackground2Framebuffer();
+
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	} 
 
 	// read launch code and .PRG
 	#ifdef COMPILE_MENU

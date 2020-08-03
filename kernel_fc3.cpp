@@ -34,6 +34,8 @@
 static const char DRIVE[] = "SD:";
 static const char FILENAME[] = "SD:Freezer/fc3.crt";
 
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_fc3.tga";
+
 #pragma pack(push)
 #pragma pack(1)
 typedef struct
@@ -88,6 +90,25 @@ __attribute__( ( always_inline ) ) inline void callbackReset()
 	latchSetClearImm( LATCH_LED0, 0 );
 }
 
+static u32 LED_CLEAR, LED_ALL_BUT_0;
+
+static void initScreenAndLEDCodes()
+{
+	#ifndef COMPILE_MENU
+	int screenType = 0;
+	#endif
+	if ( screenType == 0 ) // OLED with SCL and SDA (i.e. 2 Pins) -> 4 LEDs
+	{
+		LED_ALL_BUT_0	= LATCH_LED1to3;
+		LED_CLEAR		= LATCH_LED_ALL;
+	} else
+	if ( screenType == 1 ) // RGB TFT with SCL, SDA, DC, RES -> 2 LEDs
+	{
+		LED_ALL_BUT_0	= LATCH_LED1;
+		LED_CLEAR		= LATCH_LED0to1;
+	}
+}
+
 #ifdef COMPILE_MENU
 void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME )
 #else
@@ -96,7 +117,9 @@ void CKernelFC3::Run( void )
 {
 	// initialize latch and software I2C buffer
 	initLatch();
-	latchSetClearImm( 0, LATCH_RESET | LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+	initScreenAndLEDCodes();
+
+	latchSetClearImm( 0, LATCH_RESET | LED_CLEAR | LATCH_ENABLE_KERNAL );
 
 	SET_GPIO( bGAME | bEXROM | bNMI | bDMA );
 	CLR_GPIO( bCTRL257 ); 
@@ -119,8 +142,28 @@ void CKernelFC3::Run( void )
 	// todo hack?
 	// fc3.nROMBanks = 16;
 
-	#ifdef USE_OLED
-	splashScreen( raspi_freeze_splash );
+	#ifdef COMPILE_MENU
+	if ( screenType == 0 )
+	{
+		splashScreen( raspi_freeze_splash );
+	} else
+	if ( screenType == 1 )
+	{
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+		int w, h; 
+		extern char FILENAME_LOGO_RGBA[128];
+		extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		{
+			tftBlendRGBA( tempTGA, tftBackground, 0 );
+		}
+
+		tftCopyBackground2Framebuffer();
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	}
 	#endif
 
 	// setup FIQ
@@ -155,7 +198,7 @@ void CKernelFC3::Run( void )
 
 	// ready to go
 	DELAY(10);
-	latchSetClearImm( LATCH_RESET, LATCH_LED0to3 | LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
 
 	// main loop
 	while ( true ) {

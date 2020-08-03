@@ -124,5 +124,6 @@ union  __attribute__((packed)) T_SKIN_VALUES {
 extern u32 skinFontLoaded;
 extern char skinFontFilename[ 1024 ];
 extern union T_SKIN_VALUES	skinValues;
+extern int screenType;
 
 #endif

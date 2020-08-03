@@ -32,10 +32,15 @@
 
 // use the OLED connected to the latch
 #define USE_OLED
+//#define USE_RGB_TFT
 
-#if defined(USE_OLED) && !defined(USE_LATCH_OUTPUT)
+// 0 = SSD1306 OLED 128x64
+// 1 = ST7789 RGB TFT 240x240
+extern int screenType;
+
+//#if defined(USE_OLED) && !defined(USE_LATCH_OUTPUT)
 #define USE_LATCH_OUTPUT
-#endif
+//#endif
 
 #define USE_HDMI_VIDEO
 
@@ -73,10 +78,14 @@
 #include "helpers.h"
 #include "crt.h"
 
-#ifdef USE_OLED
+//#ifdef USE_OLED
 #include "oled.h"
 #include "splash_sidekick64.h"
-#endif
+//#endif
+//#ifdef USE_RGB_TFT
+#include "tft_st7789.h"
+//#endif
+
 
 extern CLogger *logger;
 

@@ -34,6 +34,7 @@
 extern int menuX[ 5 ], menuY[ 5 ], menuItems[ 5 ];
 extern char menuText[ 5 ][ MAX_ITEMS ][ 32 ], menuFile[ 5 ][ MAX_ITEMS ][ 2048 ];
 extern int menuItemPos[ 5 ][ MAX_ITEMS ][ 2 ];
+extern int screenType;
 
 #define TIMING_NAMES 10
 const char timingNames[TIMING_NAMES][32] = {

@@ -31,7 +31,7 @@
 #include "kernel_rkl.h"
 
 // let them blink
-#define LED
+//#define LED
 
 //
 // launcher
@@ -44,6 +44,11 @@ static const char FILENAME[] = "SD:C64/test.prg";		// .PRG to start
 #endif
 static const char FILENAME_CBM80_ULTIMAX[] = "SD:C64/launch_ultimax.cbm80";	// launch code (CBM80 8k cart)
 static const char FILENAME_CBM80[] = "SD:C64/launch.cbm80";	// launch code (CBM80 8k cart)
+static const char FILENAME_CBM128[] = "SD:C64/launch128.cbm80";	// launch code (CBM80 8k cart)
+
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_neoram.tga";
+
+static u32 allUsedLEDs = 0;
 
 // setting EXROM and GAME (low = 0, high = 1)
 #define EXROM_ACTIVE	1
@@ -139,22 +144,62 @@ static void saveGeoRAM( const char *FILENAME_RAM )
 #ifdef COMPILE_MENU
 static void KernelRKLFIQHandler( void *pParam );
 
-void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 )
+void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 )
 #else
 void CKernelRKL::Run( void )
 #endif
 {
 	// setup control lines, initialize latch and software I2C buffer
 	initLatch();
-	latchSetClearImm( LATCH_ENABLE_KERNAL, LATCH_RESET | LATCH_LED_ALL );
+	latchSetClearImm( LATCH_ENABLE_KERNAL, LATCH_RESET );
 
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
 
-	#ifdef USE_OLED
-	splashScreen( raspi_ram_splash );
-	#endif
+	if ( screenType == 0 )
+	{
+		allUsedLEDs = LATCH_LED_ALL;
+		splashScreen( raspi_ram_splash );
+	} else
+	if ( screenType == 1 )
+	{
+		allUsedLEDs = LATCH_LED0to1;
+
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+		int w, h; 
+		extern char FILENAME_LOGO_RGBA[128];
+		extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		{
+			tftBlendRGBA( tempTGA, tftBackground, 0 );
+		}
+
+		tftCopyBackground2Framebuffer();
+
+		//
+		//u32 c1 = rgb24to16( 166, 250, 128 );
+		//u32 c2 = rgb24to16( 98, 216, 204 );
+		u32 c3 = rgb24to16( 233, 114, 36 );
+
+		char b1[64];
+		if ( sizeRAM < 1024 )
+			sprintf( b1, "size: %dkb", sizeRAM ); else
+			sprintf( b1, "size: %dmb", sizeRAM/1024 ); 
+
+		u32 charWidth = 16;
+		u32 l = strlen( b1 );
+		if ( l * 16 >= 240 )
+			charWidth = 13;
+	
+		u32 sx = max( 0, ( 240 - charWidth * l ) / 2 - 1 );
+		tftPrint( b1, sx, 204, c3, charWidth == 16 ? 0 : -3 );	
+
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	} 
 
 	// GeoRAM initialization
 	geoSizeKB = sizeRAM;
@@ -187,7 +232,7 @@ void CKernelRKL::Run( void )
 
 
 	u32 kernalSize = 0; // should always be 8192
-	if ( FILENAME_KERNAL != NULL )
+	if ( FILENAME_KERNAL != NULL && c128PRG == 0 )
 	{
 		hasKernal = 1;
 		readFile( logger, (char*)DRIVE, (char*)FILENAME_KERNAL, kernalROM, &kernalSize );
@@ -210,11 +255,21 @@ void CKernelRKL::Run( void )
 		} else
 		{
 			// use 8k cart launcher
-			readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
-			ultimaxDisabled = 1;
-			configGAMEEXROMSet = bGAME | bNMI | bDMA;
-			configGAMEEXROMClr = bEXROM | bCTRL257; 
-			SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
+			if ( c128PRG )
+			{
+				readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM128, launchCode, &size );
+				ultimaxDisabled = 1;
+				configGAMEEXROMSet = bGAME | bEXROM | bNMI | bDMA;
+				configGAMEEXROMClr = bCTRL257; 
+				SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
+			} else
+			{
+				readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
+				ultimaxDisabled = 1;
+				configGAMEEXROMSet = bGAME | bNMI | bDMA;
+				configGAMEEXROMClr = bEXROM | bCTRL257; 
+				SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
+			}
 		}
 	} else
 	{
@@ -283,6 +338,8 @@ void CKernelRKL::Run( void )
 	m_InputPin.DisableInterrupt();
 }
 
+u32 c64_state_01 = 0;
+
 
 #ifdef COMPILE_MENU
 static void KernelRKLFIQHandler( void *pParam )
@@ -314,7 +371,7 @@ void CKernelRKL::FIQHandler( void *pParam )
 		return;
 	}
 					
-
+		
 #if 1
 	// launch -->
 	if ( launchPrg )
@@ -393,10 +450,6 @@ void CKernelRKL::FIQHandler( void *pParam )
 	}
 #endif
 
-#if 1
-
-
-	// access to IO1 or IO2 => GeoRAM 
 	if ( IO1_OR_IO2_ACCESS )
 	{
 		if ( CPU_READS_FROM_BUS )	// CPU reads from memory page or register
@@ -427,7 +480,6 @@ void CKernelRKL::FIQHandler( void *pParam )
 		LED_ON( ( IO2_ACCESS ? 1 : 0 ) + ( CPU_WRITES_TO_BUS ? 2 : 0 ) )
 		#endif
 	}
-#endif
 
 	if ( BUTTON_PRESSED )
 	{
@@ -448,7 +500,8 @@ void CKernelRKL::FIQHandler( void *pParam )
 	}
 
 	#ifdef LED
-	//CLEAR_LEDS_EVERY_8K_CYCLES
+	if ( screenType == 0 )
+		CLEAR_LEDS_EVERY_8K_CYCLES
 	#endif
 
 	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING

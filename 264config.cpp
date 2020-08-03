@@ -35,11 +35,12 @@
 #include "helpers.h"
 #include "linux/kernel.h"
 
-#define DEBUG_OUT
+//#define DEBUG_OUT
 
 u32 skinFontLoaded;
 char skinFontFilename[ 1024 ];
 union T_SKIN_VALUES	skinValues;
+int screenType;
 
 void setSkinDefaultValues()
 {
@@ -106,6 +107,8 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 		menuX[ i ] = -1;
 
 	cfgPos = cfg;
+
+	screenType = 0;
 
 	while ( *cfgPos != 0 )
 	{
@@ -184,6 +187,19 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 				if ( strcmp( ptr, "SKIN_FONT" ) == 0 )
 				{
 					ptr = strtok_r( NULL, " \t", &rest );
+					strncpy( skinFontFilename, ptr, 1023 );
+				#ifdef DEBUG_OUT
+					logger->Write( "RaspiMenu", LogNotice, "  >%s<", skinFontFilename );
+				#endif
+				}
+
+				if ( strcmp( ptr, "DISPLAY" ) == 0 )
+				{
+					ptr = strtok_r( NULL, " \t", &rest );
+					if ( strstr( ptr, "OLED1306" ) )
+						screenType = 0;
+					if ( strstr( ptr, "ST7789" ) )
+						screenType = 1;
 					strncpy( skinFontFilename, ptr, 1023 );
 				#ifdef DEBUG_OUT
 					logger->Write( "RaspiMenu", LogNotice, "  >%s<", skinFontFilename );

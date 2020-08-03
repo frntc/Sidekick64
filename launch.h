@@ -35,6 +35,7 @@ static const char FILENAME[] = "SD:C64/test.prg";		// .PRG to start
 #endif
 static const char FILENAME_CBM80_ULTIMAX[] = "SD:C64/launch_ultimax.cbm80";	// launch code (CBM80 8k cart)
 static const char FILENAME_CBM80[] = "SD:C64/launch.cbm80";	// launch code (CBM80 8k cart)
+static const char FILENAME_CBM128[] = "SD:C64/launch128.cbm80";	// launch code (C128 cart)
 
 // setting EXROM and GAME (low = 0, high = 1)
 #define EXROM_ACTIVE	1
@@ -68,7 +69,7 @@ static int launchGetProgram( const char *FILENAME, bool hasData = false, u8 *prg
 	}
 }
 
-static void launchInitLoader( bool ultimax )
+static void launchInitLoader( bool ultimax, bool c128 )
 {
 	u32 size;
 	if ( ultimax )
@@ -79,10 +80,19 @@ static void launchInitLoader( bool ultimax )
 		readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80_ULTIMAX, launchCode, &size );
 	} else
 	{
-		configGAMEEXROMSet = bGAME | bNMI | bDMA;
-		configGAMEEXROMClr = bEXROM | bCTRL257; 
-		SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
-		readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
+		if ( c128 )
+		{
+			configGAMEEXROMSet = bGAME | bEXROM | bNMI | bDMA;
+			configGAMEEXROMClr = 0; 
+			SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
+			readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM128, launchCode, &size );
+		} else
+		{
+			configGAMEEXROMSet = bGAME | bNMI | bDMA;
+			configGAMEEXROMClr = bEXROM | bCTRL257; 
+			SETCLR_GPIO( configGAMEEXROMSet, configGAMEEXROMClr );
+			readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
+		}
 	}
 }
 
@@ -90,21 +100,16 @@ static void launchPrepareAndWarmCache()
 {
 	disableCart = transferStarted = currentOfs = 0;
 
-	// .PRG data
-	CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], 65536, CACHE_PRELOADL2STRM )
-	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 8 );
-
 	// launch code / CBM80
-	CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 8192, CACHE_PRELOADL2KEEP )
-	FORCE_READ_LINEARa( launchCode, 8192, 65536 * 8 );
-}
+	CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 1024, CACHE_PRELOADL2STRM )
+	FORCE_READ_LINEARa( launchCode, 1024, 65536 * 1 );
 
-//	if ( resetCounter > 3  ) {													\
-		disableCart = transferStarted = ultimaxDisabled = 0;					\
-		SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );			\
-		FINISH_BUS_HANDLING														\
-		return;																	\
-	}																			\
+	// .PRG data
+	CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], prgSize, CACHE_PRELOADL2STRM )
+	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 2 );
+
+	CACHE_PRELOADL2STRM( &prgData[ 0 ] );
+}
 
 
 #define LAUNCH_FIQ( resetCounter )												\
@@ -115,6 +120,7 @@ static void launchPrepareAndWarmCache()
 				/* any write to IO1 will (re)start the PRG transfer */			\
 				currentOfs = 0;													\
 				transferStarted = 1;											\
+				CACHE_PRELOADL2STRM( &prgData[ currentOfs ] );					\
 				FINISH_BUS_HANDLING												\
 				return;															\
 			} else 																\
@@ -125,8 +131,8 @@ static void launchPrepareAndWarmCache()
 					D = ( prgSize + 255 ) >> 8; else							\
 					/* $DE00 -> get next byte */								\
 					D = prgData[ currentOfs++ ];								\
-																				\
 				WRITE_D0to7_TO_BUS( D )											\
+				CACHE_PRELOADL2STRM( &prgData[ currentOfs ] );					\
 				FINISH_BUS_HANDLING												\
 				return;															\
 			}																	\

@@ -70,7 +70,7 @@
 #endif
 
 #ifdef COMPILE_MENU
-#include "kernel_menu.h"
+#include "kernel_menu264.h"
 #include "launch264.h"
 
 u32 launchPrg;

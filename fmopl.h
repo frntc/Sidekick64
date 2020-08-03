@@ -14,7 +14,7 @@ typedef signed char INT8;        /* signed  8bit   */
 typedef signed short INT16;      /* signed 16bit   */
 typedef signed int INT32;        /* signed 32bit   */
 
-typedef INT16 OPLSAMPLE;
+typedef int OPLSAMPLE;
 
 typedef struct {
     UINT32 ar;          /* attack rate: AR<<2           */

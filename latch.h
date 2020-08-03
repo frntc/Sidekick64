@@ -40,10 +40,10 @@
 
 #define LATCH_RESET			(1<<D0)
 
-#define LATCH_LEDO 			(1<<D1)
+/*#define LATCH_LEDO 			(1<<D1)
 #define LATCH_LEDG 			(1<<D2)
 #define LATCH_LEDR 			(1<<D3)
-#define LATCH_LEDB 			(1<<D4)
+#define LATCH_LEDB 			(1<<D4)*/
 
 #define LATCH_LED0 			(1<<D1)
 #define LATCH_LED1 			(1<<D2)
@@ -96,7 +96,7 @@ extern u32 i2cBufferCountLast, i2cBufferCountCur;
 
 static __attribute__( ( always_inline ) ) inline void outputLatch( bool withoutCycleCounter = false )
 {
-	//if ( latchD != latchDOld )
+	if ( latchD != latchDOld )
 	{
 		latchDOld = latchD;
 
@@ -105,10 +105,11 @@ static __attribute__( ( always_inline ) ) inline void outputLatch( bool withoutC
 
 		if ( withoutCycleCounter )
 		{
-			DELAY(4);
+			//DELAY(8);
 			write32( ARM_GPIO_GPSET0, (1 << LATCH_CONTROL) );
-			DELAY(4);
+			DELAY(8);
 			write32( ARM_GPIO_GPCLR0, (1 << LATCH_CONTROL) ); 
+			DELAY(8);
 		} else
 		{
 			BEGIN_CYCLE_COUNTER
@@ -167,9 +168,39 @@ static __attribute__( ( always_inline ) ) inline u32 getI2CCommand()
 	return ret;
 }
 
+static __attribute__( ( always_inline ) ) inline void put4BitCommand( u32 c )
+{
+	u32 memOfs = i2cBufferCountCur >> 1;
+	u8  bitOfs = (i2cBufferCountCur & 1 ) << 2; 
+	u8  v = i2cBuffer[ memOfs ];
+	v &= ~( 15 << bitOfs );
+	v |= ( c & 15 ) << bitOfs;
+	i2cBuffer[ memOfs ] = v;
+
+	i2cBufferCountCur++;
+	i2cBufferCountCur &= ( FAKE_I2C_BUF_SIZE - 1 );
+}
+
+static __attribute__( ( always_inline ) ) inline u32 get4BitCommand()
+{
+	u32 memOfs = i2cBufferCountLast >> 1;
+	u8  bitOfs = (i2cBufferCountLast & 1 ) << 2; 
+	u8  ret = ( ( i2cBuffer[ memOfs ] >> bitOfs ) & 15 );
+
+	i2cBufferCountLast++;
+	i2cBufferCountLast &= ( FAKE_I2C_BUF_SIZE - 1 );
+	return ret;
+}
+
+
 static __attribute__( ( always_inline ) ) inline boolean bufferEmptyI2C()
 {
 	return ( i2cBufferCountLast == i2cBufferCountCur );
+}
+
+static __attribute__( ( always_inline ) ) inline u32 bufferIsFreeI2C()
+{
+	return ( i2cBufferCountLast - i2cBufferCountCur + FAKE_I2C_BUF_SIZE - 1 ) % FAKE_I2C_BUF_SIZE;
 }
 
 static __attribute__( ( always_inline ) ) inline void prefetchI2C()
@@ -241,6 +272,52 @@ static __attribute__( ( always_inline ) ) inline void flushI2CBuffer( bool witho
 		if ( withoutCycleCounter )
 		{
 			DELAY( 512 );
+		} else
+		{
+			RESTART_CYCLE_COUNTER
+			WAIT_UP_TO_CYCLE( 7000 )
+		}
+	}
+	write32( ARM_GPIO_GPCLR0, ( 1 << LATCH_CONTROL ) );
+	i2cBufferCountLast = i2cBufferCountCur = 0;
+}
+
+static __attribute__( ( always_inline ) ) inline void prepareOutputLatch4Bit()
+{
+	test:
+	if ( !bufferEmptyI2C() )
+	{
+		u32 v = get4BitCommand();
+
+		const u32 tab[4] = { LATCH_SCL, LATCH_SDA, LATCH_LED3, LATCH_LED2 };
+		u32 c = tab[ v >> 2 ]; 
+
+		u32 oldLatchD = latchD;
+		if ( v & 1 )
+			latchD |= c; else
+			latchD &= ~c;
+		if ( oldLatchD == latchD )
+			goto test;
+	} else
+	{
+		i2cBufferCountLast = i2cBufferCountCur = 0;
+	}
+}
+
+static __attribute__( ( always_inline ) ) inline void flush4BitBuffer( bool withoutCycleCounter = false )
+{
+	u64 armCycleCounter = 0;
+	if ( !withoutCycleCounter )
+	{
+		RESTART_CYCLE_COUNTER
+	}
+	while ( !bufferEmptyI2C() )
+	{
+		prepareOutputLatch4Bit();
+		outputLatch( withoutCycleCounter );
+		if ( withoutCycleCounter )
+		{
+			//DELAY( 512 );
 		} else
 		{
 			RESTART_CYCLE_COUNTER

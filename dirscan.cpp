@@ -248,7 +248,7 @@ int readD64File( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *d
 }
 
 
-void readDirectory( const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xffffffff, u32 level = 0 )
+void readDirectory( const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xffffffff, u32 level = 0, u32 takeAll = 0 )
 {
 	char temp[ 4096 ];
 
@@ -336,13 +336,20 @@ void readDirectory( const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xfff
 					d[ *n ].level = level;
 					( *n )++;
 				}
-				if ( strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".bin" ) > 0 )
+				/*if ( strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".bin" ) > 0 )
 				{
 					d[ *n ].f = DIR_PRG_FILE;
 					d[ *n ].parent = parent;
 					d[ *n ].level = level;
 					( *n )++;
-				}
+				}*/
+				if ( strstr( FileInfo.fname, ".rom" ) > 0 || strstr( FileInfo.fname, ".ROM" ) > 0 || takeAll == 1 )
+				{
+					d[ *n ].f = DIR_CRT_FILE;
+					d[ *n ].parent = parent;
+					d[ *n ].level = level;
+					( *n )++;
+				} 
 			}
 		}
 
@@ -361,17 +368,20 @@ void scanDirectories( char *DRIVE )
 	u32 head;
 	nDirEntries = 0;
 
-	#define APPEND_SUBTREE( NAME, PATH  )					\
-		head = nDirEntries ++;								\
-		strcpy( (char*)dir[ head ].name, NAME );			\
-		dir[ head ].f = DIR_DIRECTORY;						\
-		dir[ head ].parent = 0xffffffff;					\
-		readDirectory( PATH, dir, &nDirEntries, head, 1 );	\
+	#define APPEND_SUBTREE( NAME, PATH, ALL )						\
+		head = nDirEntries ++;										\
+		strcpy( (char*)dir[ head ].name, NAME );					\
+		dir[ head ].f = DIR_DIRECTORY;								\
+		dir[ head ].parent = 0xffffffff;							\
+		readDirectory( PATH, dir, &nDirEntries, head, 1, ALL );		\
+		if ( nDirEntries == (s32)head + 1 ) nDirEntries --; else	\
 		dir[ head ].next = nDirEntries;
 
-	APPEND_SUBTREE( "CRT", "SD:CRT" )
-	APPEND_SUBTREE( "D64", "SD:D64" )
-	APPEND_SUBTREE( "PRG", "SD:PRG" )
+	APPEND_SUBTREE( "CRT", "SD:CRT", 0 )
+	APPEND_SUBTREE( "D64", "SD:D64", 0 )
+	APPEND_SUBTREE( "PRG", "SD:PRG", 0 )
+	APPEND_SUBTREE( "PRG128", "SD:PRG128", 0 )
+	APPEND_SUBTREE( "CART128", "SD:CART128", 1 )
 
 	// unmount file system
 	if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
@@ -389,17 +399,8 @@ void scanDirectories264( char *DRIVE )
 	u32 head;
 	nDirEntries = 0;
 
-	#define APPEND_SUBTREE( NAME, PATH  )					\
-		head = nDirEntries ++;								\
-		strcpy( (char*)dir[ head ].name, NAME );			\
-		dir[ head ].f = DIR_DIRECTORY;						\
-		dir[ head ].parent = 0xffffffff;					\
-		readDirectory( PATH, dir, &nDirEntries, head, 1 );	\
-		dir[ head ].next = nDirEntries;
-
-	//APPEND_SUBTREE( "CRT", "SD:CRT" )
-	APPEND_SUBTREE( "D264", "SD:D264" )
-	APPEND_SUBTREE( "PRG264", "SD:PRG264" )
+	APPEND_SUBTREE( "D264", "SD:D264", 0 )
+	APPEND_SUBTREE( "PRG264", "SD:PRG264", 0 )
 
 	// unmount file system
 	if ( f_mount( 0, DRIVE, 0 ) != FR_OK )

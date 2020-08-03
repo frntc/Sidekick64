@@ -58,6 +58,7 @@ void DIGITAL_WRITE_LOW( u32 PORT )
 // Some code based on "IIC_wtihout_ACK" by http://www.14blog.com/archives/1358
 
 const uint8_t ssd1306_init_sequence [] PROGMEM = {	// Initialization Sequence
+#if 1
 	0xAE,			// Display OFF (sleep mode)
 	0x20, 0b00,		// Set Memory Addressing Mode
 					// 00=Horizontal Addressing Mode; 01=Vertical Addressing Mode;
@@ -84,7 +85,32 @@ const uint8_t ssd1306_init_sequence [] PROGMEM = {	// Initialization Sequence
 	0x20,			// 0x20,0.77xVcc
 	0x8D, 0x14,		// Set DC-DC enable
 	0xAF			// Display ON in normal mode
+#endif
+
+#if 0
+	// some modifications to the original init sequence above (seemed to work better with some SSD1306)
+	0xae,			// display off
+	0xa8, 63,		// multiplex ratio
+	0xd3, 0x00,		// display offset
+	0x40 | 0x0,		// startline
+	0xA1, 0xC8,
 	
+	0xda, 0x12,		// <- 128x64, for 128x32 it would be 0x02
+
+	0xa4,			// test display off
+	0xa6,			// normal display
+	0xd9, 0xff,		// precharge period
+	0xdb, 0x30,		// VCOMH deselct
+	0xd5, 0x80,		// clock devide
+	0x8d, 0x14,		// enable charge pump
+
+	0x20, 0x0,		// addressing mode
+	0x22, 0b000, 0b111,
+		
+	0x2d,			// deactivate scroll
+	0xaf			// display on
+
+#endif
 };
 
 // ----------------------------------------------------------------------------

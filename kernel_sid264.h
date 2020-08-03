@@ -127,7 +127,7 @@ extern unsigned int SID_DigiBoost[2];
 #endif
 
 #ifdef COMPILE_MENU
-#include "kernel_menu.h"
+#include "kernel_menu264.h"
 void KernelSIDFIQHandler( void *pParam );
 #define FIQ_HANDLER	KernelSIDFIQHandler
 #define FIQ_PARENT	kernelMenu

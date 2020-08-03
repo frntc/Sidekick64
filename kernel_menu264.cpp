@@ -41,6 +41,11 @@ static const char FILENAME_CBM80[] = "SD:C16/launch16.cbm80";	// launch code (CB
 static const char FILENAME_CONFIG[] = "SD:C16/sidekick264.cfg";		
 static const char FILENAME_NEORAM[] = "SD:C16/launchNeoRAM.prg";
 
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk264_main.tga";		
+static const char FILENAME_TFT_FONT[] = "SD:SPLASH/PXLfont88665b-RF2.3-C64sys.bin";		
+
+char FILENAME_LOGO_RGBA[128] = "SD:SPLASH/sk264_logo_blend.tga";
+
 static u32	disableCart     = 0;
 static u32	resetCounter    = 0;
 static u32	transferStarted = 0;
@@ -88,23 +93,112 @@ char filenameKernal[ 2048 ];
 CLogger			*logger;
 CScreenDevice	*screen;
 
+static u32 LED_DEACTIVATE_CART1_HIGH;	
+static u32 LED_DEACTIVATE_CART1_LOW;	
+static u32 LED_DEACTIVATE_CART2_HIGH;	
+static u32 LED_DEACTIVATE_CART2_LOW;	
+
+static u32 LED_ACTIVATE_CART1_HIGH;	
+static u32 LED_ACTIVATE_CART1_LOW;		
+static u32 LED_ACTIVATE_CART2_HIGH;	
+static u32 LED_ACTIVATE_CART2_LOW;		
+
+static u32 LED_INIT1_HIGH;	
+static u32 LED_INIT1_LOW;	
+static u32 LED_INIT2_HIGH;	
+static u32 LED_INIT2_LOW;	
+static u32 LED_INIT3_HIGH;	
+static u32 LED_INIT3_LOW;	
+static u32 LED_INIT4_HIGH;	
+static u32 LED_INIT4_LOW;	
+static u32 LED_INIT5_HIGH;	
+static u32 LED_INIT5_LOW;	
+static u32 LED_INITERR_HIGH;
+static u32 LED_INITERR_LOW;
+
+static void initScreenAndLEDCodes()
+{
+	if ( screenType == 0 ) // OLED with SCL and SDA (i.e. 2 Pins) -> 4 LEDs
+	{
+		 LED_DEACTIVATE_CART1_HIGH	= LATCH_LED_ALL;
+		 LED_DEACTIVATE_CART1_LOW	= 0;
+		 LED_DEACTIVATE_CART2_HIGH	= 0;
+		 LED_DEACTIVATE_CART2_LOW	= LATCH_LED_ALL;
+
+		 LED_ACTIVATE_CART1_HIGH	= LATCH_LED_ALL;
+		 LED_ACTIVATE_CART1_LOW		= 0;
+		 LED_ACTIVATE_CART2_HIGH	= 0;
+		 LED_ACTIVATE_CART2_LOW		= LATCH_LED_ALL;
+
+		 LED_INIT1_HIGH				= LATCH_LED0;
+		 LED_INIT1_LOW				= LATCH_LED1to3;
+		 LED_INIT2_HIGH				= LATCH_LED1;
+		 LED_INIT2_LOW				= 0;
+		 LED_INIT3_HIGH				= LATCH_LED2;
+		 LED_INIT3_LOW				= 0;
+		 LED_INIT4_HIGH				= LATCH_LED3;
+		 LED_INIT4_LOW				= 0;
+		 LED_INIT5_HIGH				= 0;
+		 LED_INIT5_LOW				= LATCH_LED_ALL;
+		 LED_INITERR_HIGH			= LATCH_LED_ALL;
+		 LED_INITERR_LOW			= 0;
+	} else
+	if ( screenType == 1 ) // RGB TFT with SCL, SDA, DC, RES -> 2 LEDs
+	{
+		 LED_DEACTIVATE_CART1_HIGH	= (LATCH_LED0|LATCH_LED1);
+		 LED_DEACTIVATE_CART1_LOW	= 0; 
+		 LED_DEACTIVATE_CART2_HIGH	= 0;
+		 LED_DEACTIVATE_CART2_LOW	= (LATCH_LED0|LATCH_LED1);
+
+		 LED_ACTIVATE_CART1_HIGH	= (LATCH_LED0|LATCH_LED1);
+		 LED_ACTIVATE_CART1_LOW		= 0;
+		 LED_ACTIVATE_CART2_HIGH	= 0;
+		 LED_ACTIVATE_CART2_LOW		= (LATCH_LED0|LATCH_LED1);
+
+		 LED_INIT1_HIGH				= LATCH_LED0;
+		 LED_INIT1_LOW				= LATCH_LED1;
+		 LED_INIT2_HIGH				= LATCH_LED1;
+		 LED_INIT2_LOW				= LATCH_LED0;
+		 LED_INIT3_HIGH				= LATCH_LED0;
+		 LED_INIT3_LOW				= LATCH_LED1;
+		 LED_INIT4_HIGH				= LATCH_LED1;
+		 LED_INIT4_LOW				= LATCH_LED0;
+		 LED_INIT5_HIGH				= 0;
+		 LED_INIT5_LOW				= (LATCH_LED0|LATCH_LED1);
+		 LED_INITERR_HIGH			= (LATCH_LED0|LATCH_LED1);
+		 LED_INITERR_LOW			= 0;
+	}
+}
+
+
 u32 doActivateCart = 0;
 
 void deactivateCart()
 {
 	doActivateCart = 0;
 	disableCart = 1;
-	latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LED_DEACTIVATE_CART1_HIGH, LED_DEACTIVATE_CART1_LOW | LATCH_RESET | LATCH_ENABLE_KERNAL );
 	SET_GPIO( bGAME | bEXROM | bNMI | bDMA );
 
-	for ( int j = 255; j > 63; j -- )
+	if ( screenType == 0 )
 	{
-		oledSetContrast( j );
+		for ( int j = 255; j > 63; j -- )
+		{
+			oledSetContrast( j );
+			flushI2CBuffer( true );
+			DELAY( 1 << 17 );
+		}
+	} else
+	if ( screenType == 1 )
+	{
 		flushI2CBuffer( true );
+		tftBlendRGBA( 0, 0, 0, 128, tftFrameBuffer, 8 );
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+		flush4BitBuffer( true );
 		DELAY( 1 << 17 );
-	}
+	} 
 
-	latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LATCH_RESET | LED_DEACTIVATE_CART2_HIGH, LED_DEACTIVATE_CART2_LOW | LATCH_ENABLE_KERNAL );
 }
 
 void activateCart()
@@ -120,14 +214,25 @@ void activateCart()
 		memcpy( cartL1, cartCBM80, 8192 );
 	}
 
-	latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LED_ACTIVATE_CART1_HIGH, LED_ACTIVATE_CART1_LOW | LATCH_RESET | LATCH_ENABLE_KERNAL );
 	SETCLR_GPIO( bNMI, bCTRL257 );
 
 	DELAY( 1 << 20 );
 
-	oledSetContrast( 255 );
-	flushI2CBuffer( true );
-	latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+	if ( screenType == 0 )
+	{
+		oledSetContrast( 255 );
+		flushI2CBuffer();
+	} else
+	if ( screenType == 1 )
+	{
+		tftCopyBackground2Framebuffer();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+		flush4BitBuffer( true );
+		DELAY( 1 << 17 );
+	}
+
+	latchSetClearImm( LATCH_RESET | LED_ACTIVATE_CART2_HIGH, LED_ACTIVATE_CART2_LOW | LATCH_ENABLE_KERNAL );
 }
 
 #ifdef COMPILE_MENU_WITH_SOUND
@@ -171,7 +276,6 @@ boolean CKernelMenu::Initialize( void )
 	if ( bOK ) bOK = m_VCHIQ.Initialize();
 	pVCHIQ = &m_VCHIQ;
 #endif
-	latchSetClearImm( LATCH_LED0, LATCH_LED1to3 );
 
 	// initialize ARM cycle counters (for accurate timing)
 	initCycleCounter();
@@ -182,7 +286,8 @@ boolean CKernelMenu::Initialize( void )
 	// initialize latch and software I2C buffer
 	initLatch();
 
-	latchSetClearImm( LATCH_LED0, LATCH_LED1to3 );
+	initScreenAndLEDCodes();
+	latchSetClearImm( LED_INIT1_HIGH, LED_INIT1_LOW );
 
 	// read launch code
 	u32 size = 0;
@@ -194,7 +299,7 @@ boolean CKernelMenu::Initialize( void )
 	cartMode = 0;
 	memcpy( cartL1, cartCBM80, 8192 );
 
-	latchSetClearImm( LATCH_LED1, 0 );
+	latchSetClearImm( LED_INIT2_HIGH, LED_INIT2_LOW );
 
 	// read .PRG
 	readFile( logger, (char*)DRIVE, (char*)FILENAME_PRG, prgData, &prgSize );
@@ -205,16 +310,16 @@ boolean CKernelMenu::Initialize( void )
 	prgData[0] = ( ( prgSize + 255 ) >> 8 );
 
 
-	latchSetClearImm( LATCH_LED2, 0 );
+	latchSetClearImm( LED_INIT3_HIGH, LED_INIT3_LOW );
 
 	extern void scanDirectories264( char *DRIVE );
 	scanDirectories264( (char *)DRIVE );
 
-	latchSetClearImm( LATCH_LED3, 0 );
+	latchSetClearImm( LED_INIT4_HIGH, LED_INIT4_LOW );
 
 	if ( !readConfig( logger, (char*)DRIVE, (char*)FILENAME_CONFIG ) )
 	{
-		latchSetClearImm( LATCH_LED_ALL, 0 );
+		latchSetClearImm( LED_INITERR_HIGH, LED_INITERR_LOW );
 		logger->Write( "RaspiMenu", LogPanic, "error reading .cfg" );
 	}
 
@@ -231,7 +336,7 @@ boolean CKernelMenu::Initialize( void )
 	renderC64();
 	disableCart = 0;
 
-	latchSetClearImm( 0, LATCH_LED_ALL );
+	latchSetClearImm( LED_INIT5_HIGH, LED_INIT5_LOW );
 
 	return bOK;
 }
@@ -248,13 +353,11 @@ __attribute__( ( always_inline ) ) inline void warmCache( void *fiqh, bool scree
 		CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
 		CACHE_PRELOAD_DATA_CACHE( c64color, 1024, CACHE_PRELOADL2STRM );
 	}
-	//CACHE_PRELOAD_DATA_CACHE( cartCBM80, 8192, CACHE_PRELOADL2KEEP );
 	CACHE_PRELOAD_DATA_CACHE( prgData, 65536, CACHE_PRELOADL2STRM );
 	CACHE_PRELOAD_DATA_CACHE( cartL1, 32768, CACHE_PRELOADL2KEEP );
 
 	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)fiqh, 2048*2 );
 
-	//FORCE_READ_LINEARa( cartCBM80, 8192, 8192 * 10 )
 	FORCE_READ_LINEARa( cartL1, 32768, 32768 * 10 )
 	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 4 )
 	FORCE_READ_LINEARa( (void*)fiqh, 2048*2, 65536 );
@@ -278,13 +381,24 @@ void CKernelMenu::Run( void )
 	prgCurSize      = prgSize;
 	prgCurLaunch    = &prgData[0];
 
-	#ifdef USE_OLED
-	splashScreen( raspi_264_splash );
-	#endif
+	if ( screenType == 0 )
+	{
+		// no idea why, but I have one SSD1306 that requires this to be called twice after power up
+		splashScreen( raspi_264_splash );
+		splashScreen( raspi_264_splash );
+	} else
+	if ( screenType == 1 )
+	{
+		tftLoadCharset( DRIVE, FILENAME_TFT_FONT );
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 ); 
+		tftCopyBackground2Framebuffer();
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	}
 
 	if ( !disableCart )
 	{
-		latchSetClearImm( 0, LATCH_RESET | LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+		latchSetClearImm( 0, LATCH_RESET | LATCH_ENABLE_KERNAL );
 
 		// setup FIQ
 		DisableIRQs();
@@ -357,10 +471,10 @@ void CKernelMenu::Run( void )
 					}
 					memcpy( cartL1, cart_c16, 32768 );
 					CLR_GPIO( bCTRL257 );
-					latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+					latchSetClearImm( LATCH_LED0to1, LATCH_RESET | LATCH_ENABLE_KERNAL );
 					DELAY( 1 << 17 );
 					SET_GPIO( bNMI );
-					latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+					latchSetClearImm( LATCH_RESET, LATCH_LED0to1 | LATCH_ENABLE_KERNAL );
 				}
 			} else
 			{
@@ -485,7 +599,7 @@ void mainMenu()
 	CKernelMenu kernel;
 	if ( kernel.Initialize() )
 		kernel.Run();
-	setLatchFIQ( LATCH_LEDO );
+	setLatchFIQ( LATCH_LED0 );
 	prepareOutputLatch();
 	outputLatch();
 }
@@ -505,7 +619,7 @@ int main( void )
 
 		kernel.Run();
 
-		latchSetClearImm( LATCH_LED_ALL, LATCH_RESET | LATCH_ENABLE_KERNAL );
+		latchSetClearImm( LATCH_LED0, LATCH_RESET | LATCH_ENABLE_KERNAL );
 		SET_GPIO( bNMI | bDMA ); 
 
 		BEGIN_CYCLE_COUNTER

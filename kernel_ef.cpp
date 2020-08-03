@@ -40,6 +40,8 @@ extern char *FILENAME;
 static const char FILENAME[] = "SD:test.crt";
 #endif
 
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_ef3_bg.tga";
+
 // temporary buffers to read cartridge data from SD
 static CRT_HEADER header;
 
@@ -175,13 +177,6 @@ __attribute__( ( always_inline ) ) inline void prefetchHeuristic()
 	// the RPi is not really convinced enough to preload data into caches when calling "prfm PLD*", so we access the data (and a bit more than our current bank)
 	FORCE_READ_LINEAR( ef.flashBank, 16384 * 2 )
 	FORCE_READ_LINEAR32( ef.ram, 256 )
-/*	FORCE_READ_LINEAR( ef.flashBank, 16384 )
-	FORCE_READ_LINEAR( ef.flashBank, 16384 )
-	FORCE_READ_LINEAR32( ef.ram, 256 )*/
-
-//	FORCE_READ_LINEARa( ef.flashBank, 16384, 16384 * 8 )
-//	FORCE_READ_LINEARa( ef.ram, 256, 256 * 8 )
-	//FORCE_READ_LINEAR32( ef.ram, 256 )
 }
 
 
@@ -195,9 +190,46 @@ __attribute__( ( always_inline ) ) inline void prefetchComplete()
 	FORCE_READ_RANDOM( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 8192 * 2 * ef.nBanks * 16 )
 }
 
+static u32 LED_INIT1_HIGH;	
+static u32 LED_INIT1_LOW;	
+static u32 LED_INIT2_HIGH;	
+static u32 LED_INIT2_LOW;	
+static u32 LED_ROM_ACCESS, LED_RAM_ACCESS, LED_IO1, LED_IO2, LED_CLEAR;
+
+static void initScreenAndLEDCodes()
+{
+	#ifndef COMPILE_MENU
+	int screenType = 0;
+	#endif
+	if ( screenType == 0 ) // OLED with SCL and SDA (i.e. 2 Pins) -> 4 LEDs
+	{
+		LED_INIT1_HIGH				= LATCH_LED_ALL;
+		LED_INIT1_LOW				= 0;
+		LED_INIT2_HIGH				= 0;
+		LED_INIT2_LOW				= LATCH_LED_ALL;
+		LED_ROM_ACCESS				= LATCH_LED0;
+		LED_RAM_ACCESS				= LATCH_LED1;
+		LED_IO1						= LATCH_LED3;
+		LED_IO2						= LATCH_LED2;
+		LED_CLEAR					= LATCH_LED_ALL;
+	} else
+	if ( screenType == 1 ) // RGB TFT with SCL, SDA, DC, RES -> 2 LEDs
+	{
+		LED_INIT1_HIGH				= LATCH_LED0to1;
+		LED_INIT1_LOW				= 0;
+		LED_INIT2_HIGH				= 0;
+		LED_INIT2_LOW				= LATCH_LED0to1;
+		LED_ROM_ACCESS				= LATCH_LED0;
+		LED_RAM_ACCESS				= LATCH_LED1;
+		LED_IO1						= LATCH_LED0to1;
+		LED_IO2						= LATCH_LED1;
+		LED_CLEAR					= LATCH_LED0to1;
+	}
+}
+
 #ifdef COMPILE_MENU
 static void KernelEFFIQHandler( void *pParam );
-void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME )
+void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr )
 #else
 void CKernelEF::Run( void )
 #endif
@@ -205,25 +237,103 @@ void CKernelEF::Run( void )
 	// initialize latch and software I2C buffer
 	initLatch();
 
-	latchSetClearImm( 0, LATCH_RESET | LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+	initScreenAndLEDCodes();
+
+	latchSetClearImm( LED_INIT1_HIGH, LATCH_RESET | LED_INIT1_LOW | LATCH_ENABLE_KERNAL );
 
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
 
-	#ifdef USE_OLED
-	char fn[ 1024 ];
-	// attention: this assumes that the filename ending is always ".crt"!
-	memset( fn, 0, 1024 );
-	strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
-	strcat( fn, ".logo" );
-	if ( !splashScreenFile( (char*)DRIVE, fn ) )
-		splashScreen( raspi_flash_splash );
-	#endif
-
 	// read .CRT
 	ef.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[ 0 ] + 128 ) & ~127 );
 	readCRTFile( logger, &header, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, &ef.bankswitchType, &ef.ROM_LH, &ef.nBanks );
+
+	#ifdef COMPILE_MENU
+	if ( screenType == 0 )
+	{
+		char fn[ 1024 ];
+		// attention: this assumes that the filename ending is always ".crt"!
+		memset( fn, 0, 1024 );
+		strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
+		strcat( fn, ".logo" );
+		if ( !splashScreenFile( (char*)DRIVE, fn ) )
+			splashScreen( raspi_flash_splash );
+	} else
+	if ( screenType == 1 )
+	{
+		char fn[ 1024 ];
+		// attention: this assumes that the filename ending is always ".crt"!
+		memset( fn, 0, 1024 );
+		strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
+		strcat( fn, ".tga" );
+
+		if ( !tftLoadBackgroundTGA( (char*)DRIVE, fn ) )
+		{
+			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+			int w, h; 
+			extern char FILENAME_LOGO_RGBA[128];
+			extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+			if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+			{
+				tftBlendRGBA( tempTGA, tftBackground, 0 );
+			}
+
+			tftCopyBackground2Framebuffer();
+
+			//
+			u32 c1 = rgb24to16( 166, 250, 128 );
+			//u32 c2 = rgb24to16( 98, 216, 204 );
+			u32 c3 = rgb24to16( 233, 114, 36 );
+			
+			char b1[512];
+			strcpy( b1, menuItemStr );
+			for ( size_t i = 0; i < strlen( b1 ); i++ )
+			{
+				if ( b1[i] >= 65 && b1[i] <= 90 )
+				{
+					b1[ i ] += 97-65;
+				} else
+				if ( b1[i] >= 97 && b1[i] <= 122 )
+				{
+					b1[ i ] -= 97-65;
+				} 
+			}
+			int charWidth = 16;
+			int l = strlen( b1 );
+			if ( l * 16 >= 240 )
+				charWidth = 13;
+			if ( l * 13 >= 240 )
+				b1[ 18 ] = 0;
+	
+			int sx = max( 0, ( 240 - charWidth * l ) / 2 - 1 );
+			tftPrint( b1, sx, 220-16, c1, charWidth == 16 ? 0 : -3 );	
+
+			if ( ef.bankswitchType == BS_MAGICDESK )
+				sprintf( b1, "md %d BANKS (%d KB)", ef.nBanks, ef.nBanks * 8192 / 1024 );
+			if ( ef.bankswitchType == BS_EASYFLASH )
+				sprintf( b1, "%d BANKS (%d KB)", ef.nBanks, ef.nBanks * 16384 / 1024 );
+			if ( ef.bankswitchType == BS_NONE )
+				sprintf( b1, "cbm80 cARTRIDGE" );
+			charWidth = 16;
+			l = strlen( b1 );
+			if ( l * 16 >= 240 )
+				charWidth = 13;
+			if ( l * 13 >= 240 )
+				b1[ 18 ] = 0;
+	
+			sx = max( 0, ( 240 - charWidth * l ) / 2 - 1 );
+			tftPrint( b1, sx, 220, c3, charWidth == 16 ? 0 : -3 );	
+
+		}
+
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	} 
+	#endif
+
 
 	// first initialization of EF
 	for ( u32 i = 0; i < sizeof( memconfig_table ); i++ )
@@ -270,7 +380,7 @@ void CKernelEF::Run( void )
 	prefetchHeuristic();
 
 	// ready to go...
-	latchSetClearImm( LATCH_RESET, 0 );
+	latchSetClearImm( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
 
 	ef.c64CycleCount = ef.resetCounter2 = 0;
 
@@ -311,23 +421,22 @@ void CKernelEF::FIQHandler (void *pParam)
 
 	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
 
-	if ( modeC128 && VIC_HALF_CYCLE )
-		WAIT_CYCLE_MULTIPLEXER += 20;
-
-	// read the rest of the signals
-	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
-
-	if ( modeC128 && VIC_HALF_CYCLE )
-		WAIT_CYCLE_MULTIPLEXER -= 20;
-
-	// make our address complete
-	addr |= GET_ADDRESS8to12;
-
 	//
 	//
 	//
 	if ( VIC_HALF_CYCLE )
 	{
+		//if ( modeC128 )
+			//WAIT_CYCLE_MULTIPLEXER += 20;
+
+		// read the rest of the signals
+		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+		//if ( modeC128 )
+			//WAIT_CYCLE_MULTIPLEXER -= 20;
+
+		// make our address complete
+		addr |= GET_ADDRESS8to12;
 
 		if ( ROML_OR_ROMH_ACCESS )
 		{
@@ -336,24 +445,35 @@ void CKernelEF::FIQHandler (void *pParam)
 			if ( ROMH_ACCESS ) D >>= 8;
 
 			WRITE_D0to7_TO_BUS_VIC( D )
-			LED0_ON
+			setLatchFIQ( LED_ROM_ACCESS );
 		} else
 		if ( IO2_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
 		{
 			WRITE_D0to7_TO_BUS_VIC( ef.ram[ GET_IO12_ADDRESS ] );
-			LED1_ON
+			setLatchFIQ( LED_IO2 );
 		} else
-
 		if ( IO1_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
 		{
 			WRITE_D0to7_TO_BUS_VIC( easyflash_IO1_Read( GET_IO12_ADDRESS ) );
-			LED1_ON
+			setLatchFIQ( LED_IO1 );
 		}
 		
 		FINISH_BUS_HANDLING
 		return;
 	} 
 
+
+//	if ( modeC128 && VIC_HALF_CYCLE )
+//		WAIT_CYCLE_MULTIPLEXER += 15;
+
+	// read the rest of the signals
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+//	if ( modeC128 && VIC_HALF_CYCLE )
+//		WAIT_CYCLE_MULTIPLEXER -= 15;
+
+	// make our address complete
+	addr |= GET_ADDRESS8to12;
 
 
 	// VIC2 read during badline?
@@ -393,21 +513,21 @@ void CKernelEF::FIQHandler (void *pParam)
 			}
 
 			WRITE_D0to7_TO_BUS( D )
-			LED0_ON
+			setLatchFIQ( LED_ROM_ACCESS );
 			goto cleanup;
 		}
 
 		if ( IO2_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
 		{
 			WRITE_D0to7_TO_BUS( ef.ram[ GET_IO12_ADDRESS ] )
-			LED2_ON
+			setLatchFIQ( LED_IO2 );
 			goto cleanup;
 		}
 
 		if ( IO1_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
 		{
 			PUT_DATA_ON_BUS_AND_CLEAR257( easyflash_IO1_Read( GET_IO12_ADDRESS ) )
-			LED3_ON
+			setLatchFIQ( LED_IO1 );
 			goto cleanup;
 		}
 	}
@@ -455,7 +575,7 @@ void CKernelEF::FIQHandler (void *pParam)
 			setGAMEEXROM();
 		}
 
-		LED3_ON
+		setLatchFIQ( LED_IO1 );
 		goto cleanup;
 	}
 
@@ -463,7 +583,7 @@ void CKernelEF::FIQHandler (void *pParam)
 	{
 		READ_D0to7_FROM_BUS( D )
 		ef.ram[ GET_IO12_ADDRESS ] = D;
-		LED2_ON
+		setLatchFIQ( LED_IO2 );
 		goto cleanup;
 	}
 
@@ -491,7 +611,11 @@ cleanup:
 		SET_GPIO( bDMA ); 
 	}
 
-	CLEAR_LEDS_EVERY_8K_CYCLES
+	//CLEAR_LEDS_EVERY_8K_CYCLES
+	static u32 cycleCount = 0;
+	if ( !((++cycleCount)&8191) )
+		clrLatchFIQ( LED_CLEAR );
+
 	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 }
 

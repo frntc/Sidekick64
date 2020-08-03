@@ -33,9 +33,13 @@
 // use the OLED connected to the latch
 #define USE_OLED
 
-#if defined(USE_OLED) && !defined(USE_LATCH_OUTPUT)
+// 0 = SSD1306 OLED 128x64
+// 1 = ST7789 RGB TFT 240x240
+extern int screenType;
+
+//#if defined(USE_OLED) && !defined(USE_LATCH_OUTPUT)
 #define USE_LATCH_OUTPUT
-#endif
+//#endif
 
 #define USE_HDMI_VIDEO
 
@@ -75,10 +79,9 @@
 #include "crt.h"
 #include "mygpiopinfiq.h"
 
-#ifdef USE_OLED
 #include "oled.h"
 #include "splash_sidekick264.h"
-#endif
+#include "tft_st7789.h"
 
 extern CLogger *logger;
 

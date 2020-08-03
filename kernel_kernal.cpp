@@ -34,6 +34,10 @@ static const char DRIVE[] = "SD:";
 static const char FILENAME[] = "SD:KERNAL/sd2iec.bin";
 static unsigned char kernalROM[ 65536 ];
 
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_kernal.tga";
+
+static u32 allUsedLEDs = 0;
+
 // for rebooting the RPi
 static u64 c64CycleCount = 0;
 static u32 resetCounter = 0;
@@ -48,12 +52,31 @@ void CKernelKernal::Run( void )
 
 	SETCLR_GPIO( bEXROM | bNMI | bGAME, bCTRL257 ); 
 
-	#ifdef USE_OLED
-	splashScreen( sidekick_kernal_oled );
-	#endif
+	#ifdef COMPILE_MENU
+	if ( screenType == 0 )
+	{
+		allUsedLEDs = LATCH_LED_ALL;
+		splashScreen( sidekick_kernal_oled );
+	} else
+	if ( screenType == 1 )
+	{
+		allUsedLEDs = LATCH_LED0to1;
 
-	#ifndef COMPILE_MENU
-	m_EMMC.Initialize();
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+		int w, h; 
+		extern char FILENAME_LOGO_RGBA[128];
+		extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		{
+			tftBlendRGBA( tempTGA, tftBackground, 0 );
+		}
+
+		tftCopyBackground2Framebuffer();
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	} 
 	#endif
 
 	// read kernal rom 
@@ -76,7 +99,7 @@ void CKernelKernal::Run( void )
 	c64CycleCount = resetCounter = 0;
 
 	// ready to go
-	latchSetClearImm( LATCH_ENABLE_KERNAL | LATCH_RESET, LATCH_LED_ALL );
+	latchSetClearImm( LATCH_ENABLE_KERNAL | LATCH_RESET, allUsedLEDs );
 
 	// wait forever
 	while ( true )

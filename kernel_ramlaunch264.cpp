@@ -33,6 +33,8 @@
 
 static const char DRIVE[] = "SD:";
 
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk264_neocrt.tga";
+static const char FILENAME_SPLASH_RGB_RAMONLY[] = "SD:SPLASH/sk64_neoram.tga";
 // let them blink
 //#define LED
 
@@ -127,16 +129,45 @@ void CKernelRL::Run( void )
 	m_EMMC.Initialize();
 	#endif
 
-	#ifdef USE_OLED
-	char fn[ 1024 ];
-	// attention: this assumes that the filename ending is always ".neocrt"!
-	memset( fn, 0, 1024 );
-	strncpy( fn, FILENAME_RAM, strlen( FILENAME_RAM ) - 7 );
-	strcat( fn, ".logo" );
-	if ( !splashScreenFile( (char*)DRIVE, fn ) )
-		splashScreen( raspi_ram_splash );
-	#endif
+	if ( screenType == 0 )
+	{
+		char fn[ 1024 ];
+		// attention: this assumes that the filename ending is always ".neocrt"!
+		memset( fn, 0, 1024 );
+		strncpy( fn, FILENAME_RAM, strlen( FILENAME_RAM ) - 7 );
+		strcat( fn, ".logo" );
+		if ( !splashScreenFile( (char*)DRIVE, fn ) )
+			splashScreen( raspi_ram_splash );
+	} else
+	if ( screenType == 1 )
+	{
+		char fn[ 1024 ];
+		// attention: this assumes that the filename ending is always ".neocrt"!
+		memset( fn, 0, 1024 );
+		strncpy( fn, FILENAME_RAM, strlen( FILENAME_RAM ) - 7 );
+		strcat( fn, ".tga" );
 
+		if ( !tftLoadBackgroundTGA( (char*)DRIVE, fn ) )
+		{
+			if ( strstr( FILENAME_RAM, ".neocrt" ) == 0 )
+				tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB_RAMONLY, 8 ); else
+				tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+			int w, h; 
+			extern char FILENAME_LOGO_RGBA[128];
+			extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+			if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+			{
+				tftBlendRGBA( tempTGA, tftBackground, 0 );
+			}
+
+			tftCopyBackground2Framebuffer();
+		}
+
+		tftInitImm();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+	} 
 	// GeoRAM initialization
 	geoSizeKB = sizeRAM;
 	geoRAM_Init();
@@ -202,20 +233,6 @@ void CKernelRL::Run( void )
 	while ( true )
 	{
 		TEST_FOR_JUMP_TO_MAINMENU_CB( geo.c64CycleCount, geo.resetCounter, saveGeoRAM(FILENAME_RAM) )
-		/*if ( geo.c64CycleCount > 2000000 && geo.resetCounter > 500000 ) {
-				EnableIRQs();
-				m_InputPin.DisableInterrupt();
-				m_InputPin.DisconnectInterrupt();
-				saveGeoRAM(FILENAME_RAM);
-				return;
-			}*/
-
-
-/*		if ( geo.saveRAM )
-		{
-			saveGeoRAM( FILENAME_RAM );
-			geo.saveRAM = 0;
-		}*/
 
 		asm volatile ("wfi");
 	}
@@ -305,7 +322,7 @@ void CKernelRL::FIQHandler( void *pParam )
 	}
 
 	#ifdef LED
-	CLEAR_LEDS_EVERY_8K_CYCLES
+	//CLEAR_LEDS_EVERY_8K_CYCLES
 	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 	#else
 	FINISH_BUS_HANDLING

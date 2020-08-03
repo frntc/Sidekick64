@@ -58,15 +58,29 @@ void sendFramebufferNext( u32 nBytes )
 {
 	if( sfb_y == 8 ) return;
 
-	if ( sfb_x == 0 && sfb_y == 0 )
+	if ( sfb_x == 0 /*&& sfb_y == 0*/ )
 	{
-		ssd1306_setpos( 0, sfb_y );
+		//ssd1306_setpos( 0, sfb_y );
+
+		extern void ssd1306_send_command_start(void);
+		extern void ssd1306_send_command_stop(void);
+		ssd1306_send_command_start();
+		u32 col = 0;
+		ssd1306_send_command( 0xb0 | sfb_y );
+		ssd1306_send_command( 0x00 | (col & 0xf) );
+		ssd1306_send_command( 0x10 | (col >> 4) );
+	  //ssd1306_send_command( 0x81 );
+	  //ssd1306_send_command( 0xcf );
+		ssd1306_send_command_stop();
+
 		ssd1306_send_data_start();
 	}
 
 	for ( u32 i = 0; i < nBytes; i++ )
 	{
+		//ssd1306_send_data_start();
 		ssd1306_send_byte( oledFrameBuffer[ sfb_j ++ ] );
+		//ssd1306_send_data_stop();
 		sfb_x ++;
 	}
 
@@ -99,31 +113,62 @@ void oledSetContrast( u8 c )
 	ssd1306_send_command( c ); 
 }
 
-void splashScreen( const u8 *fb )
+void splashScreen2( const u8 *fb )
 {
-	ssd1306_init();
-	ssd1306_send_command( 0x81 ); // SSD1306_SETCONTRAST
-	ssd1306_send_command( 0xfF ); // 0x9F or 0xCF
-	ssd1306_send_command( 0x2E ); // SSD1306_DEACTIVATE_SCROLL
+	extern void ssd1306_send_command_start(void);
+	extern void ssd1306_send_command_stop(void);
+
+	//SendCommand(SSD1306_CMD_SET_PAGE | page);		// 0xB0 page address
+	//SendCommand(SSD1306_CMD_SET_COLUMN_LOW | (col & 0xf));	// 0x00 column address lower bits
+	//SendCommand(SSD1306_CMD_SET_COLUMN_HIGH | (col >> 4));	// 0x10 column address upper bits
 
 	flushI2CBuffer( true );
 
 	for ( int y = 0; y < 64 / 8; y++ )
 	{
-		ssd1306_setpos( 0, y );
-		flushI2CBuffer( true );
+		ssd1306_send_command_start();
+		u32 col = 2;
+		ssd1306_send_command( 0xb0 | y );
+		ssd1306_send_command( 0x00 | (col & 0xf) );
+		ssd1306_send_command( 0x10 | (col >> 4) );
+		ssd1306_send_command_stop();
 
-		ssd1306_send_data_start();
+		//ssd1306_setpos( 0, y );
 		flushI2CBuffer( true );
 
 		for ( int x = 0; x < 128; x++ )
 		{
+			ssd1306_send_data_start();
 			ssd1306_send_byte( *fb++ );
+			ssd1306_send_data_stop();
 			flushI2CBuffer( true );
 		}
-		ssd1306_send_data_stop();
-		flushI2CBuffer( true );
+
+/*		s32 tobesent = 128;
+
+		while ( tobesent > 0 )
+		{
+			ssd1306_send_data_start();
+			flushI2CBuffer( true );
+
+			for ( int x = 0; x < min( 8, tobesent ); x++ )
+			{
+				ssd1306_send_byte( *fb++ );
+				flushI2CBuffer( true );
+			}
+			tobesent -= 8;
+
+			ssd1306_send_data_stop();
+			flushI2CBuffer( true );
+		}*/
 	}
+}
+
+void splashScreen( const u8 *fb )
+{
+	ssd1306_init();
+	//ssd1306_send_command( 0x2E ); // SSD1306_DEACTIVATE_SCROLL
+	splashScreen2( fb );
 }
 
 int splashScreenFile( const char *drive, char *fn )

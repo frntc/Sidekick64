@@ -39,6 +39,10 @@ static u32 launchPrg;
 
 #undef USE_VCHIQ_SOUND
 
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_sid_bg2.tga";
+static const char FILENAME_SPLASH_RGB2[] = "SD:SPLASH/sk64_sid_bg.tga";
+static const char FILENAME_LED_RGB[] = "SD:SPLASH/sk64_sid_led.tga";
+
 //                 _________.___________         ____                      ________    ______  ____________  
 //_______   ____  /   _____/|   \______ \       /  _ \       ___.__. _____ \_____  \  /  __  \/_   \_____  \ 
 //\_  __ \_/ __ \ \_____  \ |   ||    |  \      >  _ </\    <   |  |/     \  _(__  <  >      < |   |/  ____/ 
@@ -158,6 +162,7 @@ void initSID()
 				sid[ i ]->input( -32768 );
 			}
 		}
+		//sid[ 0 ]->clock( 1000000 );
 	}
 
 #ifdef EMULATE_OPL2
@@ -239,14 +244,47 @@ boolean CKernel::Initialize( void )
 
 static u32 renderDone = 0;
 
+static u32 visMode = 0;
+static u32 visModeGotoNext = 0;
+
+static float px = 120.0f;
+static float dx = 0.0f;
+static u32 startRow = 1, endRow = 1;
+static float vuValueAvg = 0.01f;
+static u32 visUpdate = 1;
+static int scopeX = 0;
+static u8 scopeValues[ 240 ] = {0};
+static u32 nPrevLEDs[3] = {0, 0, 0};
+static float ledValueAvg[3] = { 0.01f, 0.01f, 0.01f };
+
+static void initVisualization()
+{
+	visMode = 0;
+	visModeGotoNext = 0;
+	px = 120.0f;
+	dx = 0.0f;
+	startRow = 1; endRow = 1;
+	vuValueAvg = 0.01f;
+	visUpdate = 1;
+	scopeX = 0;
+	memset( scopeValues, 0, 256 );
+	nPrevLEDs[0] = nPrevLEDs[1] = nPrevLEDs[2] = 0;
+	ledValueAvg[0] = ledValueAvg[1] = ledValueAvg[2] = 0.01f;
+}
+
+static unsigned char tftBackground2[ 240 * 240 * 2 ];
+static unsigned char tftLEDs[ 240 * 240 * 2 ];
+
 static u32 vu_Mode = 0;
 static u32 vuMeter[4] = { 0, 0, 0, 0 };
-static u32 vu_nLEDs = 0;
+static u32 vu_nLEDs = 0xffff;
+
+static u32 allUsedLEDs = 0;
 
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler( void *pParam );
 
-void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0 )
+void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 )
 #else
 void CKernel::Run( void )
 #endif
@@ -260,19 +298,94 @@ void CKernel::Run( void )
 
 	// initialize latch and software I2C buffer
 	initLatch();
-	latchSetClearImm( 0, LATCH_RESET | LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+
+	#ifndef COMPILE_MENU
+	int screenType = 0;
+	#endif
+
+	if ( screenType == 0 )
+		allUsedLEDs = LATCH_LED_ALL;
+	if ( screenType == 1 )
+		allUsedLEDs = LATCH_LED0to1;
+	
+	latchSetClearImm( 0, LATCH_RESET | allUsedLEDs | LATCH_ENABLE_KERNAL );
 
 	SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );
 
-	#ifdef USE_OLED
-	// I know this is a gimmick, but I couldn't resist ;-)
-	splashScreen( raspi_sid_splash );
+	#ifdef COMPILE_MENU
+	if ( screenType == 0 )
+	{
+		splashScreen( raspi_sid_splash );
+	} else
+	if ( screenType == 1 )
+	{
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+		int w, h; 
+		extern char FILENAME_LOGO_RGBA[128];
+		extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		{
+			tftBlendRGBA( tempTGA, tftBackground, 0 );
+		}
+
+		tftCopyBackground2Framebuffer();
+
+		u32 c1 = rgb24to16( 166, 250, 128 );
+		u32 c2 = rgb24to16( 98, 216, 204 );
+		u32 c3 = rgb24to16( 233, 114, 36 );
+		char b1[64], b2[64], b3[64];
+		int charWidth = 16;
+		const char *addr[3] = { "$d420", "$d500", "$de00" };
+
+		sprintf( b1, "%s", SID_MODEL[ 0 ] == 6581 ? "6581":"8580" );
+
+		if ( cfgSID2_Disabled )
+			b2[ 0 ] = 0; else
+		{
+			if ( cfgSID2_PlaySameAsSID1 )
+			sprintf( b2, "+%s/$d400", SID_MODEL[ 1 ] == 6581 ? "6581":"8580"); else
+			sprintf( b2, "+%s/%s", SID_MODEL[ 1 ] == 6581 ? "6581":"8580", addr[cfgSID2_Addr]);
+		}
+
+		if ( cfgEmulateOPL2 )
+			sprintf( b3, "+fm" ); else
+			b3[ 0 ] = 0;
+
+		int l = strlen( b1 ) + strlen( b2 ) + strlen( b3 );
+		if ( l * 16 >= 240 )
+			charWidth = 13;
+		int sx = max( 0, ( 240 - charWidth * l ) / 2 - 2 );
+		tftPrint( b1, sx, 224, c1, charWidth == 16 ? 0 : -3 );	sx += strlen( b1 ) * charWidth;
+		tftPrint( b2, sx, 224, c2, charWidth == 16 ? 0 : -3 );	sx += strlen( b2 ) * charWidth;
+		tftPrint( b3, sx, 224, c3, charWidth == 16 ? 0 : -3 );
+
+		tftInit();
+		tftSendFramebuffer16BitImm( tftFrameBuffer );
+		tftConvertFrameBuffer12Bit();
+
+		tftClearDirty();
+		extern void tftPrepareDirtyUpdates();
+		tftPrepareDirtyUpdates();
+		tftUse12BitColor();
+
+		memcpy( tftBackground2, tftBackground, 240 * 240 * 2 );
+		tftLoadBackgroundTGA( DRIVE, FILENAME_LED_RGB, 8 );
+		memcpy( tftLEDs, tftBackground, 240 * 240 * 2 );
+
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB2, 8 );
+
+		initVisualization();
+	} 
 	#endif
 
 	//	logger->Write( "", LogNotice, "initialize SIDs..." );
 	initSID();
 
 	#ifdef COMPILE_MENU
+	disableCart = 0;
+
 	if ( FILENAME == NULL && !hasData )
 	{
 		launchPrg = 0;
@@ -281,7 +394,7 @@ void CKernel::Run( void )
 	{
 		launchPrg = 1;
 		if ( launchGetProgram( FILENAME, hasData, prgDataExt, prgSizeExt ) )
-			launchInitLoader( false ); else
+			launchInitLoader( false, c128PRG ); else
 			launchPrg = 0;
 	}
 	#endif
@@ -298,7 +411,7 @@ void CKernel::Run( void )
 
 #ifndef COMPILE_MENU
 
-	latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 
 	cycleCountC64 = 0;
 	while ( cycleCountC64 < 10 ) 
@@ -352,21 +465,38 @@ void CKernel::Run( void )
 	unsigned int ringRead = 0;
 
 	#ifdef COMPILE_MENU
+	if ( launchPrg )
+		{SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );} else
+		{SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );}
+
+	CleanDataCache();
+	InvalidateDataCache();
+	InvalidateInstructionCache();
+
 	// let's be very convincing about the caches ;-)
-	for ( u32 i = 0; i < 20; i++ )
+	for ( u32 i = 0; i < 10; i++ )
 	{
-		launchPrepareAndWarmCache();
+		if ( launchPrg )
+			launchPrepareAndWarmCache();
 
 		// FIQ handler
 		CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 3*1024 );
 		FORCE_READ_LINEAR32( (void*)&FIQ_HANDLER, 3*1024 );
 	}
 
-	if ( !launchPrg )
-		SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );
+	DELAY(1<<17);
 
-	DELAY(10);
-	latchSetClearImm( LATCH_RESET, LATCH_LED_ALL | LATCH_ENABLE_KERNAL );
+	if ( launchPrg )
+	{
+		// don't ask... sometimes the launcher seems to mess up something during transfer (cache issue), this additional reset seems to make this go away
+		// better preloading strategy tbd
+		latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+		DELAY(1<<27);
+		latchSetClearImm( 0, LATCH_RESET | allUsedLEDs | LATCH_ENABLE_KERNAL );
+		DELAY(1<<20);
+		resetCounter = resetReleased = cycleCountC64 = 0;
+	}
+	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 
 	if ( launchPrg )
 	{
@@ -376,7 +506,18 @@ void CKernel::Run( void )
 			TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
 			#endif
 			asm volatile ("wfi");
+
+			//if ( cycleCountC64 > 2000000 ) //&& currentOfs < prgSize )
+			/*if ( currentOfs >= prgSize )
+			{
+				DELAY(1<<27);
+				latchSetClearImm( 0, LATCH_RESET | allUsedLEDs | LATCH_ENABLE_KERNAL );
+				DELAY(1<<20);
+				latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+			}*/
+
 		}
+	latchSetClearImm( LATCH_LED0, 0 );
 	} 
 	#endif
 
@@ -384,17 +525,8 @@ void CKernel::Run( void )
 	nCyclesEmulated = 0;
 	samplesElapsed = 0;
 	ringRead = 0;
-	for ( int i = 0; i < NUM_SIDS; i++ )
-		for ( int j = 0; j < 24; j++ )
-			sid[ i ]->write( j, 0 );
 
-	#ifdef EMULATE_OPL2
-	if ( cfgEmulateOPL2 )
-	{
-		fmFakeOutput = 0;
-		ym3812_reset_chip( pOPL );
-	}
-	#endif
+	latchSetClear( 0, allUsedLEDs );
 
 	// new main loop mainloop
 	while ( true )
@@ -427,22 +559,24 @@ void CKernel::Run( void )
 			#endif
 		}
 
-	#ifdef USE_OLED
-		if ( renderDone == 2 )
+		#ifdef COMPILE_MENU
+		//if ( screenType_ == 0 )
 		{
-			if ( !sendFramebufferDone() )
-				sendFramebufferNext( 1 );		
+			if ( renderDone == 2 )
+			{
+				if ( !sendFramebufferDone() )
+					sendFramebufferNext( 1 );		
 
-			if ( sendFramebufferDone() )
-				renderDone = 3;
+				if ( sendFramebufferDone() )
+					renderDone = 3;
+			}
+			if ( bufferEmptyI2C() && renderDone == 1 )
+			{
+				sendFramebufferStart();
+				renderDone = 2;
+			}
 		}
-		if ( bufferEmptyI2C() && renderDone == 1 )
-		{
-			sendFramebufferStart();
-			renderDone = 2;
-		}
-
-	#endif
+		#endif
 
 	#ifndef EMULATION_IN_FIQ
 
@@ -471,14 +605,35 @@ void CKernel::Run( void )
 			nSamplesInThisRun++;
 		#endif
 
+			CACHE_PRELOADL2STRMW( &smpCur );
+
+		#ifdef SMPCARRY
+
+			static u32 carrySamples = 0;
+			u32 samplesToEmulateX65536 = ( ( unsigned long long )65536 * ( unsigned long long )CLOCKFREQ ) / ( unsigned long long )SAMPLERATE + ( unsigned long long )carrySamples;
+
+			u32 samplesToEmulate = samplesToEmulateX65536 >> 16;
+			carrySamples = (samplesToEmulateX65536 & 65535);
+
+//			do 
+			{ // do SID emulation until time passed to create an additional sample (i.e. there may be several cycles until a sample value is created)
+				#ifdef USE_PWM_DIRECT
+				u32 cyclesToEmulate = samplesToEmulate;
+				#else			
+				u32 cyclesToEmulate = 2;
+				#endif
+
+		#else
 			unsigned long long samplesElapsedBefore = samplesElapsed;
 
 			do { // do SID emulation until time passed to create an additional sample (i.e. there may be several cycles until a sample value is created)
 				#ifdef USE_PWM_DIRECT
-				u32 cyclesToEmulate = 8;
+				u32 cyclesToEmulate = 4;
 				#else			
 				u32 cyclesToEmulate = 2;
 				#endif
+		#endif
+
 				sid[ 0 ]->clock( cyclesToEmulate );
 				#ifndef SID2_DISABLED
 				if ( !cfgSID2_Disabled )
@@ -526,13 +681,17 @@ void CKernel::Run( void )
 					ringRead &= ( RING_SIZE - 1 );
 				}
 
+		#ifdef SMPCARRY
+			}
+		#else
 				samplesElapsed = ( ( unsigned long long )nCyclesEmulated * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
 
 			} while ( samplesElapsed == samplesElapsedBefore );
-
+		#endif
+			CACHE_PRELOADL2STRMW( &sampleBuffer[ smpCur ] );
 			s16 val1 = sid[ 0 ]->output();
 			s16 val2 = 0;
-			s16 valOPL = 0;
+			s32 valOPL = 0;
 
 		#ifndef SID2_DISABLED
 			if ( !cfgSID2_Disabled )
@@ -557,8 +716,8 @@ void CKernel::Run( void )
 			right = ( val1 * cfgVolSID1_Left  + val2 * cfgVolSID2_Left  + valOPL * cfgVolOPL_Left ) >> 8;
 			left  = ( val1 * cfgVolSID1_Right + val2 * cfgVolSID2_Right + valOPL * cfgVolOPL_Right ) >> 8;
 
-			right = max( -32767, min( 32767, right ) );
-			left  = max( -32767, min( 32767, left ) );
+			right = max( -31767, min( 31767, right ) );
+			left  = max( -31767, min( 31767, left ) );
 
 			#ifdef USE_PWM_DIRECT
 			putSample( left, right );
@@ -567,34 +726,37 @@ void CKernel::Run( void )
 			putSample( right );
 			#endif
 
+		#if 1
 			// vu meter
 			static u32 vu_nValues = 0;
 			static float vu_Sum[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
 			
-			if ( vu_Mode != 2 )
+			//if ( vu_Mode != 2 )
 			{
-				float t = (left+right) / (float)32768.0f * 0.2f;
+				float t = (left+right) / (float)32768.0f * 0.5f;
 				vu_Sum[ 0 ] += t * t * 1.0f;
 
-				vu_Sum[ 1 ] += val2 * val2 / (float)32768.0f / (float)32768.0f * 0.25f;
-				vu_Sum[ 2 ] += val1 * val1 / (float)32768.0f / (float)32768.0f * 0.25f;
-				vu_Sum[ 3 ] += valOPL * valOPL / (float)32768.0f / (float)32768.0f * 0.25f;
+				vu_Sum[ 1 ] += val1 * val1 / (float)32768.0f / (float)32768.0f;
+				vu_Sum[ 2 ] += val2 * val2 / (float)32768.0f / (float)32768.0f;
+				vu_Sum[ 3 ] += valOPL * valOPL / (float)32768.0f / (float)32768.0f;
 
-				if ( ++ vu_nValues == 256*4 )
+				if ( ++ vu_nValues == 256*2 )
 				{
 					for ( u32 i = 0; i < 4; i++ )
 					{
-						float vu_Volume = 50.0f * (log10( 1.0f + sqrt( (float)vu_Sum[ i ] / (float)vu_nValues ) ) );
+						float vu_Volume = max( 0.0f, 2.0f * (log10( 0.1f + sqrt( (float)vu_Sum[ i ] / (float)vu_nValues ) ) + 1.0f) );
 						u32 v = vu_Volume * 1024.0f;
 						if ( i == 0 )
 						{
-							vu_nLEDs = v >> 8;
+							// moving average
+							float v = min( 1.0f, (float)vuMeter[ 0 ] / 1024.0f );
+							static float led4Avg = 0.0f;
+							led4Avg = led4Avg * 0.8f + v * ( 1.0f - 0.8f );
+
+							vu_nLEDs = max( 0, min( 4, (led4Avg * 8.0f) ) );
 							if ( vu_nLEDs > 4 ) vu_nLEDs = 4;
 						}
-						vuMeter[ i ] = v >> 2;
-						vuMeter[ i ] *= vuMeter[ i ];
-						vuMeter[ i ] >>= 8;
-
+						vuMeter[ i ] = v;
 						vu_Sum[ i ] = 0;
 					}
 
@@ -602,8 +764,19 @@ void CKernel::Run( void )
 				}
 			}
 
-			// ugly code which renders 3 oscilloscopes (SID1, SID2, FM) to HDMI and 1 for the OLED
-			#include "oscilloscope_hack.h"
+			#ifdef COMPILE_MENU
+			if ( screenType == 0 )
+			{
+				#include "oscilloscope_hack.h"
+			} else
+			if ( screenType == 1 )
+			{
+				const float scaleVis = 1.0f;
+				const u32 nLevelMeters = 3;
+				#include "tft_sid_vis.h"
+			} 
+			#endif
+		#endif
 		}
 	#endif
 	}
@@ -645,6 +818,8 @@ void CKernel::FIQHandler (void *pParam)
 	if ( launchPrg && !disableCart )
 	{
 		register u32 D;
+
+		CACHE_PRELOADL2STRM( &prgData[ currentOfs ] );
 
 		// after this call we have some time (until signals are valid, multiplexers have switched, the RPi can/should read again)
 		START_AND_READ_ADDR0to7_RW_RESET_CS
@@ -847,25 +1022,28 @@ void CKernel::FIQHandler (void *pParam)
 		return;
 	} 
 	#endif
-	
 
 	//           ___  __       
 	// |     /\   |  /  ` |__| 
 	// |___ /~~\  |  \__, |  | 
 	//
+	#ifdef COMPILE_MENU
 	#ifdef USE_LATCH_OUTPUT
-	if ( --latchDelayOut == 1 && renderDone == 3 )
+	if ( screenType == 0 )
 	{
-		prefetchI2C();
-	}
-	if ( latchDelayOut <= 0 && renderDone == 3 )
-	{
-		latchDelayOut = 2;
-		prepareOutputLatch();
-		if ( bufferEmptyI2C() ) renderDone = 0;
-		OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
-		return;
+		if ( --latchDelayOut == 1 && renderDone == 3 )
+		{
+			prefetchI2C();
+		}
+		if ( latchDelayOut <= 0 && renderDone == 3 )
+		{
+			latchDelayOut = 2;
+			prepareOutputLatch();
+			if ( bufferEmptyI2C() ) renderDone = 0;
+			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+			return;
 
+		}
 	}
 	#endif
 
@@ -878,41 +1056,64 @@ void CKernel::FIQHandler (void *pParam)
 		( (fCount & 4) << 3 ) |
 		( (fCount & 2) << 5 ) |
 		( (fCount & 1) << 7 );
+	#endif
 
 	static u32 lastButtonPressed = 0;
 
 	if ( lastButtonPressed > 0 )
 		lastButtonPressed --;
 
+	static u32 buttonIsPressed = 0;
+
 	if ( BUTTON_PRESSED && lastButtonPressed == 0 )
+		buttonIsPressed ++; else
+		buttonIsPressed = 0;
+
+	if ( buttonIsPressed > 50 )
 	{
+		visModeGotoNext = 1;
 		vu_Mode = ( vu_Mode + 1 ) & 3;
 		lastButtonPressed = 100000;
 	}
 
-	if ( vu_Mode == 0 )
+	#ifdef COMPILE_MENU
+	if ( screenType == 0 )
 	{
-		setLatchFIQ( LATCH_ON[ vu_nLEDs ] );
-		clrLatchFIQ( LATCH_OFF[ vu_nLEDs ] );
-	} else
-	if ( vu_Mode == 1 )
-	{
-		if ( swizzle < vuMeter[ 0 ] )
-			setLatchFIQ( LATCH_LED_ALL ); else
-			clrLatchFIQ( LATCH_LED_ALL );		
-	} else
-	if ( vu_Mode == 2 )
-	{
-		u32 led =
-			( ( swizzle < vuMeter[ 1 ] ) ? LATCH_LED1 : 0 ) |
-			( ( swizzle < vuMeter[ 2 ] ) ? LATCH_LED2 : 0 ) |
-			( ( swizzle < vuMeter[ 3 ] ) ? LATCH_LED3 : 0 );
+		if ( vu_nLEDs != 0xffff )
+		{
+			if ( vu_Mode == 0 )
+			{
+				setLatchFIQ( LATCH_ON[ vu_nLEDs ] );
+				clrLatchFIQ( LATCH_OFF[ vu_nLEDs ] );
+			} else
+			if ( vu_Mode == 1 )
+			{
+				if ( swizzle < vuMeter[ 0 ] )
+					setLatchFIQ( LATCH_LED_ALL ); else
+					clrLatchFIQ( LATCH_LED_ALL );		
+			} else
+			if ( vu_Mode == 2 )
+			{
+				u32 led =
+					( ( swizzle < vuMeter[ 1 ] ) ? LATCH_LED1 : 0 ) |
+					( ( swizzle < vuMeter[ 2 ] ) ? LATCH_LED2 : 0 ) |
+					( ( swizzle < vuMeter[ 3 ] ) ? LATCH_LED3 : 0 );
 
-		setLatchFIQ( led );
-		clrLatchFIQ( ( (~led) & LATCH_LED_ALL ) | LATCH_LED0 );		
+				setLatchFIQ( led );
+				clrLatchFIQ( ( (~led) & LATCH_LED_ALL ) | LATCH_LED0 );		
+			} else
+				clrLatchFIQ( LATCH_LED_ALL );		
+		}
 	} else
-		clrLatchFIQ( LATCH_LED_ALL );		
+	{
 
+		//prepareOutputLatch4Bit();
+		//outputLatch();
+		prepareOutputLatch4Bit();
+		outputLatch();
+		//OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+	}
+	#endif
 	FINISH_BUS_HANDLING
 }
 

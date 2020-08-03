@@ -53,13 +53,14 @@ u8 c64color[ 40 * 25 + 1024 * 4 ];
 
 char *errorMsg = NULL;
 
-char errorMessages[5][41] = {
+char errorMessages[6][41] = {
 //   1234567890123456789012345678901234567890
 	"                NO ERROR                ",
 	"  ERROR: UNKNOWN/UNSUPPORTED .CRT TYPE  ",
 	"          ERROR: NO .CRT-FILE           ", 
 	"          ERROR READING FILE            ",
-	"            SETTINGS SAVED              "
+	"            SETTINGS SAVED              ",
+	"         WRONG SYSTEM, NO C128!         "
 };
 
 
@@ -163,6 +164,8 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 		}
 
 		sprintf( temp, "%s%s", t2, dir[ idx ].name );
+		if ( strlen( temp ) > 34 )
+			temp[ 35 ] = 0;
 		printC64( 2, lines + 3, temp, color, idx == cursorPos ? 0x80 : 0, convert );
 		lastVisible = idx;
 
@@ -188,6 +191,8 @@ void printBrowserScreen()
 	//printC64(0,0,  "0123456789012345678901234567890123456789", 15, 0 );
 	printC64( 0,  1, "        .- sidekick64-browser -.        ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 	printC64( 0, 23, "   F1/F3 Page Up/Down, F7 Back to Menu  ", skinValues.SKIN_BROWSER_TEXT_HEADER, 0, 3 );
+	if ( modeC128 )
+		printC64( 0, 24, "SHIFT+RETURN to launch PRGs in C128-mode", skinValues.SKIN_BROWSER_TEXT_HEADER, 0, 3 );
 
 	if ( subGeoRAM )
 	{
@@ -234,28 +239,28 @@ void resetMenuState( int keep = 0 )
 	subHasLaunch = -1;
 }
 
-int getMainMenuSelection( int key, char **FILE, int *addIdx )
+int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 {
 	*FILE = NULL;
 
 	if ( key >= 'a' && key <= 'z' )
 		key = key + 'A' - 'a';
 
+	if ( menuItemStr )
+		menuItemStr[ 0 ] = 0;
 
-//	if ( key == 'X' ) { resetMenuState(0); return 1;/* Exit */ } else
-//	if ( key == 'Z' ) { resetMenuState(3); return 2;/* Browser */ } else
-	if ( key == 140 /* F8 */ ) { resetMenuState(0); return 1;/* Exit */ } else
+	if ( key == 140 /*F8*/ ) { resetMenuState(0); return 1;/* Exit */ } else
 	if ( key == 136 /*F7*/ ) { resetMenuState(3); return 2;/* Browser */ } else
 	if ( key == 133 /*F1*/ ) { resetMenuState(1); return 3;/* GEORAM */ } else
 	if ( key == 134 /*F3*/ ) { resetMenuState(2); return 4;/* SID */ } else
-//	if ( key == 'R' ) { resetMenuState(1); return 3;/* GEORAM */ } else
-//	if ( key == 'S' ) { resetMenuState(2); return 4;/* SID */ } else
 	{
 		if ( key >= 'A' && key < 'A' + menuItems[ 2 ] ) // CRT
 		{
 			resetMenuState(); 
 			int i = key - 'A';
 			*FILE = menuFile[ 2 ][ i ];
+			if ( menuItemStr )
+				strcpy( menuItemStr, menuText[ 2 ][ i ] );
 			//logger->Write( "RaspiMenu", LogNotice, "%s -> %s\n", menuText[ 2 ][ i ], menuFile[ 2 ][ i ] );
 			return 5;
 		} else
@@ -263,6 +268,8 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx )
 		{
 			int i = key - 'A' - menuItems[ 2 ];
 			*FILE = menuFile[ 3 ][ i ];
+			if ( menuItemStr )
+				strcpy( menuItemStr, menuText[ 3 ][ i ] );
 			//logger->Write( "RaspiMenu", LogNotice, "%s -> %s\n", menuText[ 3 ][ i ], menuFile[ 3 ][ i ] );
 			return 6;
 		} else
@@ -339,31 +346,33 @@ void applySIDSettings()
 						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12] );
 }
 
+//static int lastKeyDebug = 0;
 
 // ugly, hard-coded handling of UI
-void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
+void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, char *menuItemStr, u32 *startC128 = NULL )
 {
 	char *filename;
 
 	if ( menuScreen == MENU_MAIN )
 	{
+		//lastKeyDebug = k;
 		//if ( k == 'z' || k == 'Z' )
 		if ( k == 136 /* F7 */ )
 		{
 			menuScreen = MENU_BROWSER;
-			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal );
+			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
 		//if ( k == 'y' || k == 'Y' )
 		if ( k == 135 /* F5 */ )
 		{
 			menuScreen = MENU_CONFIG;
-			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal );
+			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
 
 		int temp;
-		int r = getMainMenuSelection( k, &filename, &temp );
+		int r = getMainMenuSelection( k, &filename, &temp, menuItemStr );
 
 		if ( subSID == 1 )
 		{
@@ -424,6 +433,23 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 			subGeoRAM = 0;
 			return;
 		case 5: // .CRT file
+			if ( strstr( filename, "CART128") != 0 )
+			{
+				if ( modeC128 == 0 )
+				{
+					*launchKernel = 0;
+					errorMsg = errorMessages[ 5 ];
+					previousMenuScreen = menuScreen;
+					menuScreen = MENU_ERROR;
+					return;
+				} else
+				{
+					*launchKernel = 9;
+					errorMsg = NULL;
+					strcpy( FILENAME, filename );
+					return;
+				}
+			}
 			tempKernel = checkCRTFile( logger, DRIVE, filename, &err );
 			if ( err > 0 )
 			{
@@ -452,17 +478,14 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 	if ( menuScreen == MENU_BROWSER )
 	{
 		// browser screen
-		//if ( k == 'z' || k == 'Z' )
 		if ( k == 136 /* F7 */ )
 		{
 			menuScreen = MENU_MAIN;
-			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal );
+			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
 
 		int rep = 1;
-//		if ( k == 136 || k == 140 ) { k = 17; rep = DISPLAY_LINES - 1; }
-//		if ( k == 135 || k == 139 ) { k = 145; rep = DISPLAY_LINES - 1; }
 		if ( k == 134 ) { k = 17; rep = DISPLAY_LINES - 1; }
 		if ( k == 133 ) { k = 145; rep = DISPLAY_LINES - 1; }
 
@@ -557,8 +580,15 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 			if ( scrollPos >= nDirEntries ) scrollPos = nDirEntries - 1;
 		}
 
-		if ( k == 13 )
+		if ( k == 13 || k == 141 )
 		{
+			if ( startC128 && modeC128 )
+			{
+				if ( k == 141 )
+					*startC128 = 1; else
+					*startC128 = 0;
+			}
+
 			// build path
 			char path[ 8192 ] = {0};
 			char d64file[ 32 ] = {0};
@@ -596,6 +626,14 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 
 				if ( dir[ curC ].f & DIR_PRG_FILE ) 
 				{
+					if ( strstr( path, "PRG128") != 0 && modeC128 == 0 )
+					{
+						*launchKernel = 0;
+						errorMsg = errorMessages[ 5 ];
+						previousMenuScreen = menuScreen;
+						menuScreen = MENU_ERROR;
+						return;
+					}
 					strcpy( FILENAME, path );
 					*launchKernel = 4;
 					return;
@@ -606,31 +644,36 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 					u32 err = 0;
 
 					strcpy( FILENAME, path );
-					u32 tempKernel = checkCRTFile( logger, DRIVE, FILENAME, &err );
-					if ( err > 0 )
+
+					if ( strstr( FILENAME, "CART128") != 0 )
 					{
-						*launchKernel = 0;
-						errorMsg = errorMessages[ err ];
-						previousMenuScreen = menuScreen;
-						menuScreen = MENU_ERROR;
+						if ( modeC128 == 0 )
+						{
+							*launchKernel = 0;
+							errorMsg = errorMessages[ 5 ];
+							previousMenuScreen = menuScreen;
+							menuScreen = MENU_ERROR;
+						} else
+						{
+							*launchKernel = 9;
+							errorMsg = NULL;
+						}
 					} else
 					{
-						*launchKernel = tempKernel;
-						errorMsg = NULL;
-					}
 
-					/*strcpy( FILENAME, path );
-					logger->Write( "x", LogNotice, "file: %s", path );
-					*launchKernel = checkCRTFile( logger, DRIVE, FILENAME, &err );
-					logger->Write( "x", LogNotice, "kernel %d,  err %d", *launchKernel, err );
-					if ( err > 0 )
-					{
-						*launchKernel = 0;
-						errorMsg = errorMessages[ err ];
-						previousMenuScreen = menuScreen;
-						menuScreen = MENU_ERROR;
-						logger->Write( "x", LogNotice, "error message %s", errorMsg );
-					}*/
+						u32 tempKernel = checkCRTFile( logger, DRIVE, FILENAME, &err );
+						if ( err > 0 )
+						{
+							*launchKernel = 0;
+							errorMsg = errorMessages[ err ];
+							previousMenuScreen = menuScreen;
+							menuScreen = MENU_ERROR;
+						} else
+						{
+							*launchKernel = tempKernel;
+							errorMsg = NULL;
+						}
+					}
 					return;
 				}
 
@@ -670,14 +713,14 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 		if ( k == 136 /* F7 */ )
 		{
 			menuScreen = MENU_BROWSER;
-			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal );
+			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
 		//if ( k == 'y' || k == 'Y' )
 		if ( k == 135 /* F5 */ )
 		{
 			menuScreen = MENU_MAIN;
-			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal );
+			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
 
@@ -801,6 +844,10 @@ void printMainMenu()
 	clearC64();
 	//               "012345678901234567890123456789012345XXXX"
 	printC64( 0,  1, "   .- Sidekick64 -- Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+
+	/*char b[20];
+	sprintf( b, "%d", lastKeyDebug );
+	printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );*/
 
 	extern u8 c64screen[ 40 * 25 + 1024 * 4 ]; 
 

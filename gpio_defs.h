@@ -35,7 +35,7 @@
 //  1 =	NMI										74LVC07		ID_SC		used to control NMI
 //  2 = RESET (+ ROMH)							257 #3		SDA
 //  3 = CS (SID+Kernal)							257 #3		SCL
-//  4 = BUTTON (and PHI2)						257 #3		GCLK
+//  4 = A13 and BUTTON							257 #3		GCLK
 //  5 = A0 (+ A8)    							257 #2					(freezer) button	
 //  6 = A1 (+ A9)  								257 #2
 //  7 = A2 (+ A10) 								257 #2		CE1
@@ -103,6 +103,7 @@
 #define A10 A2
 #define A11 A3
 #define A12 A4
+#define A13 BUTTON
 #define A_FLAG ( (1<<A0)|(1<<A1)|(1<<A2)|(1<<A3)|(1<<A4) )
 
 #define IO2			A7

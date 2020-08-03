@@ -37,7 +37,7 @@ extern u32 PWMRange;
 extern void initSoundOutput( CSoundBaseDevice **m_pSound = NULL, CVCHIQDevice *m_VCHIQ = NULL );
 extern void clearSoundBuffer();
 
-extern s32 sampleBuffer[ 128 ];
+extern u32 sampleBuffer[ 128 ];
 extern u32 smpLast, smpCur;
 
 static __attribute__( ( always_inline ) ) inline void putSample( s16 a, s16 b )

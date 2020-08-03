@@ -91,6 +91,7 @@ extern int writeFile( CLogger *logger, const char *DRIVE, const char *FILENAME, 
 #define GET_ADDRESS0to7		 ((g2>>A0)&255)
 #define GET_ADDRESS8to12	 ((g3>>A8)&31)
 #define GET_ADDRESS			 (GET_ADDRESS0to7|(GET_ADDRESS8to12<<8))
+#define GET_ADDRESS0to13	 (GET_ADDRESS0to7|(GET_ADDRESS8to12<<8)|(((g2>>A13)&1)<<13))
 #define GET_ADDRESS_CACHEOPT ((GET_ADDRESS0to7<<5)|GET_ADDRESS8to12)
 
 #define ACCESS(SIGNAL)		(!(g3&SIGNAL))

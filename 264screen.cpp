@@ -172,6 +172,8 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 		}
 
 		sprintf( temp, "%s%s", t2, dir[ idx ].name );
+		if ( strlen( temp ) > 34 )
+			temp[ 35 ] = 0;
 		printC64( 2, lines + 3, temp, color, idx == cursorPos ? 0x80 : 0, convert );
 		lastVisible = idx;
 

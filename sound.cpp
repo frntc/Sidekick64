@@ -78,7 +78,7 @@ void initSoundOutput( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ )
 
 // for PWM Output
 //
-s32 sampleBuffer[ 128 ];
+u32 sampleBuffer[ 128 ];
 u32 smpLast, smpCur;
 
 #ifdef USE_PWM_DIRECT
