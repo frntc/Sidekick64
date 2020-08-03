@@ -7,27 +7,19 @@ The connecting circuitry is quite simple and does not include any programmable I
 - Easyflash, MagicDesk, CBM80, C16/+4 and C128 cartridges, 
 - C64 kernal replacement,
 - Function ROMs on a C128, or 
-- multiple SIDs and Sound Expander/FM (up to 8 SIDs, e.g. to play The Tuneful 8 https://csdb.dk/release/?id=182735)
-- TED-sound and Digiblaster emulation (for C16/+4, to have all sound devices on one output)
+- multiple SIDs and Sound Expander/FM emulation (up to 8 SIDs, e.g. to play [The Tuneful 8](https://csdb.dk/release/?id=182735))
+- TED-sound and Digiblaster emulation for C16/+4 (to have all sound devices on one output)
 
 But many more things are imaginable, e.g. 80 column cards with HDMI video output, custom accelerators/coprocessors etc. 
 
 Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. 
-Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with various PAL-machines (C64 revisions, C128, C128D, Reloaded MK, Ultimat 64), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC).
-Sidekick64 is connected to the C64/+4 using a simple adapter.
+Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with various PAL-machines (C64 revisions, C128, C128D), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC).
+To the C64/+4 Sidekick64 is connected using a simple adapter.
 
 <img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
 
 Sidekick64 comes with a menu with a configurable main screen (for frequently used features, programs, cartridges), a configuration screen, and a file browser.
-The C16/+4 version comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue!
-
-
-## Updates: 8x SID support for C64
-Sidekick64 can now emulate 8 SIDs simultaneously, e.g. to play The Tuneful 8 (https://csdb.dk/release/?id=182735). To enable this experimental mode, go to the settings menu and browse through the models if 'SID #1'.
-## Updates: C16/+4 support
-Sidekick264 can also be used with the C16/+4 now, with the very same PCB plus a simple adapter! (see more below) 
-I also comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue!
-
+The C16/+4 version comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue! Here's a [video](Video/Sidekick64_ElectricCity_by_Flex.mp4) of Sidekick64 emulation SIDs and playing [Electric City](https://csdb.dk/release/?id=189742) by Flex.
 
 ## How does it work? (technical details)
 
@@ -64,10 +56,10 @@ Step 1 is obviously building the PCB, it only uses simple (SMD) components:
 |----------|:-------------|
 | U1 		| 74LVX573/74LVC573 Package_SO:SO-20_12.8x7.5mm_P1.27mm | 
 | U2,U3 		| 74LVC245 Package_SO:SO-20_12.8x7.5mm_P1.27mm| 
-| U5, U7, U8 	| 74LVC257 Package_SO:SSOP-16_4.4x5.2mm_P0.65mm (for Rev 02), <br> 74LVC257 Package_SO:SOIC-16_3.9x9.9mm_P1.27mm (for Rev 03) | 
+| U5, U7, U8 	| 74LVC257 Package_SO:SOIC-16_3.9x9.9mm_P1.27mm | 
 | U6 		| 74LVC07 Package_SO:SOIC-14_3.9x8.7mm_P1.27mm| 
 | U9 		| 74HCT30 Package_SO:SOIC-14_3.9x8.7mm_P1.27mm| 
-| 4 		| LEDs (the side closer to the push bottons is GND)| 
+| 4 		| LEDs | 
 | 4 		| 0805 resistors for LEDs (I used 1.8k for bright LEDs)| 
 | 5 		| 0805 10k-20k pullups | 
 | 1 		| 0805 100k pullup | 
