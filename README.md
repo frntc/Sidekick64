@@ -63,7 +63,7 @@ Step 1 is obviously building the PCB, it only uses simple (SMD) components:
 | 4 		| 0805 resistors for LEDs (I used 1.8k for bright LEDs)| 
 | 5 		| 0805 10k-20k pullups | 
 | 1 		| 0805 100k pullup | 
-| C10 		| 0805 10uF | 
+| C10 		| 0805 10uF X5R MLCC | 
 | 2 	| 0805 10pF not required (leave out) | 
 | 9	| 0805 100nF| 
 | pin		| connection to HIRAM-pin of the CPU, can be left open if not used | 
