@@ -21,6 +21,10 @@ To the C64/+4 Sidekick64 is connected using a simple adapter.
 Sidekick64 comes with a menu with a configurable main screen (for frequently used features, programs, cartridges), a configuration screen, and a file browser.
 The C16/+4 version comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue! Here's a [video](Video/Sidekick64_ElectricCity_by_Flex.mp4) of Sidekick64 emulation SIDs and playing [Electric City](https://csdb.dk/release/?id=189742) by Flex.
 
+## I have a previous revision PCB, can I still...?
+
+The software can be run on any of the previous PCB revisions. If you want to to use a RGB-TFT and/or the C128 function ROMs with your PCB then you can do simple modifications (soldering 3 wires to connect the two additional signals to the display and add one more input to the RPi) as shown [here](Interface/sidekick64_rev03_upgrade.jpg).
+
 ## How does it work? (technical details)
 
 On the hardware side connecting the computers to the RPi requires level shifting to interface the 5V bus with the 3.3V GPIOs of the RPi. 
@@ -84,7 +88,7 @@ d=0..3 is an external delay of the multiplexer switching signal. For the C64/C12
 ## Quick start
 
 The easiest way (and probably the one most will use) is to copy the image onto an SD card. It contains the main Sidekick64-software combining various functionality accessibly from a menu. 
-You can configure this menu by editing SD:C64/sidekick64.cfg and copying your Easyflash/MagicDesk/CBM80 .CRTs (others not supported), .PRG, .D64s, Final Cartridge 3/Action Replay >4.x CRTs and kernal ROMs (.bin raw format) to the respective subdirectories.
+You can configure this menu by editing SD:C64/sidekick64.cfg and copying your Easyflash/MagicDesk/CBM80 .CRTs (others not supported), .PRG, .D64s, Final Cartridge 3/Action Replay >4.x CRTs and kernal ROMs (.bin raw format) to the respective subdirectories. Don't forget to set the type of display used in this .cfg-file! 
 You can also create custom logos to be used with Easyflash .CRTs (.raw format for the OLED, .tga for the RGB-TFT), or modify the appearance on the TFT completely (see SD:SPLASH).
 
 From the menu you can select/browse (should be self-explanatory), by pressing the RESET-button for 1-2 seconds you get back to the main menu from other functionalities. 
