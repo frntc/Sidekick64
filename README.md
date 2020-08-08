@@ -7,27 +7,23 @@ The connecting circuitry is quite simple and does not include any programmable I
 - Easyflash, MagicDesk, CBM80, C16/+4 and C128 cartridges, 
 - C64 kernal replacement,
 - Function ROMs on a C128, or 
-- multiple SIDs and Sound Expander/FM (up to 8 SIDs, e.g. to play The Tuneful 8 https://csdb.dk/release/?id=182735)
-- TED-sound and Digiblaster emulation (for C16/+4, to have all sound devices on one output)
+- multiple SIDs and Sound Expander/FM emulation (up to 8 SIDs, e.g. to play [The Tuneful 8](https://csdb.dk/release/?id=182735))
+- TED-sound and Digiblaster emulation for C16/+4 (to have all sound devices on one output)
 
 But many more things are imaginable, e.g. 80 column cards with HDMI video output, custom accelerators/coprocessors etc. 
 
 Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. 
-Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with various PAL-machines (C64 revisions, C128, C128D, Reloaded MK, Ultimat 64), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC).
-Sidekick64 is connected to the C64/+4 using a simple adapter.
+Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with various PAL-machines (C64 revisions, C128, C128D), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC).
+To the C64/+4 Sidekick64 is connected using a simple adapter.
 
 <img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
 
 Sidekick64 comes with a menu with a configurable main screen (for frequently used features, programs, cartridges), a configuration screen, and a file browser.
-The C16/+4 version comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue!
+The C16/+4 version comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue! Here's a [video](Video/Sidekick64_ElectricCity_by_Flex.mp4) of Sidekick64 emulation SIDs and playing [Electric City](https://csdb.dk/release/?id=189742) by Flex.
 
+## I have a previous revision PCB, can I still...?
 
-## Updates: 8x SID support for C64
-Sidekick64 can now emulate 8 SIDs simultaneously, e.g. to play The Tuneful 8 (https://csdb.dk/release/?id=182735). To enable this experimental mode, go to the settings menu and browse through the models if 'SID #1'.
-## Updates: C16/+4 support
-Sidekick264 can also be used with the C16/+4 now, with the very same PCB plus a simple adapter! (see more below) 
-I also comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue!
-
+The software can be run on any of the previous PCB revisions. If you want to to use a RGB-TFT and/or the C128 function ROMs with your PCB then you can do simple modifications (soldering 3 wires to connect the two additional signals to the display and add one more input to the RPi) as shown [here](Interface/sidekick64_rev03_upgrade.jpg).
 
 ## How does it work? (technical details)
 
@@ -64,14 +60,14 @@ Step 1 is obviously building the PCB, it only uses simple (SMD) components:
 |----------|:-------------|
 | U1 		| 74LVX573/74LVC573 Package_SO:SO-20_12.8x7.5mm_P1.27mm | 
 | U2,U3 		| 74LVC245 Package_SO:SO-20_12.8x7.5mm_P1.27mm| 
-| U5, U7, U8 	| 74LVC257 Package_SO:SSOP-16_4.4x5.2mm_P0.65mm (for Rev 02), <br> 74LVC257 Package_SO:SOIC-16_3.9x9.9mm_P1.27mm (for Rev 03) | 
+| U5, U7, U8 	| 74LVC257 Package_SO:SOIC-16_3.9x9.9mm_P1.27mm | 
 | U6 		| 74LVC07 Package_SO:SOIC-14_3.9x8.7mm_P1.27mm| 
 | U9 		| 74HCT30 Package_SO:SOIC-14_3.9x8.7mm_P1.27mm| 
-| 4 		| LEDs (the side closer to the push bottons is GND)| 
+| 4 		| LEDs | 
 | 4 		| 0805 resistors for LEDs (I used 1.8k for bright LEDs)| 
 | 5 		| 0805 10k-20k pullups | 
 | 1 		| 0805 100k pullup | 
-| C10 		| 0805 10uF | 
+| C10 		| 0805 10uF X5R MLCC | 
 | 2 	| 0805 10pF not required (leave out) | 
 | 9	| 0805 100nF| 
 | pin		| connection to HIRAM-pin of the CPU, can be left open if not used | 
@@ -92,7 +88,7 @@ d=0..3 is an external delay of the multiplexer switching signal. For the C64/C12
 ## Quick start
 
 The easiest way (and probably the one most will use) is to copy the image onto an SD card. It contains the main Sidekick64-software combining various functionality accessibly from a menu. 
-You can configure this menu by editing SD:C64/sidekick64.cfg and copying your Easyflash/MagicDesk/CBM80 .CRTs (others not supported), .PRG, .D64s, Final Cartridge 3/Action Replay >4.x CRTs and kernal ROMs (.bin raw format) to the respective subdirectories.
+You can configure this menu by editing SD:C64/sidekick64.cfg and copying your Easyflash/MagicDesk/CBM80 .CRTs (others not supported), .PRG, .D64s, Final Cartridge 3/Action Replay >4.x CRTs and kernal ROMs (.bin raw format) to the respective subdirectories. Don't forget to set the type of display used in this .cfg-file! 
 You can also create custom logos to be used with Easyflash .CRTs (.raw format for the OLED, .tga for the RGB-TFT), or modify the appearance on the TFT completely (see SD:SPLASH).
 
 From the menu you can select/browse (should be self-explanatory), by pressing the RESET-button for 1-2 seconds you get back to the main menu from other functionalities. 
