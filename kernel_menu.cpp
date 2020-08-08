@@ -235,7 +235,7 @@ void activateCart()
 	transferStarted = 0;
 
 	latchSetClearImm( LED_ACTIVATE_CART1_HIGH, LED_ACTIVATE_CART1_LOW | LATCH_RESET | LATCH_ENABLE_KERNAL );
-	SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr | bCTRL257 );
+	SETCLR_GPIO( configGAMEEXROMSet | bNMI | bDMA, configGAMEEXROMClr | bCTRL257 );
 	latchSetClearImm( LED_ACTIVATE_CART1_HIGH, LED_ACTIVATE_CART1_LOW | LATCH_ENABLE_KERNAL );
 
 	DELAY( 1 << 20 );
@@ -255,7 +255,9 @@ void activateCart()
 	InvalidateDataCache();
 	InvalidateInstructionCache();
 	warmCache( pFIQ );
+	DELAY(1<<18);
 	warmCache( pFIQ );
+	DELAY(1<<18);
 
 	latchSetClearImm( LATCH_RESET | LED_ACTIVATE_CART2_HIGH, LED_ACTIVATE_CART2_LOW | LATCH_ENABLE_KERNAL );
 }
@@ -385,6 +387,9 @@ void injectPOKE( u32 a, u8 d )
 
 
 u32 updateLogo = 0;
+unsigned char tftC128Logo[ 240 * 240 * 2 ];
+extern unsigned char tftBackground[ 240 * 240 * 2 ];
+
 
 void CKernelMenu::Run( void )
 {
@@ -422,9 +427,12 @@ void CKernelMenu::Run( void )
 	if ( screenType == 1 )
 	{
 		tftLoadCharset( DRIVE, FILENAME_TFT_FONT );
-		if ( modeC128 )
-			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB128, 8 ); else
-			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 ); 
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB128, 8 ); 
+		memcpy( tftC128Logo, tftBackground, 240 * 240 * 2 );
+		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 ); 
+		//if ( modeC128 )
+			//tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB128, 8 ); else
+			//tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 ); 
 		tftCopyBackground2Framebuffer();
 		tftInitImm();
 		tftSendFramebuffer16BitImm( tftFrameBuffer );
@@ -493,12 +501,11 @@ void CKernelMenu::Run( void )
 
 		if ( updateMenu == 1 )
 		{
-			if ( updateLogo )
+			if ( updateLogo == 1 && screenType == 1 && modeC128 )
 			{
-				updateLogo = 0;
-				if ( modeC128 )
-					tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB128, 8 ); else
-					tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 ); 
+				updateLogo = 2;
+				memcpy( tftBackground, tftC128Logo, 240 * 240 * 2 );
+				flush4BitBuffer( true );
 				tftCopyBackground2Framebuffer();
 				tftSendFramebuffer16BitImm( tftFrameBuffer );
 			}
@@ -526,7 +533,7 @@ void CKernelMenu::FIQHandler (void *pParam)
 	if ( CPU_RESET ) { 
 		resetCounter ++; 
 		FINISH_BUS_HANDLING
-		activateCart();
+		//activateCart();
 		return;
 	} else  
 		resetCounter = 0; 
