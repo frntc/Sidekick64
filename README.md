@@ -4,7 +4,7 @@ Sidekick64 is a versatile cartridge/expansion for the C64, C128, and the C16/+4.
 The connecting circuitry is quite simple and does not include any programmable ICs. Currently implemented features include the emulation of
 - a GeoRAM/NeoRAM-compatible memory expansion, 
 - Action Replay 4.x-7.x and Final Cartridge 3(+) freezer cartridges,
-- Easyflash, MagicDesk, CBM80, C16/+4 and C128 cartridges, 
+- Easyflash (with simplified EAPI support), MagicDesk, CBM80, C16/+4 and C128 cartridges, 
 - C64 kernal replacement,
 - Function ROMs on a C128, or 
 - multiple SIDs and Sound Expander/FM emulation (up to 8 SIDs, e.g. to play [The Tuneful 8](https://csdb.dk/release/?id=182735))
@@ -161,7 +161,7 @@ The PCB is work licensed under a Creative Commons Attribution-NonCommercial-Shar
 
 Last but not least I would like to thank a few people and give proper credits:
 
-kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works, Kim Jørgensen for chats on weird bus timings and freezers, and hints on how to get things right, and the testers on F64 (bigby, emulaThor, kinzi).
+kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works. Kim Jørgensen for chats on weird bus timings and freezers, hints on how to get things right and last but not least for letting me adapt his C64-side code of KFF's EAPI for use with Sidekick64. The testers on F64 (bigby, emulaThor, kinzi).
 Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in all recent releases, and for the Sidekick logo. And of course thanks a lot to Mad^BKN for porting Alpharay and Pet's Rescue in an amazingly short time! 
 The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic. The C16/+4 SID and FM examples are based on code by Mr.Mouse/Xentax and Antti Hannula's (flex) 2sid tune "Eternity" (original mod by Matt Simmonds); the FM songs are Koere and Like Galway by Jesper Olson (jo). The C16 cartridge startup code is based on CBMHARDWARE's example.
 
