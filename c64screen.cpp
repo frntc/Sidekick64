@@ -846,7 +846,9 @@ void printMainMenu()
 	printC64( 0,  1, "   .- Sidekick64 -- Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 
 	/*char b[20];
-	sprintf( b, "%d", lastKeyDebug );
+	extern u32 temperature;
+	sprintf( b, "%d", temperature );
+	//sprintf( b, "%d", lastKeyDebug );
 	printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );*/
 
 	extern u8 c64screen[ 40 * 25 + 1024 * 4 ]; 

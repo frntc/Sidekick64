@@ -693,7 +693,7 @@ int tftLoadBackgroundTGA( const char *drive, const char *name, int dither )
 			*(unsigned short*)&tftBackground[ ( x + y * 240 ) * 2 + 0 ] = rgb24to16( p[0], p[1], p[2] );
 		}
 
-	tftCopyBackground2Framebuffer();
+	//tftCopyBackground2Framebuffer();
 	return 1;
 }
 

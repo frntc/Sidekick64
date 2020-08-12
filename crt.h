@@ -71,6 +71,7 @@ typedef struct  {
 
 int  readCRTHeader( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, const char *FILENAME );
 void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, const char *FILENAME, u8 *flash, volatile u8 *bankswitchType, volatile u32 *ROM_LH, volatile u32 *nBanks, bool getRAW = false );
+void writeChanges2CRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *flash, bool isRAW );
 int  checkCRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 *error );
 
 #endif

@@ -40,6 +40,10 @@ extern char *FILENAME;
 static const char FILENAME[] = "SD:test.crt";
 #endif
 
+static const char FILENAME_EAPI[] = "SD:C64/eapi.prg";
+
+static u8 eapiC64Code[ 0x300 + 16384 ];
+
 static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_ef3_bg.tga";
 
 // temporary buffers to read cartridge data from SD
@@ -50,6 +54,9 @@ static CRT_HEADER header;
 //
 #define EASYFLASH_BANKS			64
 #define EASYFLASH_BANK_MASK		( EASYFLASH_BANKS - 1 )
+
+#define EAPI_OFFSET 0x1800
+#define EAPI_SIZE   0x300
 
 typedef struct
 {
@@ -81,14 +88,26 @@ typedef struct
 
 	u32 flashFitsInCache;
 
-	// todo
-	u8 padding[ 384 - 344 ];
-} __attribute__((packed)) EFSTATE;
+	// EAPI
+	u32 eapiState;
 
-static volatile EFSTATE ef AAA;
+	u8 eapiBufferIn[ 4 ];
+	u8 eapiBufferOut[ 4 ];
+	u32 eapiBufCountIn;
+	u32 eapiBufCountOut;
+	u32 eapiBufPosOut;
+
+	u32 mainloopCount;
+	u32 eapiCRTModified;
+
+	// todo
+	//u8 padding[ 384 - 345 ];
+} __attribute__((packed)) EFSTATE;
 
 // ... flash
 static u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
+
+static volatile EFSTATE ef AAA;
 
 // table with EF memory configurations adapted from Vice
 #define M_EXROM	2
@@ -117,13 +136,134 @@ __attribute__( ( always_inline ) ) inline void setGAMEEXROM()
 	SETCLR_GPIO( set, clr );
 }
 
+//
+// very simple/simplified EAPI implementation
+//
+#define EAPI_STATE_MAIN			0
+#define EAPI_STATE_WRITE_FLASH	1
+#define EAPI_STATE_ERASE_SECTOR	2
+
+#define CMD_EAPI_INIT			0xf0
+#define CMD_WRITE_FLASH			0xf1
+#define CMD_ERASE_SECTOR		0xf2
+
+#define EAPI_REPLY_OK			0x00
+#define EAPI_REPLY_WRITE_ERROR	0xf1
+
+__attribute__( ( always_inline ) ) inline void eapiSendReply( u8 d )
+{
+	ef.eapiBufferOut[ 0 ] = d;
+	ef.eapiBufPosOut      = 0;
+	ef.eapiBufCountOut    = 1;
+}
+
+__attribute__( ( always_inline ) ) inline void eapiEraseSector( u8 bank, u32 addr )
+{
+	if ( bank >= 64 || ( bank % 8 ) )
+    {
+        // invalid sector to erase
+		eapiSendReply( EAPI_REPLY_WRITE_ERROR );
+		return;
+    }
+
+	u8 *p = &ef.flash_cacheoptimized[ bank * 8192 * 2 ];
+	if ( ( addr & 0xff00 ) != 0x8000 )
+		p++;
+
+	for ( u32 i = 0; i < 8192 * 8; i++, p += 2 )
+		*p = 0xff;
+
+	eapiSendReply( EAPI_REPLY_OK );
+}
+
+__attribute__( ( always_inline ) ) inline void eapiWriteFlash( u32 addr, u8 value )
+{
+	u32 ofs = ( ADDR_LINEAR2CACHE( addr & 0x3fff ) ) * 2 + ( addr < 0xe000 ? 0 : 1 );
+
+	ef.flash_cacheoptimized[ ef.reg0 * 8192 * 2 + ofs ] &= value;
+
+	eapiSendReply( EAPI_REPLY_OK );
+}
+
+
+__attribute__( ( always_inline ) ) inline void eapiReceiveByte( u8 d )
+{
+	switch ( ef.eapiState )
+	{
+	case EAPI_STATE_MAIN:
+		if ( d == CMD_EAPI_INIT )
+		{
+			ef.eapiBufferOut[ 0 ] = EAPI_REPLY_OK;
+			ef.eapiBufPosOut      = 0;
+			ef.eapiBufCountOut    = 1;
+		} else
+		if ( d == CMD_WRITE_FLASH )
+		{
+			ef.eapiState      = EAPI_STATE_WRITE_FLASH;
+			ef.eapiBufCountIn = 0;
+		} else
+		if ( d == CMD_ERASE_SECTOR )
+		{
+			ef.eapiState      = EAPI_STATE_ERASE_SECTOR;
+			ef.eapiBufCountIn = 0;
+		}
+		break;
+
+	case EAPI_STATE_WRITE_FLASH:
+		ef.eapiBufferIn[ ef.eapiBufCountIn++ ] = d;
+		if ( ef.eapiBufCountIn == 3 )
+		{
+			u32 addr = 0;
+			((u8*)&addr)[0] = ef.eapiBufferIn[ 0 ];
+			((u8*)&addr)[1] = ef.eapiBufferIn[ 1 ];
+			u8 value = ef.eapiBufferIn[ 2 ];
+			eapiWriteFlash( addr, value );
+			ef.eapiState = EAPI_STATE_MAIN;
+		}
+		break;
+	case EAPI_STATE_ERASE_SECTOR:
+		ef.eapiBufferIn[ ef.eapiBufCountIn++ ] = d;
+		if ( ef.eapiBufCountIn == 3 )
+		{
+			u32 addr = 0;
+			((u8*)&addr)[0] = ef.eapiBufferIn[ 0 ];
+			((u8*)&addr)[1] = ef.eapiBufferIn[ 1 ];
+			u8 value = ef.eapiBufferIn[ 2 ];
+			eapiEraseSector( value, addr );
+			ef.eapiState = EAPI_STATE_MAIN;
+		}
+		break;
+
+	default:
+		ef.eapiState = EAPI_STATE_MAIN;
+		break;
+	}
+}
+
 __attribute__( ( always_inline ) ) inline u8 easyflash_IO1_Read( u32 addr )
 {
+	if ( (addr & 0xff) == 0x09 ) // EF3 USB control 
+	{
+		return 0x40 + 0x80; // always ready
+	} 
+	if ( (addr & 0xff) == 0x0a ) // EF3 USB data 
+	{
+		u8 d = 0;
+		if ( ef.eapiBufPosOut < ef.eapiBufCountOut )
+			d = ef.eapiBufferOut[ ef.eapiBufPosOut ++ ];
+		return d;
+	} 
 	return ( addr & 2 ) ? ef.reg2 : ef.reg0;
 }
 
 __attribute__( ( always_inline ) ) inline void easyflash_IO1_Write( u32 addr, u8 value )
 {
+	if ( (addr & 0xff) == 0x0a ) // EF3 USB data
+	{
+		eapiReceiveByte( value );
+		return;
+	}
+
 	if ( ( addr & 2 ) == 0 )
 	{
 		ef.reg0old = ef.reg0;
@@ -149,6 +289,11 @@ void initEF()
 	ef.cyclesSinceReset = 0;
 
 	ef.releaseDMA = 0;
+
+	ef.eapiState = EAPI_STATE_MAIN;
+	ef.eapiBufCountIn = 0;
+	ef.eapiBufCountOut = 0;
+	ef.eapiBufPosOut = 0;
 
 	if ( ef.bankswitchType == BS_NONE )
 	{
@@ -248,6 +393,22 @@ void CKernelEF::Run( void )
 	// read .CRT
 	ef.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[ 0 ] + 128 ) & ~127 );
 	readCRTFile( logger, &header, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, &ef.bankswitchType, &ef.ROM_LH, &ef.nBanks );
+
+	ef.eapiCRTModified = 0;
+
+	// EAPI in EF CRT? replace
+	if ( ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+0) * 2 + 1 ] == 0x65 &&
+		 ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+1) * 2 + 1 ] == 0x61 &&
+		 ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+2) * 2 + 1 ] == 0x70 &&
+		 ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+3) * 2 + 1 ] == 0x69 )
+	{
+		//logger->Write( "RaspiFlash", LogNotice, "replacing EAPI" );
+		u32 size;
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_EAPI, eapiC64Code, &size );
+
+		for ( u32 i = 0; i < 0x300; i++ )
+			ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+i) * 2 + 1 ] = eapiC64Code[ i ];
+	}
 
 	#ifdef COMPILE_MENU
 	if ( screenType == 0 )
@@ -356,12 +517,15 @@ void CKernelEF::Run( void )
 		ef.flashFitsInCache = ( ef.nBanks <= 64 ) ? 1 : 0; else // Magic Desk only uses ROML-banks -> different memory layout
 		ef.flashFitsInCache = ( ef.nBanks <= 32 ) ? 1 : 0;
 
+	// TODO
+	ef.flashFitsInCache = 0;
+
+	// wait forever
+	ef.mainloopCount = 0;
+
 	CleanDataCache();
 	InvalidateDataCache();
 	InvalidateInstructionCache();
-
-	// TODO
-	ef.flashFitsInCache = 0;
 
 	if ( ef.flashFitsInCache )
 		prefetchComplete(); else
@@ -369,13 +533,13 @@ void CKernelEF::Run( void )
 
 	// additional first-time cache preloading
 	CACHE_PRELOAD_DATA_CACHE( (u8*)&ef, ( sizeof( EFSTATE ) + 63 ) / 64, CACHE_PRELOADL1KEEP )
-	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 3072 )
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 4096 )
 
 	if ( ef.flashFitsInCache )
 		FORCE_READ_RANDOM( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 8192 * 2 * ef.nBanks * 256 )
 
 	FORCE_READ_LINEAR32a( &ef, sizeof( EFSTATE ), 65536 );
-	FORCE_READ_LINEAR32a( &FIQ_HANDLER, 3072, 65536 );
+	FORCE_READ_LINEAR32a( &FIQ_HANDLER, 4096, 65536 );
 
 	prefetchHeuristic();
 
@@ -384,12 +548,31 @@ void CKernelEF::Run( void )
 
 	ef.c64CycleCount = ef.resetCounter2 = 0;
 
-	// wait forever
 	while ( true )
 	{
 		#ifdef COMPILE_MENU
-		TEST_FOR_JUMP_TO_MAINMENU2FIQs( ef.c64CycleCount, ef.resetCounter2 )
+		TEST_FOR_JUMP_TO_MAINMENU2FIQs_CB( ef.c64CycleCount, ef.resetCounter2, {if ( ef.eapiCRTModified ) writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );} );
 		#endif
+
+		// if the C64 is turned off and the CRT has been modified => write back to SD
+		// I omitted any notification as this is real quick
+		if ( ef.mainloopCount++ > 10000 && ef.eapiCRTModified ) 
+		{
+			writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );
+			ef.eapiCRTModified = 0;
+			/*{
+				u32 c1 = rgb24to16( 166, 250, 128 );
+			
+				char b1[512];
+				sprintf( b1, "CRT saved!" );
+				u32 l = strlen( b1 );
+				u32 sx = max( 0, ( 240 - 16 * l ) / 2 - 1 );
+				tftPrint( b1, sx, 180, c1, 0 );	
+				tftInitImm();
+				tftSendFramebuffer16BitImm( tftFrameBuffer );
+			}*/
+		}
+
 		asm volatile ("wfi");
 	}
 
@@ -465,6 +648,8 @@ void CKernelEF::FIQHandler (void *pParam)
 
 //	if ( modeC128 && VIC_HALF_CYCLE )
 //		WAIT_CYCLE_MULTIPLEXER += 15;
+	
+	ef.mainloopCount = 0;
 
 	// read the rest of the signals
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
@@ -539,20 +724,32 @@ void CKernelEF::FIQHandler (void *pParam)
 		if ( ef.bankswitchType == BS_EASYFLASH )
 		{
 			// easyflash register in IO1
-			easyflash_IO1_Write( GET_IO12_ADDRESS, D );
-
-			if ( ( GET_IO12_ADDRESS & 2 ) == 0 )
+			if ( GET_IO12_ADDRESS == 0x0a )
 			{
-				// if the EF-ROM does not fit into the RPi's cache: stall the CPU with a DMA and prefetch the data
-				if ( !ef.flashFitsInCache )
+				WAIT_UP_TO_CYCLE( WAIT_TRIGGER_DMA ); 
+				CLR_GPIO( bDMA ); 
+				ef.releaseDMA = NUM_DMA_CYCLES;
+
+				easyflash_IO1_Write( GET_IO12_ADDRESS, D );
+
+				prefetchHeuristic();
+			} else
+			{
+				easyflash_IO1_Write( GET_IO12_ADDRESS, D );
+
+				if ( ( GET_IO12_ADDRESS & 2 ) == 0 )
 				{
-					WAIT_UP_TO_CYCLE( WAIT_TRIGGER_DMA ); 
-					CLR_GPIO( bDMA ); 
-					ef.releaseDMA = NUM_DMA_CYCLES;
-					prefetchHeuristic();
-				}
-			} else 
-				setGAMEEXROM();
+					// if the EF-ROM does not fit into the RPi's cache: stall the CPU with a DMA and prefetch the data
+					if ( !ef.flashFitsInCache )
+					{
+						WAIT_UP_TO_CYCLE( WAIT_TRIGGER_DMA ); 
+						CLR_GPIO( bDMA ); 
+						ef.releaseDMA = NUM_DMA_CYCLES;
+						prefetchHeuristic();
+					}
+				} else 
+					setGAMEEXROM();
+			}
 		} else
 		{
 			// Magic Desk

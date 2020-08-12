@@ -39,7 +39,7 @@ u16 swapBytesU16( u8 *buf )
 	return buf[ 1 ] | ( buf[ 0 ] << 8 );
 }
 
-#define readCRT( dst, bytes ) memcpy( (dst), crt, bytes ); crt += bytes;
+#define readCRT( dst, bytes ) memcpy( (dst), crt, bytes ); crt += bytes; 
 
 // .CRT reading - header only!
 int readCRTHeader( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, const char *FILENAME )
@@ -350,6 +350,189 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 	memcpy( crtHeader, &header, sizeof( CRT_HEADER ) );
 	(*nBanks) ++;
 }
+
+// very lazy implementation of writing changes back to a .CRT file:
+// read file, simply go through and replace bank contents
+// (only for EasyFlash CRTs!)
+void writeChanges2CRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *flash, bool isRAW )
+{
+	u32 nBanks;
+
+	CRT_HEADER header;
+	FATFS m_FileSystem;
+
+	logger->Write( "RaspiFlash", LogNotice, "saving modified CRT file", DRIVE );
+
+	// mount file system
+	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
+		logger->Write( "RaspiFlash", LogPanic, "Cannot mount drive: %s", DRIVE );
+
+	// get filesize
+	FILINFO info;
+	u32 result = f_stat( FILENAME, &info );
+	u32 filesize = (u32)info.fsize;
+
+	// open file
+	FIL file;
+	result = f_open( &file, FILENAME, FA_READ | FA_OPEN_EXISTING );
+	if ( result != FR_OK )
+		logger->Write( "RaspiFlash", LogPanic, "Cannot open file: %s", FILENAME );
+
+	if ( filesize > 1025 * 1024 )
+		filesize = 1025 * 1024;
+
+	// read data in one big chunk
+	u32 nBytesRead;
+	u8 rawCRT[ 1025 * 1024 ];
+	result = f_read( &file, rawCRT, filesize, &nBytesRead );
+
+	if ( result != FR_OK )
+		logger->Write( "RaspiFlash", LogError, "Read error" );
+
+	if ( f_close( &file ) != FR_OK )
+		logger->Write( "RaspiFlash", LogPanic, "Cannot close file" );
+
+	// now "parse" the file which we already have in memory
+	u8 *crt = rawCRT;
+	u8 *crtEnd = crt + filesize;
+
+	readCRT( &header.signature, 16 );
+
+	if ( memcmp( CRT_HEADER_SIG, header.signature, 16 ) )
+	{
+		logger->Write( "RaspiFlash", LogPanic, "no CRT file." );
+	}
+
+	readCRT( &header.length, 4 );
+	readCRT( &header.version, 2 );
+	readCRT( &header.type, 2 );
+	readCRT( &header.exrom, 1 );
+	readCRT( &header.game, 1 );
+	readCRT( &header.reserved, 6 );
+	readCRT( &header.name, 32 );
+	header.name[ 32 ] = 0;
+
+	header.length = swapBytesU32( (u8*)&header.length );
+	header.version = swapBytesU16( (u8*)&header.version );
+	header.type = swapBytesU16( (u8*)&header.type );
+
+	if ( header.type != 32 )
+	{
+		logger->Write( "RaspiFlash", LogNotice, "no EF CRT" );
+		// unmount file system
+		if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
+			logger->Write( "RaspiFlash", LogPanic, "Cannot unmount drive: %s", DRIVE );
+		return;
+	}
+
+	nBanks = 0;
+
+		logger->Write( "RaspiFlash", LogNotice, "patching" );
+
+	while ( crt < crtEnd )
+	{
+		CHIP_HEADER chip;
+
+		memset( &chip, 0, sizeof( CHIP_HEADER ) );
+
+		readCRT( &chip.signature, 4 );
+
+		if ( memcmp( CHIP_HEADER_SIG, chip.signature, 4 ) )
+		{
+			logger->Write( "RaspiFlash", LogPanic, "no valid CHIP section." );
+		}
+
+		readCRT( &chip.total_length, 4 );
+		readCRT( &chip.type, 2 );
+		readCRT( &chip.bank, 2 );
+		readCRT( &chip.adr, 2 );
+		readCRT( &chip.rom_length, 2 );
+
+		chip.total_length = swapBytesU32( (u8*)&chip.total_length );
+		chip.type = swapBytesU16( (u8*)&chip.type );
+		chip.bank = swapBytesU16( (u8*)&chip.bank );
+		chip.adr = swapBytesU16( (u8*)&chip.adr );
+		chip.rom_length = swapBytesU16( (u8*)&chip.rom_length );
+
+		{
+			if ( chip.adr == 0x8000 )
+			{
+				if ( isRAW )
+				{
+					for ( register u32 i = 0; i < 8192; i++ )
+						crt[ i ] = flash[ ( chip.bank * 8192 + i ) * 2 + 0 ];
+				} else
+				{
+					for ( register u32 i = 0; i < 8192; i++ )
+					{
+						u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
+						crt[ i ] = flash[ ( chip.bank * 8192 + realAdr ) * 2 + 0 ];
+					}
+				}
+
+				crt += 8192;
+
+				if ( chip.rom_length > 8192 )
+				{
+					if ( isRAW )
+					{
+						for ( register u32 i = 0; i < 8192; i++ )
+							crt[ i ] = flash[ ( chip.bank * 8192 + i ) * 2 + 1 ];
+					} else
+					{
+						for ( register u32 i = 0; i < 8192; i++ )
+						{
+							u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
+							crt[ i ] = flash[ ( chip.bank * 8192 + realAdr ) * 2 + 1 ];
+						}
+					}
+
+					crt += chip.rom_length - 8192;
+				}
+			} else
+			{
+				if ( isRAW )
+				{
+					for ( register u32 i = 0; i < 8192; i++ )
+						crt[ i ] = flash[ ( chip.bank * 8192 + i ) * 2 + 1 ];
+				} else
+				{
+					for ( register u32 i = 0; i < 8192; i++ )
+					{
+						u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
+						crt[ i ] = flash[ ( chip.bank * 8192 + realAdr ) * 2 + 1 ];
+					}
+				}
+
+				crt += 8192;
+			}
+		}
+
+		if ( chip.bank > nBanks )
+			nBanks = chip.bank;
+	}
+
+
+	// write file
+	result = f_open( &file, FILENAME, FA_CREATE_ALWAYS | FA_WRITE );
+	if ( result != FR_OK )
+		logger->Write( "RaspiFlash", LogPanic, "Cannot open file: %s", FILENAME );
+
+	// read data in one big chunk
+	u32 nBytesWritten;
+	result = f_write( &file, rawCRT, nBytesRead, &nBytesWritten );
+
+	if ( result != FR_OK || nBytesWritten != nBytesRead )
+		logger->Write( "RaspiFlash", LogError, "Write error" );
+
+	if ( f_close( &file ) != FR_OK )
+		logger->Write( "RaspiFlash", LogPanic, "Cannot close file" );
+
+	// unmount file system
+	if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
+		logger->Write( "RaspiFlash", LogPanic, "Cannot unmount drive: %s", DRIVE );
+}
+
 
 int checkCRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 *error )
 {

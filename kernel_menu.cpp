@@ -275,6 +275,7 @@ CInterruptSystem	*pInterrupt;
 CVCHIQDevice		*pVCHIQ;
 #endif
 
+//u32 temperature;
 
 boolean CKernelMenu::Initialize( void )
 {
@@ -514,6 +515,7 @@ void CKernelMenu::Run( void )
 			handleC64( lastChar, &launchKernel, FILENAME, filenameKernal, menuItemStr, &startForC128 );
 			lastChar = 0xfffffff;
 			refresh++;
+			//temperature = m_CPUThrottle.GetTemperature();
 			renderC64();
 			doneWithHandling = 1;
 			updateMenu = 0;
