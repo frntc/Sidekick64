@@ -218,6 +218,7 @@ __attribute__( ( always_inline ) ) inline void eapiReceiveByte( u8 d )
 			((u8*)&addr)[1] = ef.eapiBufferIn[ 1 ];
 			u8 value = ef.eapiBufferIn[ 2 ];
 			eapiWriteFlash( addr, value );
+			ef.eapiCRTModified = 1;
 			ef.eapiState = EAPI_STATE_MAIN;
 		}
 		break;
@@ -230,6 +231,7 @@ __attribute__( ( always_inline ) ) inline void eapiReceiveByte( u8 d )
 			((u8*)&addr)[1] = ef.eapiBufferIn[ 1 ];
 			u8 value = ef.eapiBufferIn[ 2 ];
 			eapiEraseSector( value, addr );
+			ef.eapiCRTModified = 1;
 			ef.eapiState = EAPI_STATE_MAIN;
 		}
 		break;
