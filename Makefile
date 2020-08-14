@@ -34,6 +34,21 @@ LIBS	= $(CIRCLEHOME)/addon/vc4/sound/libvchiqsound.a \
 	      $(CIRCLEHOME)/addon/linux/liblinuxemu.a
 endif
 
+ifeq ($(kernel), menu20)
+CFLAGS += -DCOMPILE_MENU=1
+OBJS += kernel_menu20.o crt.o dirscan.o vic20config.o vic20screen.o mygpiopinfiq.o  tft_st7789.o
+#kernel_launch264.o  kernel_ramlaunch264.o launch264.o
+
+CFLAGS += -DCOMPILE_MENU_WITH_SOUND=1
+#OBJS += kernel_sid264.o sound.o ./resid/dac.o ./resid/filter.o ./resid/envelope.o ./resid/extfilt.o ./resid/pot.o ./resid/sid.o ./resid/version.o ./resid/voice.o ./resid/wave.o fmopl.o 
+CFLAGS += -DUSE_VCHIQ_SOUND=$(USE_VCHIQ_SOUND) 
+
+LIBS	= $(CIRCLEHOME)/addon/vc4/sound/libvchiqsound.a \
+   	      $(CIRCLEHOME)/addon/vc4/vchiq/libvchiq.a \
+	      $(CIRCLEHOME)/addon/linux/liblinuxemu.a
+endif
+
+
 ### individual Kernels for C64 ###
 ifeq ($(kernel), cart)
 OBJS += kernel_cart.o 

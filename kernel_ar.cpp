@@ -44,7 +44,7 @@ typedef struct
 {
 	u32 active;
 	u32 statusRegister;
-	u32 exportRAM;
+	u32 exportRAM, exportRAM_A000, bAtomicPower;
 	u32 ofsROMBank;
 
 	// counts the #cycles when the C64-reset line is pulled down (to detect a reset), cycles since release and status
@@ -82,21 +82,38 @@ __attribute__( ( always_inline ) ) inline void setGAMEEXROM( u32 f )
 //  3-4  ROM bank
 //  5    enable RAM for R/W at $8000 and I/O2 ($df00-$dfff mirrors $9f00-$9fff)
 //  6    reset freeze-mode
+//
+//  AtomicPower/Nordic Power:
+//  if enable RAM && GAME/EXROM high && Bit 2, 6, 7 are 0 => map cart RAM to $a000
 __attribute__( ( always_inline ) ) inline void ar_IO1_Write( u32 addr, u8 value )
 {
 	ar.statusRegister = value;
-	ar.exportRAM = ( value >> 5 ) & 1;
+
 	ar.ofsROMBank = ( ( value >> 3 ) & 3 ) * 8192;
 
 	if ( value & 4 )
-		ar.active = 0; else
-		ar.active = 1;
+		ar.active = 0;
 
-	setGAMEEXROM( value & 3 );
+    if ( value & 0x40 )
+		SET_GPIO( bNMI ); 
+
+	// special Atomic Power configuration (map cart RAM to $a000)
+	if ( ar.bAtomicPower && (value & 0xe7) == 0x22 )
+	{
+		ar.exportRAM = 0; //todo leave untouched?
+		ar.exportRAM_A000 = 1;
+		setGAMEEXROM( 1 );
+	} else
+	{
+		ar.exportRAM = ( value >> 5 ) & 1;
+		ar.exportRAM_A000 = 0;
+		setGAMEEXROM( value & 3 );
+	}
 }
 
 void initAR()
 {
+	ar.active = 1;
 	ar_IO1_Write( 0, 0 );
 	ar.resetCounter = ar.resetPressed = 
 	ar.resetReleased = ar.cyclesSinceReset = 
@@ -144,17 +161,20 @@ void CKernel::Run( void )
 
 	SET_GPIO( bGAME | bEXROM | bNMI | bDMA );
 
-	//
-	// load ROM and convert to cache-friendly format
-	//
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
 
+	//
+	// load ROM and convert to cache-friendly format
+	//
 	CRT_HEADER header;
 	u32 ROM_LH, nBanks;
 	u8 bankswitchType, temp[ 8192 * 4 * 2 ];
 	readCRTFile( logger, &header, (char*)DRIVE, (char*)FILENAME, (u8*)temp, &bankswitchType, &ROM_LH, &nBanks, true );
+
+	memset( (void*)&ar, sizeof( ar ), 0 );
+	ar.bAtomicPower = header.type == 9 ? 1 : 0;
 
 	ar.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[0] + 128 ) & ~127 );
 	for ( u32 b = 0; b < 4; b++ )
@@ -162,7 +182,11 @@ void CKernel::Run( void )
 			ar.flash_cacheoptimized[ ( b * 8192 + ADDR_LINEAR2CACHE( i ) ) ] = temp[ (b * 8192 + i) * 2 ];
 
 	ar.ramAR = &ar.flash_cacheoptimized[ 4 * 8192 ];
-	memset( ar.ramAR, 0, 8192 );
+	memset( ar.ramAR, 0xbd, 8192 );
+
+	// this is a hack -- somehow the very first initialization routine does not work (maybe something is wrong with the handling of RAM/ROM accesses in this implementation)
+	if ( ar.bAtomicPower )
+		memcpy( ar.ramAR, ar.flash_cacheoptimized, 8192 );
 
 	#ifdef COMPILE_MENU
 	if ( screenType == 0 )
@@ -201,8 +225,8 @@ void CKernel::Run( void )
 	CACHE_PRELOAD_DATA_CACHE( &ar, ( sizeof( ARSTATE ) + 63 ) / 64, CACHE_PRELOADL1KEEP )
 	FORCE_READ_LINEAR32a( ar.flash_cacheoptimized, 8192 * 4, 8192 * 32 )
 	FORCE_READ_LINEAR32a( ar.ramAR, 8192, 8192 * 8 )
-	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 2048 );
-	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 2048, 65536 );
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 2560 );
+	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 2560, 65536 );
 
 	// ready to go
 	latchSetClearImm( LATCH_LED0 | LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
@@ -241,7 +265,7 @@ void CKernel::FIQHandler (void *pParam)
 	register u32 addr = GET_ADDRESS0to7 << 5;
 
 	CACHE_PRELOADL2STRM( &flashBank[ addr ] );
-	if ( ar.exportRAM )
+	if ( ar.exportRAM || ar.exportRAM_A000 )
 	{
 		if ( g2 & bRW )
 			{ CACHE_PRELOADL2STRM( &ar.ramAR[ addr ] ); } else
@@ -263,24 +287,25 @@ void CKernel::FIQHandler (void *pParam)
 	// make our address complete
 	addr |= GET_ADDRESS8to12;
 
-	// read access to ROM at $8000/$a000 
-	if ( CPU_READS_FROM_BUS && ( ( ROML_ACCESS && !ar.exportRAM ) || ROMH_ACCESS ) )
-	{
-		WRITE_D0to7_TO_BUS( flashBank[ addr ] );
-		FINISH_BUS_HANDLING
-		return;
-	} 
-
-	// read access to RAM at $8000
-	if ( CPU_READS_FROM_BUS && ROML_ACCESS && ar.exportRAM )
+	// read access to RAM at $8000/$a000 
+	if ( CPU_READS_FROM_BUS && ( (ROMH_ACCESS && ar.exportRAM_A000) || (ROML_ACCESS && ar.exportRAM) ) )
 	{
 		WRITE_D0to7_TO_BUS( ar.ramAR[ addr ] );
 		FINISH_BUS_HANDLING
 		return;
 	} 
 
-	// write access to RAM at $8000
-	if ( CPU_WRITES_TO_BUS && ROML_ACCESS && ar.exportRAM )
+	// read access to ROM at $8000/$a000 
+	if ( CPU_READS_FROM_BUS && ( ( ROML_ACCESS && !ar.exportRAM ) || ( ROMH_ACCESS && !ar.exportRAM_A000 ) ) )
+	{
+		WRITE_D0to7_TO_BUS( flashBank[ addr ] );
+		FINISH_BUS_HANDLING
+		return;
+	} 
+
+
+	// write access to RAM at $8000/$a000
+	if ( CPU_WRITES_TO_BUS && ( (ROML_ACCESS && ar.exportRAM) || (ROMH_ACCESS && ar.exportRAM_A000) ) )
 	{	
 		READ_D0to7_FROM_BUS( ar.ramAR[ addr ] );
 		FINISH_BUS_HANDLING
@@ -298,9 +323,9 @@ void CKernel::FIQHandler (void *pParam)
 	// read part of RAM or ROM in IO2-range
 	if ( CPU_READS_FROM_BUS && IO2_ACCESS )
 	{
-		if ( ar.exportRAM )
-			WRITE_D0to7_TO_BUS( ar.ramAR[ addr ] ) else
-			WRITE_D0to7_TO_BUS( flashBank[ addr ] )
+		if ( ar.exportRAM || ar.exportRAM_A000 )
+			WRITE_D0to7_TO_BUS( ar.ramAR[ addr | 31 ] ) else
+			WRITE_D0to7_TO_BUS( flashBank[ addr | 31 ] )
 
 		FINISH_BUS_HANDLING
 		return;
@@ -322,7 +347,7 @@ void CKernel::FIQHandler (void *pParam)
 	}
 
 	// write to part of the AR-RAM in IO2-range
-	if ( CPU_WRITES_TO_BUS && IO2_ACCESS && ar.exportRAM )
+	if ( CPU_WRITES_TO_BUS && IO2_ACCESS && (ar.exportRAM||ar.exportRAM_A000) )
 	{
 		READ_D0to7_FROM_BUS( ar.ramAR[ addr | 31 ] );
 		FINISH_BUS_HANDLING
@@ -350,9 +375,11 @@ freezer:
 		SET_GPIO( bEXROM | bNMI );
 		CLR_GPIO( bGAME | bCTRL257 ); 
 
-		ar.statusRegister = 3;
 		ar.active = 1;
-		ar.freezeNMICycles = ar.ofsROMBank = ar.exportRAM = 0;
+		ar.freezeNMICycles = ar.ofsROMBank = ar.exportRAM = ar.exportRAM_A000 = 0;
+		
+		if ( ar.bAtomicPower )
+			ar.exportRAM = 1; 
 
 		latchSetClearImm( LATCH_LED0, 0 );
 

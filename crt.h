@@ -44,6 +44,7 @@
 #define BS_MAGICDESK	0x02
 #define BS_FC3      	0x03
 #define BS_AR6      	0x04
+#define BS_ATOMICPOW   	0x05
 
 static const char CRT_HEADER_SIG[] = "C64 CARTRIDGE   ";
 static const char CHIP_HEADER_SIG[] = "CHIP";

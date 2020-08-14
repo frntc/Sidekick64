@@ -212,6 +212,11 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 		*bankswitchType = BS_AR6;
 		*ROM_LH = bROML;
 		break;
+	case 9:
+		//logger->Write( "RaspiFlash", LogNotice, "Action Replay 4.2/5/6/7 CRT" );
+		*bankswitchType = BS_ATOMICPOW;
+		*ROM_LH = bROML;
+		break;
 	case 0:
 	default:
 		*bankswitchType = BS_NONE;
@@ -550,7 +555,8 @@ int checkCRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 
 			return 5;	
 		case 3:	 // Final Cartridge 3 CRT
 			return 60;
-		case 1:  // Action Replay 4.2/5/6/7 CRT
+		case 9:
+		case 1:  // Action Replay 4.2/5/6/7 or AtomicPower/NordicPower CRT
 			return 70;
 		default: //unknown CRT-type
 			*error = 1;
