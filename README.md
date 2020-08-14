@@ -3,7 +3,7 @@
 Sidekick64 is a versatile cartridge/expansion for the C64, C128, and the C16/+4. Its functionality is entirely defined by software running on a Raspberry Pi 3 (RPi). 
 The connecting circuitry is quite simple and does not include any programmable ICs. Currently implemented features include the emulation of
 - a GeoRAM/NeoRAM-compatible memory expansion, 
-- Action Replay 4.x-7.x and Final Cartridge 3(+) freezer cartridges,
+- Action Replay 4.x-7.x, Final Cartridge 3(+) and Atomic/Nordic Power (experimental) freezer cartridges,
 - Easyflash (with simplified EAPI support), MagicDesk, CBM80, C16/+4 and C128 cartridges, 
 - C64 kernal replacement,
 - Function ROMs on a C128, or 
