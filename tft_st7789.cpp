@@ -175,7 +175,10 @@ void tftCommand2xImm( u8 c, u16 d1, u16 d2 )
 	tftSendDataImm( d1 >> 8 ); tftSendDataImm( d1 ); 
 	tftSendDataImm( d2 >> 8 ); tftSendDataImm( d2 );
 }
-  
+
+static const u8 posGamma[] = { 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32, 0x44, 0x42, 0x06, 0x0E, 0x12, 0x14, 0x17 };
+static const u8 negGamma[] = { 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E };
+
 void tftInitDisplay() 
 {
 	TFT_SDA_LOW
@@ -196,6 +199,27 @@ void tftInitDisplay()
 	tftCommand( 0x3A, 0x05 );						// 16-bit color mode 
 	tftCommand( 0x20 + invert );					// invert
 	tftCommand( 0x36, rotate << 5 );				// orientation
+
+	tftCommand( 0x26, 0 );
+
+	tftCommand( 0xe0 );
+	for ( int i = 0; i < 14; i++ )
+		tftSendData( posGamma[ i ] );
+
+	tftCommand( 0xe1 );
+	for ( int i = 0; i < 14; i++ )
+		tftSendData( negGamma[ i ] );
+
+	tftCommand( 0xba, 4 );
+
+	tftCommand( 0xe2 );					// red gamme lut
+	for ( int i = 0; i < 64; i++ )
+		tftSendData( i * 4 );
+
+	tftCommand( 0xe3 );					// blue gamme lut
+	for ( int i = 0; i < 64; i++ )
+		tftSendData( i * 4 );
+
 	tftCommand( 0x29 );								// display on
 	flush4BitBuffer( true );	delay( 100 );
 }
@@ -220,6 +244,27 @@ void tftInitDisplayImm()
 	tftCommandImm( 0x3A, 0x05 );						// 16-bit color mode 
 	tftCommandImm( 0x20 + invert );						// invert
 	tftCommandImm( 0x36, rotate << 5 );					// orientation
+
+	tftCommandImm( 0x26, 0 );
+
+	tftCommandImm( 0xe0 );
+	for ( int i = 0; i < 14; i++ )
+		tftSendDataImm( posGamma[ i ] );
+
+	tftCommandImm( 0xe1 );
+	for ( int i = 0; i < 14; i++ )
+		tftSendDataImm( negGamma[ i ] );
+
+	tftCommandImm( 0xba, 4 );
+
+	tftCommandImm( 0xe2 );					// red gamme lut
+	for ( int i = 0; i < 64; i++ )
+		tftSendDataImm( i * 4 );
+
+	tftCommandImm( 0xe3 );					// blue gamme lut
+	for ( int i = 0; i < 64; i++ )
+		tftSendDataImm( i * 4 );
+
 	tftCommandImm( 0x29 );								// display on
 	delay( 100 );
 }

@@ -100,7 +100,8 @@ typedef struct
 	u32 mainloopCount;
 	u32 eapiCRTModified;
 
-	// todo
+	u32 LONGBOARD;
+
 	//u8 padding[ 384 - 345 ];
 } __attribute__((packed)) EFSTATE;
 
@@ -329,12 +330,15 @@ __attribute__( ( always_inline ) ) inline void prefetchHeuristic()
 
 __attribute__( ( always_inline ) ) inline void prefetchComplete()
 {
-	CACHE_PRELOAD_DATA_CACHE( ef.flash_cacheoptimized, ef.nBanks * ( ef.bankswitchType == BS_EASYFLASH ? 2 : 1 ) * 8192, CACHE_PRELOADL2KEEP )
-	CACHE_PRELOAD_DATA_CACHE( ef.ram, 256, CACHE_PRELOADL1KEEP )
+	CACHE_PRELOAD_DATA_CACHE( ef.flash_cacheoptimized, ef.nBanks * ( (ef.bankswitchType == BS_EASYFLASH || ef.bankswitchType == BS_NONE) ? 2 : 1 ) * 8192, CACHE_PRELOADL2KEEP )
+
+	if ( ef.bankswitchType == BS_EASYFLASH )
+		CACHE_PRELOAD_DATA_CACHE( ef.ram, 256, CACHE_PRELOADL1KEEP )
 
 	//the RPi is again not convinced enough to preload data into cache, this time we need to simulate random access to the data
-	FORCE_READ_LINEAR( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks )
+	FORCE_READ_LINEARa( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 16384 * 16 )
 	FORCE_READ_RANDOM( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 8192 * 2 * ef.nBanks * 16 )
+	FORCE_READ_LINEARa( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 16384 * 16 )
 }
 
 static u32 LED_INIT1_HIGH;	
@@ -375,6 +379,7 @@ static void initScreenAndLEDCodes()
 }
 
 #ifdef COMPILE_MENU
+static void KernelEFFIQHandler_nobank( void *pParam );
 static void KernelEFFIQHandler( void *pParam );
 void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr )
 #else
@@ -510,7 +515,18 @@ void CKernelEF::Run( void )
 	DisableIRQs();
 
 	// setup FIQ
-	m_InputPin.ConnectInterrupt( FIQ_HANDLER, FIQ_PARENT );
+	TGPIOInterruptHandler *myHandler = FIQ_HANDLER;
+	#ifdef COMPILE_MENU
+	if ( ef.bankswitchType == BS_NONE )
+		myHandler = KernelEFFIQHandler_nobank;
+	#endif
+	m_InputPin.ConnectInterrupt( myHandler, FIQ_PARENT );
+
+	// different timing C64-longboards and C128 compared to 469-boards
+	ef.LONGBOARD = 0;
+	if ( modeC128 || modeVIC == 0 )
+		ef.LONGBOARD = 1; 
+
 	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
 	m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
 
@@ -521,6 +537,8 @@ void CKernelEF::Run( void )
 
 	// TODO
 	ef.flashFitsInCache = 0;
+	if ( ef.bankswitchType == BS_NONE )
+		ef.flashFitsInCache = 1;
 
 	// wait forever
 	ef.mainloopCount = 0;
@@ -535,15 +553,14 @@ void CKernelEF::Run( void )
 
 	// additional first-time cache preloading
 	CACHE_PRELOAD_DATA_CACHE( (u8*)&ef, ( sizeof( EFSTATE ) + 63 ) / 64, CACHE_PRELOADL1KEEP )
-	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 4096 )
-
-	if ( ef.flashFitsInCache )
-		FORCE_READ_RANDOM( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 8192 * 2 * ef.nBanks * 256 )
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)myHandler, 4096 )
 
 	FORCE_READ_LINEAR32a( &ef, sizeof( EFSTATE ), 65536 );
-	FORCE_READ_LINEAR32a( &FIQ_HANDLER, 4096, 65536 );
+	FORCE_READ_LINEAR32a( myHandler, 4096, 65536 );
 
-	prefetchHeuristic();
+	if ( ef.flashFitsInCache )
+		prefetchComplete(); else
+		prefetchHeuristic();
 
 	// ready to go...
 	latchSetClearImm( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
@@ -584,6 +601,110 @@ void CKernelEF::Run( void )
 
 
 #ifdef COMPILE_MENU
+static void KernelEFFIQHandler_nobank( void *pParam )
+#else
+void CKernelEF::FIQHandler (void *pParam)
+#endif
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+
+	// after this call we have some time (until signals are valid, multiplexers have switched, the RPi can/should read again)
+	START_AND_READ_ADDR0to7_RW_RESET_CS_NO_MULTIPLEX
+
+	addr = GET_ADDRESS0to7 << 5;
+	CACHE_PRELOADL2KEEP( &flashBankR[ addr * 2 ] );
+
+	if ( VIC_HALF_CYCLE )
+	{
+		// FINETUNED = experimental code to explore VIC2-timings
+		#ifdef FINETUNED
+		WAIT_UP_TO_CYCLE( 100 );
+		g2 = read32( ARM_GPIO_GPLEV0 );	
+		SET_GPIO( bCTRL257 );	
+		register u32 t;
+		READ_CYCLE_COUNTER( t );
+		WAIT_UP_TO_CYCLE_AFTER( 75+50, t );
+		g3 = read32( ARM_GPIO_GPLEV0 );	
+		#else
+		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
+		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
+		#endif
+
+		if ( ROMH_ACCESS ) 
+		{
+			D = *(u8*)&flashBankR[ GET_ADDRESS_CACHEOPT * 2 + 1 ];
+			WRITE_D0to7_TO_BUS_VIC( D )
+		}
+
+		FINISH_BUS_HANDLING
+		return;
+	}  
+
+	SET_GPIO( bCTRL257 );	
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	// read the rest of the signals
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	// VIC2 read during badline?
+	if ( VIC_BADLINE )
+	{
+		if ( !ef.LONGBOARD )
+			READ_ADDR8to12_ROMLH_IO12_BA
+
+		if ( ROMH_ACCESS ) 
+		{
+			D = *(u8*)&flashBankR[ addr * 2 + 1 ];
+			WRITE_D0to7_TO_BUS_BADLINE( D )
+		}
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	//
+	// starting from here: CPU communication
+	//
+	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
+	{
+		D = *(u32*)&flashBankR[ addr * 2 ];
+		if ( ROMH_ACCESS )
+			D >>= 8; 
+
+		WRITE_D0to7_TO_BUS( D )
+		goto cleanup;
+	}
+
+	// reset handling: when button #2 is pressed together with #1 then the EF ram is erased, DMA is released as well
+	if ( !( g2 & bRESET ) ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		SET_GPIO( bDMA | bNMI ); 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+cleanup:
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+
+
+
+
+
+
+
+
+
+#ifdef COMPILE_MENU
 static void KernelEFFIQHandler( void *pParam )
 #else
 void CKernelEF::FIQHandler (void *pParam)
@@ -593,34 +714,19 @@ void CKernelEF::FIQHandler (void *pParam)
 	register u8 *flashBankR = ef.flashBank;
 
 	// after this call we have some time (until signals are valid, multiplexers have switched, the RPi can/should read again)
-	START_AND_READ_ADDR0to7_RW_RESET_CS
-
-	// we got the A0..A7 part of the address which we will access
-	addr = GET_ADDRESS0to7 << 5;
-
-	CACHE_PRELOADL2STRM( &flashBankR[ addr * 2 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 0 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 64 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 128 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 192 ] );
-
-	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+	//START_AND_READ_ADDR0to7_RW_RESET_CS
+	START_AND_READ_ADDR0to7_RW_RESET_CS_NO_MULTIPLEX
 
 	//
 	//
 	//
 	if ( VIC_HALF_CYCLE )
 	{
-		//if ( modeC128 )
-			//WAIT_CYCLE_MULTIPLEXER += 20;
+		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
 
-		// read the rest of the signals
-		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
 
-		//if ( modeC128 )
-			//WAIT_CYCLE_MULTIPLEXER -= 20;
-
-		// make our address complete
+		addr = GET_ADDRESS0to7 << 5;
 		addr |= GET_ADDRESS8to12;
 
 		if ( ROML_OR_ROMH_ACCESS )
@@ -628,7 +734,6 @@ void CKernelEF::FIQHandler (void *pParam)
 			// get both ROML and ROMH with one read
 			D = *(u32*)&flashBankR[ addr * 2 ];
 			if ( ROMH_ACCESS ) D >>= 8;
-
 			WRITE_D0to7_TO_BUS_VIC( D )
 			setLatchFIQ( LED_ROM_ACCESS );
 		} else
@@ -642,11 +747,23 @@ void CKernelEF::FIQHandler (void *pParam)
 			WRITE_D0to7_TO_BUS_VIC( easyflash_IO1_Read( GET_IO12_ADDRESS ) );
 			setLatchFIQ( LED_IO1 );
 		}
-		
+
 		FINISH_BUS_HANDLING
 		return;
-	} 
+	}  
 
+	// we got the A0..A7 part of the address which we will access
+	addr = GET_ADDRESS0to7 << 5;
+
+	CACHE_PRELOADL2STRM( &flashBankR[ addr * 2 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 0 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 64 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 128 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 192 ] );
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	SET_GPIO( bCTRL257 );	
 
 //	if ( modeC128 && VIC_HALF_CYCLE )
 //		WAIT_CYCLE_MULTIPLEXER += 15;
@@ -666,18 +783,16 @@ void CKernelEF::FIQHandler (void *pParam)
 	// VIC2 read during badline?
 	if ( VIC_BADLINE )
 	{
-		if ( ef.bankswitchType == BS_MAGICDESK )
-		{
-			D = *(u32*)&flashBankR[ addr ];
-		} else
-		{
-			D = *(u32*)&flashBankR[ addr * 2 ];
-			if ( ROMH_ACCESS )
-				D >>= 8; 
-		}
+		if ( !ef.LONGBOARD )
+			READ_ADDR8to12_ROMLH_IO12_BA
 
-		READ_ADDR8to12_ROMLH_IO12_BA
-		WRITE_D0to7_TO_BUS_BADLINE( D )
+		if ( ROMH_ACCESS ) 
+		{
+			if ( ef.bankswitchType == BS_MAGICDESK )
+				D = *(u32*)&flashBankR[ addr ]; else
+				D = *(u8*)&flashBankR[ addr * 2 + 1 ];
+			WRITE_D0to7_TO_BUS_BADLINE( D )
+		}
 		FINISH_BUS_HANDLING
 		return;
 	}

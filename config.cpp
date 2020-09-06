@@ -198,12 +198,7 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 						screenType = 0;
 					if ( strstr( ptr, "ST7789" ) )
 						screenType = 1;
-					strncpy( skinFontFilename, ptr, 1023 );
-				#ifdef DEBUG_OUT
-					logger->Write( "RaspiMenu", LogNotice, "  >%s<", skinFontFilename );
-				#endif
 				}
-
 			}
 		}
 	}

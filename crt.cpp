@@ -329,22 +329,26 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 				}
 			} else
 			{
+				u32 ofs = 0;
+				if ( chip.adr == 0xf000 || chip.adr == 0xb000 )
+					ofs = 4096;
+
 				*ROM_LH |= bROMH;
 
 				if ( getRAW )
 				{
-					for ( register u32 i = 0; i < 8192; i++ )
-						flash[ ( chip.bank * 8192 + i ) * 2 + 1 ] = crt[ i ];
+					for ( register u32 i = 0; i < 8192 - ofs; i++ )
+						flash[ ( chip.bank * 8192 + i + ofs ) * 2 + 1 ] = crt[ i ];
 				} else
 				{
-					for ( register u32 i = 0; i < 8192; i++ )
+					for ( register u32 i = 0; i < 8192 - ofs; i++ )
 					{
-						u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
+						u32 realAdr = ( ( (i+ofs) & 255 ) << 5 ) | ( ( (i+ofs) >> 8 ) & 31 );
 						flash[ ( chip.bank * 8192 + realAdr ) * 2 + 1 ] = crt[ i ];
 					}
 				}
 
-				crt += 8192;
+				crt += 8192 - ofs;
 			}
 		}
 
