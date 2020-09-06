@@ -112,6 +112,7 @@ The menu software is the very same as for Sidekick64 -- it detects automatically
 
 Attention: the Easyflash emulation supports reads in 2MHz Turbo Mode on the C128. This is a bit on the edge of the RPi speed. If you experience instabilities, you might want to slightly overclock (see SD:sidekick64.txt). Again please be aware that overclocking may void warranty.
 
+Known limitations: the C128 behaves differently in C64-Ultimax-mode (VIC-II ROMH read accesses do not properly set RW). This causes 10%-20% of the read accesses to fail, because the RW-signal is used to control the direction of level shifters on the Sidekick.
 
 ## Sidekick264 for C16 and +4
 
