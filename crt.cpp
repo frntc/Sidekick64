@@ -330,6 +330,7 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 			} else
 			{
 				u32 ofs = 0;
+				// todo: calculate offset correctly!
 				if ( chip.adr == 0xf000 || chip.adr == 0xb000 )
 					ofs = 4096;
 
