@@ -715,18 +715,28 @@ void CKernelEF::FIQHandler (void *pParam)
 
 	// after this call we have some time (until signals are valid, multiplexers have switched, the RPi can/should read again)
 	//START_AND_READ_ADDR0to7_RW_RESET_CS
-	START_AND_READ_ADDR0to7_RW_RESET_CS_NO_MULTIPLEX
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	// we got the A0..A7 part of the address which we will access
+	addr = GET_ADDRESS0to7 << 5;
+
+	CACHE_PRELOADL2STRM( &flashBankR[ addr * 2 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 0 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 64 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 128 ] );
+	CACHE_PRELOADL1KEEP( &ef.ram[ 192 ] );
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
 
 	//
 	//
 	//
 	if ( VIC_HALF_CYCLE )
 	{
-		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
+		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+//		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
+//		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
 
-		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
-
-		addr = GET_ADDRESS0to7 << 5;
 		addr |= GET_ADDRESS8to12;
 
 		if ( ROML_OR_ROMH_ACCESS )
@@ -751,19 +761,6 @@ void CKernelEF::FIQHandler (void *pParam)
 		FINISH_BUS_HANDLING
 		return;
 	}  
-
-	// we got the A0..A7 part of the address which we will access
-	addr = GET_ADDRESS0to7 << 5;
-
-	CACHE_PRELOADL2STRM( &flashBankR[ addr * 2 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 0 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 64 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 128 ] );
-	CACHE_PRELOADL1KEEP( &ef.ram[ 192 ] );
-
-	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
-
-	SET_GPIO( bCTRL257 );	
 
 //	if ( modeC128 && VIC_HALF_CYCLE )
 //		WAIT_CYCLE_MULTIPLEXER += 15;
