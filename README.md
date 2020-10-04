@@ -21,6 +21,13 @@ To the C64/+4 Sidekick64 is connected using a simple adapter.
 Sidekick64 comes with a menu with a configurable main screen (for frequently used features, programs, cartridges), a configuration screen, and a file browser.
 The C16/+4 version comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue! Here's a [video](Video/Sidekick64_ElectricCity_by_Flex.mp4) of Sidekick64 emulation SIDs and playing [Electric City](https://csdb.dk/release/?id=189742) by Flex.
 
+## Changelog
+
+recent changes:
+- browser scans directories on-demand (avoids long initial launch time on SD cards with many files)
+- support for "autostart" GeoRAM-images which can be started with SYS56832: put the .GEORAM-file in SD:CRT and use it like any other .CRT-file
+- various bug fixes in the browser
+
 ## I have a previous revision PCB, can I still...?
 
 The software can be run on any of the previous PCB revisions. If you want to to use a RGB-TFT and/or the C128 function ROMs with your PCB then you can do simple modifications (soldering 3 wires to connect the two additional signals to the display and add one more input to the RPi) as shown [here](Interface/sidekick64_rev03_upgrade.jpg).
