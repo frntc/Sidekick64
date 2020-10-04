@@ -476,6 +476,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			subGeoRAM = 0;
 			return;
 		case 5: // .CRT file
+			if ( strstr( filename, "georam") != 0 || strstr( filename, "GEORAM") != 0 )
+			{
+				*launchKernel = 10;
+				errorMsg = NULL;
+				strcpy( FILENAME, filename );
+				return;
+			} 
 			if ( strstr( filename, "CART128") != 0 )
 			{
 				if ( modeC128 == 0 )
