@@ -815,6 +815,11 @@ int main( void )
 		case 9:
 			KernelCartRun128( kernel.m_InputPin, &kernel, FILENAME, menuItemStr );
 			break;
+		case 10:
+			logger->Write( "RaspiMenu", LogNotice, "filename georam: %s", FILENAME );
+
+			KernelRKLRun( kernel.m_InputPin, &kernel, NULL, "SD:C64/georam_launch.prg", FILENAME, 4096, false, NULL, 0, 0 ); 
+			break;
 		default:
 			break;
 		}

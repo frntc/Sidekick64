@@ -78,6 +78,7 @@ int cursorPos = 0;
 int scrollPos = 0;
 int lastLine;
 int lastRolled = -1;
+int lastScrolled = -1;
 int lastSubIndex = -1;
 int subGeoRAM = 0;
 int subSID = 0;
@@ -129,6 +130,28 @@ void printC64( u32 x, u32 y, const char *t, u8 color, u8 flag, u32 convert, u32 
 }
 
 
+int scanFileTree( u32 cursorPos, u32 scrollPos )
+{
+	u32 lines = 0;
+	s32 idx = scrollPos;
+	while ( lines < DISPLAY_LINES && idx < nDirEntries ) 
+	{
+		if ( idx >= nDirEntries ) 
+			break;
+
+		if ( dir[ idx ].f & DIR_DIRECTORY || dir[ idx ].f & DIR_D64_FILE )
+		{
+			if ( !(dir[ idx ].f & DIR_UNROLLED) )
+				idx = dir[ idx ].next; else
+				idx ++;
+		} else
+			idx ++;
+
+		lines ++;
+	}
+	return idx;
+}
+
 
 int printFileTree( s32 cursorPos, s32 scrollPos )
 {
@@ -154,19 +177,36 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 
 		char temp[1024], t2[ 1024 ] = {0};
 		memset( t2, 0, 1024 );
+		int leading = 0;
 		if( dir[ idx ].level > 0 )
 		{
 			for ( u32 j = 0; j < dir[ idx ].level - 1; j++ )
+			{
 				strcat( t2, " " );
+				leading ++;
+			}
 			if ( convert != 3 )
 				t2[ dir[ idx ].level - 1 ] = 93+32; else
 				t2[ dir[ idx ].level - 1 ] = 93;
+			leading ++;
 		}
 
 		sprintf( temp, "%s%s", t2, dir[ idx ].name );
 		if ( strlen( temp ) > 34 )
 			temp[ 35 ] = 0;
-		printC64( 2, lines + 3, temp, color, idx == cursorPos ? 0x80 : 0, convert );
+
+		if ( (dir[ idx ].parent != 0xffffffff && dir[ dir[ idx ].parent ].f & DIR_D64_FILE && dir[ idx ].parent == (u32)(idx - 1) ) )
+		{
+			if ( idx == cursorPos )
+			{
+				printC64( 2, lines + 3, temp, color, 0x80, convert ); 
+			} else
+			{
+				printC64( 2, lines + 3, t2, color, 0x00, convert ); 
+				printC64( 2 + leading, lines + 3, (char*)dir[ idx ].name, color, 0x80, convert ); 
+			}
+		} else
+			printC64( 2, lines + 3, temp, color, (idx == cursorPos) ? 0x80 : 0, convert );
 		lastVisible = idx;
 
 		if ( dir[ idx ].f & DIR_DIRECTORY || dir[ idx ].f & DIR_D64_FILE )
@@ -190,9 +230,12 @@ void printBrowserScreen()
 
 	//printC64(0,0,  "0123456789012345678901234567890123456789", 15, 0 );
 	printC64( 0,  1, "        .- sidekick64-browser -.        ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
-	printC64( 0, 23, "   F1/F3 Page Up/Down, F7 Back to Menu  ", skinValues.SKIN_BROWSER_TEXT_HEADER, 0, 3 );
+	printC64( 0, 23, "  F1/F3 Page Up/Down  F7 Back to Menu  ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
+	printC64( 2, 23, "F1", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+	printC64( 5, 23, "F3", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+	printC64( 22, 23, "F7", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
 	if ( modeC128 )
-		printC64( 0, 24, "SHIFT+RETURN to launch PRGs in C128-mode", skinValues.SKIN_BROWSER_TEXT_HEADER, 0, 3 );
+		printC64( 0, 24, "SHIFT+RETURN to launch PRGs in C128-mode", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
 
 	if ( subGeoRAM )
 	{
@@ -489,6 +532,8 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 		if ( k == 134 ) { k = 17; rep = DISPLAY_LINES - 1; }
 		if ( k == 133 ) { k = 145; rep = DISPLAY_LINES - 1; }
 
+		lastLine = scanFileTree( cursorPos, scrollPos );
+
 		for ( int i = 0; i < rep; i++ )
 		{
 			// left
@@ -498,7 +543,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				if ( dir[ cursorPos ].parent != 0xffffffff )
 				{
 					lastSubIndex = cursorPos; 
-					lastRolled = cursorPos = dir[ cursorPos ].parent;
+					lastRolled = dir[ cursorPos ].parent;
+					// fix
+					if (! ( ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE ) &&
+							( dir[ cursorPos ].f & DIR_UNROLLED ) ) )
+						cursorPos = dir[ cursorPos ].parent;
+					// fix 2
+					lastScrolled = scrollPos;
 				}
 				if ( !( dir[ cursorPos ].f & DIR_UNROLLED ) )
 					k = 145;
@@ -510,30 +561,64 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			if ( k == 29 || 
 				 ( ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE ) && k == 13 && !(dir[ cursorPos ].f & DIR_UNROLLED ) ) )
 			{
+				if ( (dir[ cursorPos ].f & DIR_DIRECTORY) && !(dir[ cursorPos ].f & DIR_SCANNED) )
+				{
+					// build path
+					char path[ 8192 ] = {0};
+					u32 n = 0, c = cursorPos;
+					u32 nodes[ 256 ];
+
+					nodes[ n ++ ] = c;
+
+					while ( dir[ c ].parent != 0xffffffff )
+					{
+						c = nodes[ n ++ ] = dir[ c ].parent;
+					}
+
+					sprintf( path, "SD:" );
+
+					for ( u32 i = n - 1; i >= 1; i -- )
+					{
+						if ( i != n - 1 )
+							strcat( path, "//" );
+						strcat( path, (char*)dir[ nodes[i] ].name );
+					}
+					strcat( path, "//" );
+
+					extern void insertDirectoryContents( int node, char *basePath );
+					insertDirectoryContents( nodes[ i ], path );
+				}
+
 				if ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE )
 					dir[ cursorPos ].f |= DIR_UNROLLED;
 
 				if ( cursorPos == lastRolled )
-					cursorPos = lastSubIndex; else
-					if ( cursorPos < nDirEntries - 1 )
-						cursorPos ++;
-		
+				{
+					scrollPos = lastScrolled;
+					cursorPos = lastSubIndex; 
+				} else
+				if ( cursorPos < nDirEntries - 1 )
+				{
+					cursorPos ++;
+					lastLine = scanFileTree( cursorPos, scrollPos );
+				}
 				lastRolled = -1;
+
 				k = 0;
 			} else
 			// down
 			if ( k == 17 )
 			{
-				if ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE )
-				{
-					if ( dir[ cursorPos ].f & DIR_UNROLLED )
-						cursorPos ++; else
+					int oldPos = cursorPos;
+					if ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE )
 					{
-						if ( (s32)dir[ cursorPos ].next < nDirEntries )
+						if ( dir[ cursorPos ].f & DIR_UNROLLED )
+							cursorPos ++; else
 							cursorPos = dir[ cursorPos ].next;
-					}
-				} else
-					cursorPos ++;
+					} else
+						cursorPos ++;
+					if ( cursorPos >= nDirEntries )
+						cursorPos = oldPos;
 			} else
 			// up
 			if ( k == 145 )
@@ -551,21 +636,20 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				}
 			}
 
-			if ( cursorPos < 0 ) cursorPos = 0;
-			if ( cursorPos >= nDirEntries ) cursorPos = nDirEntries - 1;
+			//if ( cursorPos < 0 ) cursorPos = 0;
+			//if ( cursorPos >= nDirEntries ) cursorPos = nDirEntries - 1;
 
 			// scrollPos decrease
 			if ( cursorPos < scrollPos )
 			{
-				scrollPos --;
-				if ( scrollPos < 0 ) scrollPos = 0;
+				scrollPos = cursorPos;
 
 				if ( dir[ scrollPos ].parent != 0xffffffff && !(dir[ dir[ scrollPos ].parent ].f & DIR_UNROLLED) )
 					scrollPos = dir[ scrollPos ].parent;
 			}
 
 			// scrollPos increase
-			if ( cursorPos > lastLine )
+			if ( cursorPos >= lastLine )
 			{
 				if ( dir[ scrollPos ].f & DIR_DIRECTORY || dir[ scrollPos ].f & DIR_D64_FILE )
 				{
@@ -574,10 +658,14 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 						scrollPos = dir[ scrollPos ].next;
 				} else
 					scrollPos ++;
+
+				lastLine = scanFileTree( cursorPos, scrollPos );
 			}
 
 			if ( scrollPos < 0 ) scrollPos = 0;
 			if ( scrollPos >= nDirEntries ) scrollPos = nDirEntries - 1;
+			if ( cursorPos < 0 ) cursorPos = 0;
+			if ( cursorPos >= nDirEntries ) cursorPos = nDirEntries - 1;
 		}
 
 		if ( k == 13 || k == 141 )
@@ -591,25 +679,29 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 			// build path
 			char path[ 8192 ] = {0};
-			char d64file[ 32 ] = {0};
+			char d64file[ 128 ] = {0};
 			s32 n = 0, c = cursorPos;
 			u32 fileIndex = 0xffffffff;
 			u32 nodes[ 256 ];
 
 			nodes[ n ++ ] = c;
+			logger->Write( "exec", LogNotice, "node %d: '%s'", c, dir[c].name );
 
 			s32 curC = c;
 
 			if ( (dir[ c ].f & DIR_FILE_IN_D64 && ((dir[ c ].f>>SHIFT_TYPE)&7) == 2) || dir[ c ].f & DIR_PRG_FILE || dir[ c ].f & DIR_CRT_FILE )
 			{
+				logger->Write( "exec", LogNotice, "1" );
 				while ( dir[ c ].parent != 0xffffffff )
 				{
+					logger->Write( "exec", LogNotice, "node %d: '%s'", dir[c].parent, dir[dir[c].parent].name );
 					c = nodes[ n ++ ] = dir[ c ].parent;
 				}
 
 				int stopPath = 0;
 				if ( dir[ cursorPos ].f & DIR_FILE_IN_D64 )
 				{
+					logger->Write( "exec", LogNotice, "d64file: '%s'", dir[ cursorPos ].name[128] );
 					strcpy( d64file, (char*)&dir[ cursorPos ].name[128] );
 					fileIndex = dir[ cursorPos ].f & ((1<<SHIFT_TYPE)-1);
 					stopPath = 1;
@@ -659,6 +751,11 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 							errorMsg = NULL;
 						}
 					} else
+					if ( strstr( FILENAME, "georam") != 0 || strstr( FILENAME, "GEORAM") != 0 )
+					{
+						*launchKernel = 10;
+						errorMsg = NULL;
+					} else
 					{
 
 						u32 tempKernel = checkCRTFile( logger, DRIVE, FILENAME, &err );
@@ -679,6 +776,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 				if ( dir[ curC ].f & DIR_FILE_IN_D64 )
 				{
+				logger->Write( "exec", LogNotice, "2" );
 					extern u8 d64buf[ 1024 * 1024 ];
 					extern int readD64File( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size );
 
@@ -689,6 +787,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 					if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
 						logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
 
+				logger->Write( "exec", LogNotice, "path '%s'", path );
 					if ( !readD64File( logger, "", path, d64buf, &imgsize ) )
 						return;
 
@@ -858,22 +957,39 @@ void printMainMenu()
 		//               "012345678901234567890123456789012345XXXX"
 		printC64( 0, 23, "    choose KERNAL and/or PRG (w/ F7)    ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		printC64( 0, 24, "        ? back, RETURN/F1 launch        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
+		//               "012345678901234567890123456789012345XXXX"
+		printC64( 33, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 8, 24, "?", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 23, 24, "F1", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		c64screen[ 24 * 40 + 8 ] = 31;
 	} else
 	if ( subGeoRAM && !subHasKernal )
 	{
 		printC64( 0, 23, "        choose PRG (also via F7)        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		printC64( 0, 24, "        ? back, RETURN/F1 launch        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
+		//               "012345678901234567890123456789012345XXXX"
+		printC64( 29, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 8, 24, "?", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 23, 24, "F1", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		c64screen[ 24 * 40 + 8 ] = 31;
 	} else
 	if ( subSID )
 	{
 		printC64( 0, 23, "        choose PRG (also via F7)        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		printC64( 0, 24, "        ? back, RETURN/F3 launch        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
+		//               "012345678901234567890123456789012345XXXX"
+		printC64( 8, 24, "?", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 23, 24, "F3", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		c64screen[ 24 * 40 + 8 ] = 31;
 	} else
 	{
 		printC64( 0, 23, "     F7 Browser, F8 Exit to Basic", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
+		//               "012345678901234567890123456789012345XXXX"
+		printC64( 5, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 17, 23, "F8", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 	}
 
 	if ( modeC128 )

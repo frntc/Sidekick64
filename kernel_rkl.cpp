@@ -138,7 +138,7 @@ __attribute__( ( always_inline ) ) inline void geoRAM_IO2_Write( u32 A, u8 D )
 static void saveGeoRAM( const char *FILENAME_RAM )
 {
 	// lazy, we always store max size files
-	writeFile( logger, DRIVE, FILENAME_RAM, geo.RAM, MAX_GEORAM_SIZE * 1024 );
+	writeFile( logger, DRIVE, FILENAME_RAM, geo.RAM, geoSizeKB * 1024 );
 }
 
 #ifdef COMPILE_MENU
@@ -209,6 +209,7 @@ void CKernelRKL::Run( void )
 	{
 		u32 size;
 		readFile( logger, DRIVE, FILENAME_RAM, geo.RAM, &size );
+		geoSizeKB = size / 1024;
 	}
 
 	// read launch code and .PRG

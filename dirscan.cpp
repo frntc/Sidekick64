@@ -73,7 +73,7 @@ u32 getTracks( u32 d64size )
 	return 0xff;
 }
 
-int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 parent )
+int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 parent, u32 *nFiles )
 {
 	u32 nTracks = getTracks( d64size );
 
@@ -103,9 +103,24 @@ int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 pare
 
 	u32 fileIndex = 0;
 
+	if ( job & D64_COUNT_FILES && nFiles )
+		*nFiles = 0;
+
 	while ( true )
 	{
 		fileIndex ++;
+
+		if ( job & D64_COUNT_FILES )
+		{
+			u8 *fileInfo = &ptr[ ofs ];
+			u32 blk = fileInfo[ 28 ] | ( fileInfo[ 29 ] << 8 );
+
+			if ( fileInfo[ 3 ] || blk )
+			{
+				if ( nFiles )
+					(*nFiles) ++;
+			}
+		}
 
 		if ( job & D64_GET_DIR )
 		{
@@ -248,9 +263,93 @@ int readD64File( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *d
 }
 
 
-void readDirectory( const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xffffffff, u32 level = 0, u32 takeAll = 0 )
+void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xffffffff, u32 level = 0, u32 takeAll = 0, u32 *nAdded = NULL )
 {
 	char temp[ 4096 ];
+
+	if ( parent != 0xffffffff )
+		d[ parent ].f |= DIR_SCANNED;
+
+	if ( mode > 0 && parent != 0xffffffff ) // insert
+	{
+		DIR dir;
+		FILINFO FileInfo;
+		FRESULT res = f_findfirst( &dir, &FileInfo, DIRPATH, "*" );
+
+		if ( res != FR_OK )
+			logger->Write( "read directory", LogNotice, "error opening dir" );
+
+		int nAdditionalEntries = 0;
+
+		for ( u32 i = 0; res == FR_OK && FileInfo.fname[ 0 ]; i++ )
+		{
+			{
+				//sprintf( sPath, "%s\\%s", sDir, FileInfo.fname );
+				//logger->Write( "insert", LogNotice, "file '%s'", FileInfo.fname );
+
+				// folder? 
+				if ( ( FileInfo.fattrib & ( AM_DIR ) ) )
+				{
+					nAdditionalEntries ++;
+				} else
+				{
+					if ( strstr( FileInfo.fname, ".crt" ) > 0 || strstr( FileInfo.fname, ".CRT" ) > 0 ||
+						 strstr( FileInfo.fname, ".georam" ) > 0 || strstr( FileInfo.fname, ".GEORAM" ) > 0 || 
+						 strstr( FileInfo.fname, ".prg" ) > 0 || strstr( FileInfo.fname, ".PRG" ) > 0 || 
+						 strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".BIN" ) > 0 ||
+						 strstr( FileInfo.fname, ".rom" ) > 0 || strstr( FileInfo.fname, ".ROM" ) > 0 )
+					{
+						nAdditionalEntries ++;
+					}
+
+					if ( strstr( FileInfo.fname, ".d64" ) > 0 || strstr( FileInfo.fname, ".D64" ) > 0 || 
+						 strstr( FileInfo.fname, ".d71" ) > 0 || strstr( FileInfo.fname, ".D71" ) > 0 )
+					{
+						strcpy( temp, DIRPATH );
+						strcat( temp, "\\" );
+						strcat( temp, FileInfo.fname );
+
+						u32 imgsize = 0;
+						if ( !readD64File( logger, "", temp, d64buf, &imgsize ) )
+						{
+							logger->Write( "RaspiMenu", LogPanic, "-> error loading file %d", temp );
+						}
+
+						u32 nFiles;
+
+						d64ParseExtract( d64buf, imgsize, D64_COUNT_FILES, (u8*)d, n, 0xffffffff, &nFiles );
+						nAdditionalEntries += nFiles + 2; // .d64 filename + disk header
+					} 
+				}
+			}
+			res = f_findnext( &dir, &FileInfo );
+		}
+
+		f_closedir( &dir );
+
+		//logger->Write( "insert", LogNotice, "additional entries %d", nAdditionalEntries );
+
+		for ( u32 i = nDirEntries - 1; i >= parent + 1; i-- )
+		{
+			if ( d[ i ].parent != 0xffffffff && d[ i ].parent > parent )
+				d[ i ].parent += nAdditionalEntries;
+			if ( d[ i ].next != 0 )
+				d[ i ].next += nAdditionalEntries;
+			d[ i + nAdditionalEntries ] = d[ i ];
+		}
+
+		// traverse all parents of node given by "parent" and increase their next-indices
+		u32 p = d[ parent ].parent;
+		while ( p != 0xffffffff )
+		{
+			d[ p ].next += nAdditionalEntries;
+			p = d[ p ].parent;
+		}
+
+		if ( nAdded )
+			*nAdded = nAdditionalEntries;
+	}
+
 
 	DIR dir;
 	FILINFO FileInfo;
@@ -271,7 +370,8 @@ void readDirectory( const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xfff
 			u32 curIdx = *n;
 			( *n )++;
 
-			readDirectory( temp, d, n, curIdx, level + 1 );
+			// omitted recursion here, directories are parsed on demand
+			//readDirectory( temp, d, n, curIdx, level + 1 );
 
 			d[ curIdx ].next = *n;
 		} else
@@ -329,6 +429,13 @@ void readDirectory( const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xfff
 					d[ *n ].level = level;
 					( *n )++;
 				} 
+				if ( strstr( FileInfo.fname, ".georam" ) > 0 || strstr( FileInfo.fname, ".GEORAM" ) > 0 )
+				{
+					d[ *n ].f = DIR_CRT_FILE;
+					d[ *n ].parent = parent;
+					d[ *n ].level = level;
+					( *n )++;
+				} 
 				if ( strstr( FileInfo.fname, ".prg" ) > 0 || strstr( FileInfo.fname, ".PRG" ) > 0 )
 				{
 					d[ *n ].f = DIR_PRG_FILE;
@@ -355,6 +462,30 @@ void readDirectory( const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xfff
 
 		res = f_findnext( &dir, &FileInfo );
 	}
+
+	f_closedir( &dir );
+}
+
+void insertDirectoryContents( int node, char *basePath )
+{
+	s32 tempEntries = dir[ node ].next;
+	u32 nAdded = 0;
+	char path[ 2048 ];
+	sprintf( path, "%s%s", basePath, dir[ node ].name );
+
+	// mount file system
+	FATFS m_FileSystem;
+	if ( f_mount( &m_FileSystem, "SD:", 1 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: SD:" );
+
+	readDirectory( 1, path, dir, &tempEntries, node, dir[ node ].level + 1, 0, &nAdded );	
+
+	// unmount file system
+	if ( f_mount( 0, "SD:", 0 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: SD:" );
+
+	nDirEntries += tempEntries - dir[ node ].next;
+	dir[ node ].next += nAdded;
 }
 
 void scanDirectories( char *DRIVE )
@@ -365,7 +496,7 @@ void scanDirectories( char *DRIVE )
 	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
 		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
 
-	u32 head;
+	u32 head = 0;
 	nDirEntries = 0;
 
 	#define APPEND_SUBTREE( NAME, PATH, ALL )						\
@@ -373,15 +504,24 @@ void scanDirectories( char *DRIVE )
 		strcpy( (char*)dir[ head ].name, NAME );					\
 		dir[ head ].f = DIR_DIRECTORY;								\
 		dir[ head ].parent = 0xffffffff;							\
-		readDirectory( PATH, dir, &nDirEntries, head, 1, ALL );		\
+		readDirectory( 0, PATH, dir, &nDirEntries, head, 1, ALL );	\
 		if ( nDirEntries == (s32)head + 1 ) nDirEntries --; else	\
 		dir[ head ].next = nDirEntries;
 
-	APPEND_SUBTREE( "CRT", "SD:CRT", 0 )
-	APPEND_SUBTREE( "D64", "SD:D64", 0 )
-	APPEND_SUBTREE( "PRG", "SD:PRG", 0 )
-	APPEND_SUBTREE( "PRG128", "SD:PRG128", 0 )
-	APPEND_SUBTREE( "CART128", "SD:CART128", 1 )
+	#define APPEND_SUBTREE_UNSCANNED( NAME, PATH, ALL )				\
+		head = nDirEntries ++;										\
+		strcpy( (char*)dir[ head ].name, NAME );					\
+		dir[ head ].f = DIR_DIRECTORY;								\
+		dir[ head ].parent = 0xffffffff;							\
+		dir[ head ].next = nDirEntries;
+
+	APPEND_SUBTREE_UNSCANNED( "CRT", "SD:CRT", 0 )
+	APPEND_SUBTREE_UNSCANNED( "D64", "SD:D64", 0 )
+	APPEND_SUBTREE_UNSCANNED( "PRG", "SD:PRG", 0 )
+	APPEND_SUBTREE_UNSCANNED( "PRG128", "SD:PRG128", 0 )
+	APPEND_SUBTREE_UNSCANNED( "CART128", "SD:CART128", 1 )
+
+	//insertDirectoryContents( 0, "SD:" );
 
 	// unmount file system
 	if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
@@ -396,7 +536,7 @@ void scanDirectories264( char *DRIVE )
 	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
 		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
 
-	u32 head;
+	u32 head = 0;
 	nDirEntries = 0;
 
 	APPEND_SUBTREE( "D264", "SD:D264", 0 )

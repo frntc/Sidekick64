@@ -40,6 +40,7 @@
 #define D64_GET_HEADER	( 1 << 24 )
 #define D64_GET_DIR		( 1 << 25 )
 #define D64_GET_FILE	( 1 << 26 )
+#define D64_COUNT_FILES ( 1 << 27 )
 
 #define DISPLAY_LINES 19
 
@@ -50,8 +51,9 @@ typedef struct
 } DIRENTRY;
 
 // file type requires 3 bits
-#define SHIFT_TYPE		22
+#define SHIFT_TYPE		16
 
+#define DIR_SCANNED 	(1<<24)
 #define DIR_UNROLLED	(1<<25)
 #define DIR_D64_FILE	(1<<26)
 #define DIR_CRT_FILE	(1<<27)
@@ -67,7 +69,7 @@ extern s32 nDirEntries;
 
 extern void printBrowserScreen();
 extern int printFileTree( s32 cursorPos, s32 scrollPos );
-extern int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s = 0, u32 parent = 0xffffffff );
+extern int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s = 0, u32 parent = 0xffffffff, u32 *nFiles = 0 );
 
 
 #endif
