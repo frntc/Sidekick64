@@ -165,6 +165,8 @@ __asm__ ("loop:");
 
 int main (void)
 {
+    char key;
+
     *(unsigned char*)(0x01) = 15;
 
     detectC128();
@@ -179,7 +181,18 @@ int main (void)
     while ( 1 )
     {
         // sendKeypress
-        *((char *)(0xdf01)) = cgetc();
+        key = cgetc();
+        if ( key == 29 && *((char *)(0x0427)) != 0 )
+        {
+            __asm__ ("lda #$0a");
+            __asm__ ("ldx #$28");
+            __asm__ ("loop:");
+            __asm__ ("sta $d850,x");
+            __asm__ ("dex");
+            __asm__ ("bne loop");
+        }
+
+        *((char *)(0xdf01)) = key;
         updateScreen();
     }
 
