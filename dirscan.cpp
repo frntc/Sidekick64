@@ -365,6 +365,8 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 
 			strcpy( (char*)d[ *n ].name, FileInfo.fname );
 			d[ *n ].f = DIR_DIRECTORY;
+			if ( takeAll )
+				d[ *n ].f |= DIR_LISTALL;
 			d[ *n ].parent = parent;
 			d[ *n ].level = level;
 			u32 curIdx = *n;
@@ -379,6 +381,7 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 			if ( !( FileInfo.fattrib & ( AM_HID | AM_SYS ) ) )
 			{
 				strcpy( (char*)d[ *n ].name, FileInfo.fname );
+				//strcpy( (char*)d[ *n ].name, "test" );
 
 				if ( strstr( FileInfo.fname, ".d64" ) > 0 || strstr( FileInfo.fname, ".D64" ) > 0 ||
 					 strstr( FileInfo.fname, ".d71" ) > 0 || strstr( FileInfo.fname, ".D71" ) > 0 )
@@ -421,36 +424,36 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 
 					d[ curIdx - 2 ].next = *n;
 
-				} 
+				} else
 				if ( strstr( FileInfo.fname, ".crt" ) > 0 || strstr( FileInfo.fname, ".CRT" ) > 0 )
 				{
 					d[ *n ].f = DIR_CRT_FILE;
 					d[ *n ].parent = parent;
 					d[ *n ].level = level;
 					( *n )++;
-				} 
+				} else 
 				if ( strstr( FileInfo.fname, ".georam" ) > 0 || strstr( FileInfo.fname, ".GEORAM" ) > 0 )
 				{
 					d[ *n ].f = DIR_CRT_FILE;
 					d[ *n ].parent = parent;
 					d[ *n ].level = level;
 					( *n )++;
-				} 
+				} else
 				if ( strstr( FileInfo.fname, ".prg" ) > 0 || strstr( FileInfo.fname, ".PRG" ) > 0 )
 				{
 					d[ *n ].f = DIR_PRG_FILE;
 					d[ *n ].parent = parent;
 					d[ *n ].level = level;
 					( *n )++;
-				}
-				/*if ( strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".bin" ) > 0 )
+				} else
+				if ( strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".bin" ) > 0 )
 				{
 					d[ *n ].f = DIR_PRG_FILE;
 					d[ *n ].parent = parent;
 					d[ *n ].level = level;
 					( *n )++;
-				}*/
-				if ( strstr( FileInfo.fname, ".rom" ) > 0 || strstr( FileInfo.fname, ".ROM" ) > 0 || takeAll == 1 )
+				} else
+				if ( strstr( FileInfo.fname, ".rom" ) > 0 || strstr( FileInfo.fname, ".ROM" ) > 0 || takeAll == 1 || (d[ parent ].f & DIR_LISTALL) )
 				{
 					d[ *n ].f = DIR_CRT_FILE;
 					d[ *n ].parent = parent;
@@ -466,7 +469,7 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 	f_closedir( &dir );
 }
 
-void insertDirectoryContents( int node, char *basePath )
+void insertDirectoryContents( int node, char *basePath, int listAll )
 {
 	s32 tempEntries = dir[ node ].next;
 	u32 nAdded = 0;
@@ -478,7 +481,7 @@ void insertDirectoryContents( int node, char *basePath )
 	if ( f_mount( &m_FileSystem, "SD:", 1 ) != FR_OK )
 		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: SD:" );
 
-	readDirectory( 1, path, dir, &tempEntries, node, dir[ node ].level + 1, 0, &nAdded );	
+	readDirectory( 1, path, dir, &tempEntries, node, dir[ node ].level + 1, listAll, &nAdded );	
 
 	// unmount file system
 	if ( f_mount( 0, "SD:", 0 ) != FR_OK )
@@ -502,7 +505,7 @@ void scanDirectories( char *DRIVE )
 	#define APPEND_SUBTREE( NAME, PATH, ALL )						\
 		head = nDirEntries ++;										\
 		strcpy( (char*)dir[ head ].name, NAME );					\
-		dir[ head ].f = DIR_DIRECTORY;								\
+		dir[ head ].f = DIR_DIRECTORY | (ALL?DIR_LISTALL:0);		\
 		dir[ head ].parent = 0xffffffff;							\
 		readDirectory( 0, PATH, dir, &nDirEntries, head, 1, ALL );	\
 		if ( nDirEntries == (s32)head + 1 ) nDirEntries --; else	\
@@ -511,7 +514,7 @@ void scanDirectories( char *DRIVE )
 	#define APPEND_SUBTREE_UNSCANNED( NAME, PATH, ALL )				\
 		head = nDirEntries ++;										\
 		strcpy( (char*)dir[ head ].name, NAME );					\
-		dir[ head ].f = DIR_DIRECTORY;								\
+		dir[ head ].f = DIR_DIRECTORY | (ALL?DIR_LISTALL:0);		\
 		dir[ head ].parent = 0xffffffff;							\
 		dir[ head ].next = nDirEntries;
 
@@ -519,7 +522,7 @@ void scanDirectories( char *DRIVE )
 	APPEND_SUBTREE_UNSCANNED( "D64", "SD:D64", 0 )
 	APPEND_SUBTREE_UNSCANNED( "PRG", "SD:PRG", 0 )
 	APPEND_SUBTREE_UNSCANNED( "PRG128", "SD:PRG128", 0 )
-	APPEND_SUBTREE_UNSCANNED( "CART128", "SD:CART128", 1 )
+	APPEND_SUBTREE_UNSCANNED( "CART128", "SD:CART128", 0 )
 
 	//insertDirectoryContents( 0, "SD:" );
 

@@ -230,6 +230,7 @@ void printBrowserScreen()
 
 	//printC64(0,0,  "0123456789012345678901234567890123456789", 15, 0 );
 	printC64( 0,  1, "        .- sidekick64-browser -.        ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	printC64( 0,  2, "           scanning directory           ", 0, 0 );
 	printC64( 0, 23, "  F1/F3 Page Up/Down  F7 Back to Menu  ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
 	printC64( 2, 23, "F1", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
 	printC64( 5, 23, "F3", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
@@ -592,8 +593,8 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 					}
 					strcat( path, "//" );
 
-					extern void insertDirectoryContents( int node, char *basePath );
-					insertDirectoryContents( nodes[ i ], path );
+					extern void insertDirectoryContents( int node, char *basePath, int takeAll );
+					insertDirectoryContents( nodes[ i ], path, dir[ cursorPos ].f & DIR_LISTALL );
 				}
 
 				if ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE )

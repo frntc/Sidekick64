@@ -354,6 +354,7 @@ boolean CKernelMenu::Initialize( void )
 		skinFontLoaded = 1;
 		//memcpy( 1024 + charset+8*(91), skcharlogo_raw, 224 ); <- this is the upper case font used in the browser, skip logo to keep all PETSCII character
 		memcpy( 2048 + charset+8*(91), skcharlogo_raw, 224 );
+		//memcpy( 0 + charset+8*(91), skcharlogo_raw, 224 );
 	} 
 
 	readSettingsFile();

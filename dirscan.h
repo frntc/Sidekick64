@@ -53,6 +53,7 @@ typedef struct
 // file type requires 3 bits
 #define SHIFT_TYPE		16
 
+#define DIR_LISTALL 	(1<<23)
 #define DIR_SCANNED 	(1<<24)
 #define DIR_UNROLLED	(1<<25)
 #define DIR_D64_FILE	(1<<26)
