@@ -88,6 +88,15 @@ u32 first = 1;
 char FILENAME[ MAX_FILENAME_LENGTH * 2 ];
 char menuItemStr[ 512 ];
 
+u32 wireSIDAvailable = 0;
+static u32 wireSIDGotHigh = 0;
+static u32 wireSIDGotLow = 0;
+
+u32 wireKernalAvailable = 0;
+static u32 wireKernalDetectMode = 0;
+static u32 wireKernalTrackAccess = 0;
+
+
 static u32 launchKernel = 0;
 static u32 lastChar = 0;
 static u32 startForC128 = 0;
@@ -405,12 +414,18 @@ void CKernelMenu::Run( void )
 	launchKernel	= 0;
 	updateMenu      = 0;
 	updateLogo      = 0;
-	subGeoRAM		= 0;
-	subSID			= 0;
 	subHasKernal	= -1;
 	subHasLaunch	= -1;
 	FILENAME[0]		= 0;
 	first			= 1;
+
+	wireSIDAvailable = 0;
+	wireSIDGotLow    = 0;
+	wireSIDGotHigh   = 0;
+
+	wireKernalAvailable   = 0;
+	wireKernalDetectMode  = 0;
+	wireKernalTrackAccess = 0;
 
 	if ( !disableCart )
 	{
@@ -503,6 +518,11 @@ void CKernelMenu::Run( void )
 
 		if ( updateMenu == 1 )
 		{
+			wireSIDAvailable = 0;
+			if ( wireSIDGotLow && wireSIDGotHigh )
+				wireSIDAvailable = 1;
+			wireSIDGotLow = wireSIDGotHigh = 0;
+
 			if ( updateLogo == 1 && screenType == 1 && modeC128 )
 			{
 				updateLogo = 2;
@@ -548,6 +568,17 @@ void CKernelMenu::FIQHandler (void *pParam)
 	{
 		FINISH_BUS_HANDLING
 		activateCart();
+		return;
+	}
+
+	if ( SID_ACCESS )
+		wireSIDGotLow = 1; else
+		wireSIDGotHigh = 1;
+
+	if ( wireKernalDetectMode && KERNAL_ACCESS )
+	{
+		wireKernalTrackAccess = 1;
+		FINISH_BUS_HANDLING
 		return;
 	}
 
@@ -626,11 +657,29 @@ void CKernelMenu::FIQHandler (void *pParam)
 		{
 			modeVIC = D;
 			updateMenu = 1;
-		}
+		} else
 		if ( A == 4 )
 		{
 			charsetTransfer = &charset[ 0 ];
 			CACHE_PRELOADL2STRM( charsetTransfer );
+		} else
+		if ( A == 16 )
+		{
+			wireKernalDetectMode = 1;
+			wireKernalTrackAccess = 0;
+			wireKernalAvailable = 0;
+			setLatchFIQ( LATCH_ENABLE_KERNAL );
+			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+			return;
+		} else
+		if ( A == 17 )
+		{
+			if ( wireKernalTrackAccess )
+				wireKernalAvailable = 1;
+			wireKernalDetectMode = 0;
+			clrLatchFIQ( LATCH_ENABLE_KERNAL );
+			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+			return;
 		}
 
 		if ( updateMenu )
@@ -712,6 +761,9 @@ int main( void )
 
 	extern u32 octaSIDMode;
 
+	subGeoRAM		= 0;
+	subSID			= 0;
+
 
 	while ( true )
 	{
@@ -752,10 +804,9 @@ int main( void )
 				loadC128PRG = 1;
 
 			if ( subSID ) {
+				applySIDSettings();
 				if ( octaSIDMode )
-				{
-					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); 
-				} else
+					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); else
 					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); 
 				break;
 			}
@@ -775,6 +826,7 @@ int main( void )
 		case 40: // launch something from a disk image
 			logger->Write( "RaspiMenu", LogNotice, "filename from d64: %s", FILENAME );
 			if ( subSID ) {
+				applySIDSettings();
 				if ( octaSIDMode )
 					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 ); else
 					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 );
@@ -809,6 +861,7 @@ int main( void )
 			KernelAR6Run( kernel.m_InputPin, &kernel, FILENAME );
 			break;
 		case 8:
+			applySIDSettings();
 			if ( octaSIDMode )
 				KernelSIDRun8( kernel.m_InputPin, &kernel, NULL ); else
 				KernelSIDRun( kernel.m_InputPin, &kernel, NULL );

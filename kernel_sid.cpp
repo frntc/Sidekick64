@@ -78,6 +78,7 @@ u32 ringWrite;
 u32 outRegisters[ 32 ];
 
 u32 fmFakeOutput = 0;
+u32 fmAutoDetectStep = 0;
 
 // counts the #cycles when the C64-reset line is pulled down (to detect a reset)
 u32 resetCounter,
@@ -95,6 +96,8 @@ s32 cfgVolSID1_Left, cfgVolSID1_Right;
 s32 cfgVolSID2_Left, cfgVolSID2_Right;
 s32 cfgVolOPL_Left, cfgVolOPL_Right;
 
+extern u32 wireSIDAvailable;
+
 void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3 )
 {
 	SID_MODEL[ 0 ] = ( sid1 == 0 ) ? 6581 : 8580;
@@ -104,18 +107,36 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 
 	// panning = 0 .. 14, vol = 0 .. 15
 	// volumes -> 0 .. 255
-	cfgVolSID1_Left  = v1 * ( 14 - p1 ) * 255 / 210;
-	cfgVolSID1_Right = v1 * ( p1 ) * 255 / 210;
-	cfgVolSID2_Left  = v2 * ( 14 - p2 ) * 255 / 210;
-	cfgVolSID2_Right = v2 * ( p2 ) * 255 / 210;
-	cfgVolOPL_Left  = v3 * ( 14 - p3 ) * 255 / 210;
-	cfgVolOPL_Right = v3 * ( p3 ) * 255 / 210;
+	cfgVolSID1_Left  = v1 * ( 14 - p1 );
+	cfgVolSID1_Right = v1 * ( p1 );
+	cfgVolSID2_Left  = v2 * ( 14 - p2 );
+	cfgVolSID2_Right = v2 * ( p2 );
+	cfgVolOPL_Left  = v3 * ( 14 - p3 );
+	cfgVolOPL_Right = v3 * ( p3 );
 
+	int maxVolFactor = max( cfgVolSID1_Left, max( cfgVolSID1_Right, max( cfgVolSID2_Left, max( cfgVolSID2_Right, max( cfgVolOPL_Left, cfgVolOPL_Right ) ) ) ) );
+
+	cfgVolSID1_Left  = cfgVolSID1_Left  * 256 / maxVolFactor;
+	cfgVolSID1_Right = cfgVolSID1_Right * 256 / maxVolFactor;
+	cfgVolSID2_Left  = cfgVolSID2_Left  * 256 / maxVolFactor;
+	cfgVolSID2_Right = cfgVolSID2_Right * 256 / maxVolFactor;
+	cfgVolOPL_Left   = cfgVolOPL_Left   * 256 / maxVolFactor;
+	cfgVolOPL_Right  = cfgVolOPL_Right  * 256 / maxVolFactor;
+	
 	if ( sid2 == 3 ) 
 	{ 
 		cfgSID2_Disabled = 1; cfgVolSID2_Left = cfgVolSID2_Right = 0;
 	} else 
 		cfgSID2_Disabled = 0;
+
+	if ( !wireSIDAvailable )
+	{
+		cfgVolSID1_Left  = 0;
+		cfgVolSID1_Right = 0;
+		cfgVolSID2_Left  = 0;
+		cfgVolSID2_Right = 0;
+		cfgSID2_Disabled = 0;
+	}
 
 	if ( addr == 0 ) cfgSID2_PlaySameAsSID1 = 1; else cfgSID2_PlaySameAsSID1 = 0;
 	if ( mode == 0 ) cfgMixStereo = 1; else cfgMixStereo = 0;
@@ -143,7 +164,7 @@ void initSID()
 	{
 		sid[ i ] = new SID;
 
-		for ( int j = 0; j < 24; j++ )
+		for ( int j = 0; j < 25; j++ )
 			sid[ i ]->write( j, 0 );
 
 		if ( SID_MODEL[ i ] == 6581 )
@@ -162,7 +183,13 @@ void initSID()
 				sid[ i ]->input( -32768 );
 			}
 		}
-		//sid[ 0 ]->clock( 1000000 );
+
+		int SID_passband = 90;
+		int SID_gain = 97;
+		int SID_filterbias = 500;
+
+		sid[ i ]->adjust_filter_bias( SID_filterbias / 1000.0f );
+		sid[ i ]->set_sampling_parameters( CLOCKFREQ, SAMPLE_FAST, SAMPLERATE, SAMPLERATE * SID_passband / 200.0f, SID_gain / 100.0f );
 	}
 
 #ifdef EMULATE_OPL2
@@ -281,6 +308,34 @@ static u32 vu_nLEDs = 0xffff;
 
 static u32 allUsedLEDs = 0;
 
+static int busValue = 0;
+static int busValueTTL = 0;
+static unsigned long long nCyclesEmulated = 0;
+static unsigned long long samplesElapsed = 0;
+
+static void prepareOnReset()
+{
+	if ( launchPrg )
+		{disableCart = 0; SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );} else
+		{SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );}
+
+	CleanDataCache();
+	InvalidateDataCache();
+	InvalidateInstructionCache();
+
+	if ( launchPrg )
+	{
+		launchPrepareAndWarmCache();
+	}
+
+	// FIQ handler
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 4*1024 );
+	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 4*1024, 32768 );
+
+	resetCounter = cycleCountC64 = nCyclesEmulated = samplesElapsed = 0;
+}
+
+
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler( void *pParam );
 
@@ -388,10 +443,12 @@ void CKernel::Run( void )
 
 	if ( FILENAME == NULL && !hasData )
 	{
+		SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );
 		launchPrg = 0;
 		disableCart = 1;
 	} else
 	{
+		SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );
 		launchPrg = 1;
 		if ( launchGetProgram( FILENAME, hasData, prgDataExt, prgSizeExt ) )
 			launchInitLoader( false, c128PRG ); else
@@ -400,8 +457,15 @@ void CKernel::Run( void )
 	#endif
 
 	//
+	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
+	//
+	initSoundOutput( &m_pSound, pVCHIQ );
+
+	//
 	// setup FIQ
 	//
+	resetReleased = 0xff;
+
 	#ifdef COMPILE_MENU
 	m_InputPin.ConnectInterrupt( KernelSIDFIQHandler, kernelMenu );
 	#else
@@ -436,68 +500,21 @@ void CKernel::Run( void )
 	logger->Write( "", LogNotice, "Measured C64 clock frequency: %u Hz", (u32)CLOCKFREQ );
 #endif
 
-	for ( int i = 0; i < NUM_SIDS; i++ )
-		sid[ i ]->set_sampling_parameters( CLOCKFREQ, SAMPLE_INTERPOLATE, SAMPLERATE );
-
-	//
-	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
-	//
-	initSoundOutput( &m_pSound, pVCHIQ );
-
-	for ( int i = 0; i < NUM_SIDS; i++ )
-		for ( int j = 0; j < 24; j++ )
-			sid[ i ]->write( j, 0 );
-
-	#ifdef EMULATE_OPL2
-	if ( cfgEmulateOPL2 )
-	{
-		fmFakeOutput = 0;
-		ym3812_reset_chip( pOPL );
-	}
-	#endif
-
 //	logger->Write( "", LogNotice, "start emulating..." );
 	cycleCountC64 = 0;
-	unsigned long long nCyclesEmulated = 0;
-	unsigned long long samplesElapsed = 0;
+	nCyclesEmulated = 0;
+	samplesElapsed = 0;
 
 	// how far did we consume the commands in the ring buffer?
 	unsigned int ringRead = 0;
 
 	#ifdef COMPILE_MENU
-	if ( launchPrg )
-		{SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );} else
-		{SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );}
+	prepareOnReset();
 
-	CleanDataCache();
-	InvalidateDataCache();
-	InvalidateInstructionCache();
-
-	// let's be very convincing about the caches ;-)
-	for ( u32 i = 0; i < 10; i++ )
-	{
-		if ( launchPrg )
-			launchPrepareAndWarmCache();
-
-		// FIQ handler
-		CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 3*1024 );
-		FORCE_READ_LINEAR32( (void*)&FIQ_HANDLER, 3*1024 );
-	}
-
-	DELAY(1<<17);
-
-	if ( launchPrg )
-	{
-		// don't ask... sometimes the launcher seems to mess up something during transfer (cache issue), this additional reset seems to make this go away
-		// better preloading strategy tbd
-		latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
-		DELAY(1<<27);
-		latchSetClearImm( 0, LATCH_RESET | allUsedLEDs | LATCH_ENABLE_KERNAL );
-		DELAY(1<<20);
-		resetCounter = resetReleased = cycleCountC64 = 0;
-	}
+	resetCounter = 0;
 	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 
+startHereAfterReset:
 	if ( launchPrg )
 	{
 		while ( !disableCart )
@@ -507,24 +524,24 @@ void CKernel::Run( void )
 			#endif
 			asm volatile ("wfi");
 
-			//if ( cycleCountC64 > 2000000 ) //&& currentOfs < prgSize )
-			/*if ( currentOfs >= prgSize )
+			/*if ( cycleCountC64 > 2000000 && currentOfs < prgSize )
+			//if ( currentOfs >= prgSize )
 			{
 				DELAY(1<<27);
 				latchSetClearImm( 0, LATCH_RESET | allUsedLEDs | LATCH_ENABLE_KERNAL );
 				DELAY(1<<20);
 				latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 			}*/
-
 		}
-	latchSetClearImm( LATCH_LED0, 0 );
+		latchSetClearImm( LATCH_LED0, 0 );
 	} 
 	#endif
 
+	resetReleased = 0;
 	resetCounter = cycleCountC64 = 0;
 	nCyclesEmulated = 0;
 	samplesElapsed = 0;
-	ringRead = 0;
+	ringRead = ringWrite = 0;
 
 	latchSetClear( 0, allUsedLEDs );
 
@@ -542,13 +559,16 @@ void CKernel::Run( void )
 			}
 		#endif
 
-		if ( resetCounter > 3 && resetReleased )
+		if ( resetReleased == 1 )
 		{
+			resetReleased = 0xff;
 			resetCounter = 0;
-
+		
 			for ( int i = 0; i < NUM_SIDS; i++ )
-				for ( int j = 0; j < 24; j++ )
+			{
+				for ( int j = 0; j < 25; j++ )
 					sid[ i ]->write( j, 0 );
+			}
 
 			#ifdef EMULATE_OPL2
 			if ( cfgEmulateOPL2 )
@@ -557,6 +577,15 @@ void CKernel::Run( void )
 				ym3812_reset_chip( pOPL );
 			}
 			#endif
+		
+			ringRead = ringWrite;
+
+			prepareOnReset();
+			latchSetClearImm( allUsedLEDs, LATCH_RESET | LATCH_ENABLE_KERNAL );
+			DELAY(1<<10);
+			latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+			resetCounter = resetReleased = resetPressed = 0;
+			goto startHereAfterReset;
 		}
 
 		#ifdef COMPILE_MENU
@@ -583,6 +612,9 @@ void CKernel::Run( void )
 		#ifndef USE_PWM_DIRECT
 		static u32 nSamplesInThisRun = 0;
 		#endif
+
+		s16 val1, val2;
+		s32 valOPL;
 
 		unsigned long long cycleCount = cycleCountC64;
 		while ( cycleCount > nCyclesEmulated )
@@ -626,24 +658,48 @@ void CKernel::Run( void )
 		#else
 			unsigned long long samplesElapsedBefore = samplesElapsed;
 
+			//long long cycleNextSampleReady = ( ( unsigned long long )(samplesElapsedBefore+1) * ( unsigned long long )CLOCKFREQ ) / ( unsigned long long )SAMPLERATE;
+			//int cyclesToNextSample = cycleNextSampleReady - nCyclesEmulated;
+
 			do { // do SID emulation until time passed to create an additional sample (i.e. there may be several cycles until a sample value is created)
 				#ifdef USE_PWM_DIRECT
-				u32 cyclesToEmulate = 4;
+				u32 cyclesToEmulate = min( 8, cycleCount - nCyclesEmulated );
 				#else			
 				u32 cyclesToEmulate = 2;
 				#endif
 		#endif
 
-				sid[ 0 ]->clock( cyclesToEmulate );
-				#ifndef SID2_DISABLED
-				if ( !cfgSID2_Disabled )
-					sid[ 1 ]->clock( cyclesToEmulate );
-				#endif
+				//problem: wegen dem innern do-while kann nCyclesEmulated tatsächlich größer als cycleCount werden -> dann ist cyclesToEmulate 0 oder negativ.
+				//frage: warum laufen wir zu lange innen und was macht das mit der emulation?
 
-				outRegisters[ 27 ] = sid[ 0 ]->read( 27 );
-				outRegisters[ 28 ] = sid[ 0 ]->read( 28 );
+/*				if ( cyclesToEmulate > cyclesToNextSample )
+					cyclesToEmulate = cyclesToNextSample;
+				if ( cyclesToEmulate == 0 )
+					cyclesToEmulate = 1;*/
 
-				nCyclesEmulated += cyclesToEmulate;
+				if ( ringRead != ringWrite )
+				{
+					int cyclesToNextWrite = (signed long long)ringTime[ ringRead ] - (signed long long)nCyclesEmulated;
+
+					if ( (int)cyclesToEmulate > cyclesToNextWrite && cyclesToNextWrite > 0 )
+						cyclesToEmulate = cyclesToNextWrite;
+				}
+				
+				if ( cyclesToEmulate > 0 )
+				{
+					sid[ 0 ]->clock( cyclesToEmulate );
+					#ifndef SID2_DISABLED
+					if ( !cfgSID2_Disabled )
+						sid[ 1 ]->clock( cyclesToEmulate );
+					#endif
+
+					outRegisters[ 27 ] = sid[ 0 ]->read( 27 );
+					outRegisters[ 28 ] = sid[ 0 ]->read( 28 );
+
+					nCyclesEmulated += cyclesToEmulate;
+					//  cyclesToNextSample -= cyclesToEmulate;
+				}
+
 
 				// apply register updates (we do one-cycle emulation steps, but in case we need to catch up...)
 				unsigned int readUpTo = ringWrite;
@@ -681,17 +737,21 @@ void CKernel::Run( void )
 					ringRead &= ( RING_SIZE - 1 );
 				}
 
+
 		#ifdef SMPCARRY
 			}
 		#else
 				samplesElapsed = ( ( unsigned long long )nCyclesEmulated * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
 
+				if ( nCyclesEmulated >= cycleCount && samplesElapsed == samplesElapsedBefore )
+					goto NoSampleGeneratedYet;
+
 			} while ( samplesElapsed == samplesElapsedBefore );
 		#endif
 			CACHE_PRELOADL2STRMW( &sampleBuffer[ smpCur ] );
-			s16 val1 = sid[ 0 ]->output();
-			s16 val2 = 0;
-			s32 valOPL = 0;
+			val1 = sid[ 0 ]->output();
+			val2 = 0;
+			valOPL = 0;
 
 		#ifndef SID2_DISABLED
 			if ( !cfgSID2_Disabled )
@@ -777,6 +837,7 @@ void CKernel::Run( void )
 			} 
 			#endif
 		#endif
+		NoSampleGeneratedYet:;
 		}
 	#endif
 	}
@@ -838,10 +899,17 @@ void CKernel::FIQHandler (void *pParam)
 
 	START_AND_READ_ADDR0to7_RW_RESET_CS
 
-	if ( CPU_RESET ) {
-		resetReleased = 0; resetPressed = 1; resetCounter ++;
+	if ( CPU_RESET && !resetReleased ) {
+		resetPressed = 1; resetCounter ++;
 	} else {
-		if ( resetPressed )	resetReleased = 1;
+		if ( resetPressed && resetCounter > 100 )	
+		{
+			resetReleased = 1;
+			disableCart = transferStarted = 0;
+			SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );
+			FINISH_BUS_HANDLING
+			return;
+		}
 		resetPressed = 0;
 	}
 
@@ -857,7 +925,7 @@ void CKernel::FIQHandler (void *pParam)
 	{
 		CACHE_PRELOADL1STRMW( &ringWrite );
 		CACHE_PRELOADL1STRM( &sampleBuffer[ smpLast ] );
-		CACHE_PRELOADL1STRM( &outRegisters[ 0 ] );
+		//CACHE_PRELOADL1STRM( &outRegisters[ 0 ] );
 		CACHE_PRELOADL1STRM( &outRegisters[ 16 ] );
 	}
 	#endif
@@ -865,15 +933,20 @@ void CKernel::FIQHandler (void *pParam)
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
 
 	#ifdef COMPILE_MENU
-	if ( resetCounter > 3  )
+/*	if ( resetCounter > 3  )
 	{
 		disableCart = transferStarted = 0;
 		SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );
 		FINISH_BUS_HANDLING
 		return;
-	}
+	}*/
 	#endif
 
+	if ( busValueTTL < 0 )
+	{
+		busValue = 0;  
+	} else
+		busValueTTL --;
 
 	//  __   ___       __      __     __  
 	// |__) |__   /\  |  \    /__` | |  \ 
@@ -883,6 +956,14 @@ void CKernel::FIQHandler (void *pParam)
 	{
 		u32 A = ( g2 >> A0 ) & 31;
 		u32 D = outRegisters[ A ];
+
+        if ( A >= 0x19 && A <= 0x1c )
+		{
+			busValue = D = outRegisters[ A ]; 
+			busValueTTL = 0xa2000; // 8580
+			//busValueTTL = 0x1d00; // 6581
+		} else
+			D = busValue;
 
 		WRITE_D0to7_TO_BUS( D )
 
@@ -926,6 +1007,21 @@ void CKernel::FIQHandler (void *pParam)
 		{
 			READ_D0to7_FROM_BUS( D )
 
+			// this is mimicing some behaviour of the YM let it be detected
+			u32 A = ( ( g2 & A_FLAG ) >> A0 ) & ( 1 << 4 ); // A == 0 -> address register, otherwise data register
+			
+			if ( A == 0 && D == 0x04 )
+				fmAutoDetectStep = 1;
+			if ( A > 0 && D == 0x60 && fmAutoDetectStep == 1 )
+				fmAutoDetectStep = 2;
+			if ( A == 0 && D == 0x04 && fmAutoDetectStep == 2 )
+				fmAutoDetectStep = 3;
+			if ( A > 0 && D == 0x80 && fmAutoDetectStep == 3 )
+			{
+				fmAutoDetectStep = 4;
+				fmFakeOutput = 0;
+			}
+				
 			ringBufGPIO[ ringWrite ] = ( g2 & A_FLAG ) | ( D << D0 ) | bIO2;
 			ringTime[ ringWrite ] = cycleCountC64;
 			ringWrite ++;
@@ -953,15 +1049,15 @@ void CKernel::FIQHandler (void *pParam)
 			 ( cfgSID2_Addr == 1 && (A & 0x100) ) )
 			remapAddr |= SID2_MASK;
 
+		busValue = D;
+		busValueTTL = 0xa2000; // 8580
+		//busValueTTL = 0x1d00; // 6581
+
 		ringBufGPIO[ ringWrite ] = ( remapAddr | ( D << D0 ) ) & ~bIO2;
 		ringTime[ ringWrite ] = cycleCountC64;
 		ringWrite ++;
 		ringWrite &= ( RING_SIZE - 1 );
 		
-		// optionally we could directly set the SID-output registers (instead of where the emulation runs)
-		//u32 A = ( g2 >> A0 ) & 31;
-		//outRegisters[ A ] = g1 & D_FLAG;
-
 		FINISH_BUS_HANDLING
 		return;
 	}
@@ -1001,7 +1097,7 @@ void CKernel::FIQHandler (void *pParam)
 
 	unsigned long long samplesElapsedFIQ = ( ( unsigned long long )cycleCountC64 * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
 
-	if ( samplesElapsedFIQ != samplesElapsedBeforeFIQ )
+	if ( samplesElapsedFIQ != samplesElapsedBeforeFIQ && !CPU_RESET )
 	{
 		write32( ARM_GPIO_GPCLR0, bCTRL257 ); 
 		samplesElapsedBeforeFIQ = samplesElapsedFIQ;

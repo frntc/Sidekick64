@@ -106,7 +106,7 @@ void initSID8()
 	{
 		sid[ i ] = new SID;
 
-		for ( int j = 0; j < 24; j++ )
+		for ( int j = 0; j < 25; j++ )
 			sid[ i ]->write( j, 0 );
 
 		// no mistake, take the model of the first for all 8
@@ -235,6 +235,29 @@ static u32 vu_nLEDs = 0xffff;
 
 static u32 allUsedLEDs = 0;
 
+static unsigned long long nCyclesEmulated = 0;
+static unsigned long long samplesElapsed = 0;
+
+static void prepareOnReset()
+{
+	if ( launchPrg )
+		{disableCart = 0; SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );} else
+		{SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );}
+
+	CleanDataCache();
+	InvalidateDataCache();
+	InvalidateInstructionCache();
+
+	if ( launchPrg )
+		launchPrepareAndWarmCache();
+		
+	// FIQ handler
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 4*1024 );
+	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 4*1024, 32768 );
+
+	resetCounter = cycleCountC64 = nCyclesEmulated = samplesElapsed = 0;
+}
+
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler8( void *pParam );
 
@@ -333,8 +356,15 @@ void CKernel::Run( void )
 	#endif
 
 	//
+	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
+	//
+	initSoundOutput( &m_pSound, pVCHIQ );
+
+	//
 	// setup FIQ
 	//
+	resetReleased = 0xff;
+
 	#ifdef COMPILE_MENU
 	m_InputPin.ConnectInterrupt( KernelSIDFIQHandler8, kernelMenu );
 	#else
@@ -372,35 +402,21 @@ void CKernel::Run( void )
 	for ( int i = 0; i < NUM_SIDS; i++ )
 		sid[ i ]->set_sampling_parameters( CLOCKFREQ, SAMPLE_INTERPOLATE, SAMPLERATE );
 
-	//
-	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
-	//
-	initSoundOutput( &m_pSound, pVCHIQ );
-
 //	logger->Write( "", LogNotice, "start emulating..." );
 	cycleCountC64 = 0;
-	unsigned long long nCyclesEmulated = 0;
+	nCyclesEmulated = 0;
+	samplesElapsed = 0;
 
 	// how far did we consume the commands in the ring buffer?
 	unsigned int ringRead = 0;
 
 	#ifdef COMPILE_MENU
-	// let's be very convincing about the caches ;-)
-	for ( u32 i = 0; i < 20; i++ )
-	{
-		launchPrepareAndWarmCache();
+	prepareOnReset();
 
-		// FIQ handler
-		CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 3*1024 );
-		FORCE_READ_LINEAR32( (void*)&FIQ_HANDLER, 3*1024 );
-	}
-
-	if ( !launchPrg )
-		SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );
-
-	DELAY(10);
 	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+	resetCounter = 0;
 
+startHereAfterReset:
 	if ( launchPrg )
 	{
 		while ( !disableCart )
@@ -413,12 +429,11 @@ void CKernel::Run( void )
 	} 
 	#endif
 
+	resetReleased = 0;
 	resetCounter = cycleCountC64 = 0;
 	nCyclesEmulated = 0;
-	ringRead = 0;
-	for ( int i = 0; i < NUM_SIDS; i++ )
-		for ( int j = 0; j < 24; j++ )
-			sid[ i ]->write( j, 0 );
+	samplesElapsed = 0;
+	ringRead = ringWrite = 0;
 
 	latchSetClear( 0, allUsedLEDs );
 
@@ -436,13 +451,23 @@ void CKernel::Run( void )
 			}
 		#endif
 
-		if ( resetCounter > 3 && resetReleased )
+		if ( resetReleased == 1 )
 		{
+			resetReleased = 0xff;
 			resetCounter = 0;
 
 			for ( int i = 0; i < NUM_SIDS; i++ )
-				for ( int j = 0; j < 24; j++ )
+				for ( int j = 0; j < 25; j++ )
 					sid[ i ]->write( j, 0 );
+
+
+			prepareOnReset();
+			latchSetClearImm( allUsedLEDs, LATCH_RESET | LATCH_ENABLE_KERNAL );
+			DELAY(1<<10);
+			latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+			ringRead = ringWrite;
+			resetCounter = resetReleased = resetPressed = 0;
+			goto startHereAfterReset;
 		}
 
 	#ifdef USE_OLED
@@ -672,10 +697,17 @@ void CKernel::FIQHandler (void *pParam)
 
 	START_AND_READ_ADDR0to7_RW_RESET_CS
 
-	if ( CPU_RESET ) {
-		resetReleased = 0; resetPressed = 1; resetCounter ++;
+	if ( CPU_RESET && !resetReleased ) {
+		resetPressed = 1; resetCounter ++;
 	} else {
-		if ( resetPressed )	resetReleased = 1;
+		if ( resetPressed && resetCounter > 100 )	
+		{
+			resetReleased = 1;
+			disableCart = transferStarted = 0;
+			SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );
+			FINISH_BUS_HANDLING
+			return;
+		}
 		resetPressed = 0;
 	}
 
@@ -698,15 +730,6 @@ void CKernel::FIQHandler (void *pParam)
 
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
 
-	#ifdef COMPILE_MENU
-	if ( resetCounter > 3  )
-	{
-		disableCart = transferStarted = 0;
-		SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );
-		FINISH_BUS_HANDLING
-		return;
-	}
-	#endif
 
 
 	//  __   ___       __      __     __  

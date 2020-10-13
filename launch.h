@@ -101,14 +101,14 @@ static void launchPrepareAndWarmCache()
 	disableCart = transferStarted = currentOfs = 0;
 
 	// launch code / CBM80
-	CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 1024, CACHE_PRELOADL2STRM )
-	FORCE_READ_LINEARa( launchCode, 1024, 65536 * 1 );
+	CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 512, CACHE_PRELOADL2KEEP )
+	FORCE_READ_LINEARa( launchCode, 512, 512 * 16 );
 
 	// .PRG data
-	CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], prgSize, CACHE_PRELOADL2STRM )
-	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 2 );
+	CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], prgSize, CACHE_PRELOADL2KEEP )
+	FORCE_READ_LINEARa( prgData, prgSize, prgSize * 8 );
 
-	CACHE_PRELOADL2STRM( &prgData[ 0 ] );
+	//CACHE_PRELOADL2STRM( &prgData[ 0 ] );
 }
 
 
@@ -120,7 +120,7 @@ static void launchPrepareAndWarmCache()
 				/* any write to IO1 will (re)start the PRG transfer */			\
 				currentOfs = 0;													\
 				transferStarted = 1;											\
-				CACHE_PRELOADL2STRM( &prgData[ currentOfs ] );					\
+				CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );					\
 				FINISH_BUS_HANDLING												\
 				return;															\
 			} else 																\
@@ -132,7 +132,7 @@ static void launchPrepareAndWarmCache()
 					/* $DE00 -> get next byte */								\
 					D = prgData[ currentOfs++ ];								\
 				WRITE_D0to7_TO_BUS( D )											\
-				CACHE_PRELOADL2STRM( &prgData[ currentOfs ] );					\
+				CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );					\
 				FINISH_BUS_HANDLING												\
 				return;															\
 			}																	\
@@ -163,6 +163,9 @@ static void launchPrepareAndWarmCache()
 		FINISH_BUS_HANDLING														\
 		return;																	\
 	}
+
+//		CACHE_PRELOADL2STRM( &prgData[ currentOfs ] );							
+//		CACHE_PRELOADL2STRM( &launchCode[ 0 ] );								
 
 /*
 		if ( !ultimaxDisabled )	{												

@@ -53,14 +53,15 @@ u8 c64color[ 40 * 25 + 1024 * 4 ];
 
 char *errorMsg = NULL;
 
-char errorMessages[6][41] = {
+char errorMessages[7][41] = {
 //   1234567890123456789012345678901234567890
 	"                NO ERROR                ",
 	"  ERROR: UNKNOWN/UNSUPPORTED .CRT TYPE  ",
 	"          ERROR: NO .CRT-FILE           ", 
 	"          ERROR READING FILE            ",
 	"            SETTINGS SAVED              ",
-	"         WRONG SYSTEM, NO C128!         "
+	"         WRONG SYSTEM, NO C128!         ",
+	"         SID-WIRE NOT DETECTED!         ",
 };
 
 
@@ -293,6 +294,8 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 	if ( menuItemStr )
 		menuItemStr[ 0 ] = 0;
 
+	extern u32 wireKernalAvailable;
+
 	if ( key == 140 /*F8*/ ) { resetMenuState(0); return 1;/* Exit */ } else
 	if ( key == 136 /*F7*/ ) { resetMenuState(3); return 2;/* Browser */ } else
 	if ( key == 133 /*F1*/ ) { resetMenuState(1); return 3;/* GEORAM */ } else
@@ -325,7 +328,7 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 			//logger->Write( "RaspiMenu", LogNotice, "%s -> %s\n", menuText[ 1 ][ i ], menuFile[ 1 ][ i ] );
 			return 5;
 		} else
-		if ( key >= '1' + menuItems[ 1 ] && key < '1' + menuItems[ 1 ] + menuItems[ 4 ] ) // KERNAL
+		if ( key >= '1' + menuItems[ 1 ] && key < '1' + menuItems[ 1 ] + menuItems[ 4 ] && wireKernalAvailable ) // KERNAL
 		{
 			int i = key - '1' - menuItems[ 1 ];
 			*FILE = menuFile[ 4 ][ i ];
@@ -396,6 +399,8 @@ void applySIDSettings()
 void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, char *menuItemStr, u32 *startC128 = NULL )
 {
 	char *filename;
+
+	extern u32 wireSIDAvailable;
 
 	if ( menuScreen == MENU_MAIN )
 	{
@@ -517,8 +522,17 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 			return;
 		case 6: // .PRG file
-			strcpy( FILENAME, filename );
-			*launchKernel = 4;
+			if ( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
+				 ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) // no SID-wire, FM emulation off
+			{
+				errorMsg = errorMessages[ 6 ];
+				previousMenuScreen = menuScreen;
+				menuScreen = MENU_ERROR;
+			} else
+			{
+				strcpy( FILENAME, filename );
+				*launchKernel = 4;
+			}
 			return;
 		case 7: // Kernal
 			strcpy( FILENAME, filename );
@@ -678,138 +692,156 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 		if ( k == 13 || k == 141 )
 		{
-			if ( startC128 && modeC128 )
+			if ( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
+				 ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) // no SID-wire, FM emulation off
 			{
-				if ( k == 141 )
-					*startC128 = 1; else
-					*startC128 = 0;
-			}
-
-			// build path
-			char path[ 8192 ] = {0};
-			char d64file[ 128 ] = {0};
-			s32 n = 0, c = cursorPos;
-			u32 fileIndex = 0xffffffff;
-			u32 nodes[ 256 ];
-
-			nodes[ n ++ ] = c;
-			logger->Write( "exec", LogNotice, "node %d: '%s'", c, dir[c].name );
-
-			s32 curC = c;
-
-			if ( (dir[ c ].f & DIR_FILE_IN_D64 && ((dir[ c ].f>>SHIFT_TYPE)&7) == 2) || dir[ c ].f & DIR_PRG_FILE || dir[ c ].f & DIR_CRT_FILE )
+				errorMsg = errorMessages[ 6 ];
+				previousMenuScreen = menuScreen;
+				menuScreen = MENU_ERROR;
+			} else
 			{
-				logger->Write( "exec", LogNotice, "1" );
-				while ( dir[ c ].parent != 0xffffffff )
+				if ( startC128 && modeC128 )
 				{
-					logger->Write( "exec", LogNotice, "node %d: '%s'", dir[c].parent, dir[dir[c].parent].name );
-					c = nodes[ n ++ ] = dir[ c ].parent;
+					if ( k == 141 )
+						*startC128 = 1; else
+						*startC128 = 0;
 				}
 
-				int stopPath = 0;
-				if ( dir[ cursorPos ].f & DIR_FILE_IN_D64 )
-				{
-					logger->Write( "exec", LogNotice, "d64file: '%s'", dir[ cursorPos ].name[128] );
-					strcpy( d64file, (char*)&dir[ cursorPos ].name[128] );
-					fileIndex = dir[ cursorPos ].f & ((1<<SHIFT_TYPE)-1);
-					stopPath = 1;
-				}
+				// build path
+				char path[ 8192 ] = {0};
+				char d64file[ 128 ] = {0};
+				s32 n = 0, c = cursorPos;
+				u32 fileIndex = 0xffffffff;
+				u32 nodes[ 256 ];
 
-				strcat( path, "SD:" );
-				for ( s32 i = n - 1; i >= stopPath; i -- )
-				{
-					if ( i != n-1 )
-						strcat( path, "\\" );
-					strcat( path, (char*)dir[ nodes[i] ].name );
-				}
+				nodes[ n ++ ] = c;
+				//logger->Write( "exec", LogNotice, "node %d: '%s'", c, dir[c].name );
 
+				s32 curC = c;
 
-				if ( dir[ curC ].f & DIR_PRG_FILE ) 
+				if ( (dir[ c ].f & DIR_FILE_IN_D64 && ((dir[ c ].f>>SHIFT_TYPE)&7) == 2) || dir[ c ].f & DIR_PRG_FILE || dir[ c ].f & DIR_CRT_FILE )
 				{
-					if ( strstr( path, "PRG128") != 0 && modeC128 == 0 )
+					//logger->Write( "exec", LogNotice, "1" );
+					while ( dir[ c ].parent != 0xffffffff )
 					{
-						*launchKernel = 0;
-						errorMsg = errorMessages[ 5 ];
-						previousMenuScreen = menuScreen;
-						menuScreen = MENU_ERROR;
-						return;
+						//logger->Write( "exec", LogNotice, "node %d: '%s'", dir[c].parent, dir[dir[c].parent].name );
+						c = nodes[ n ++ ] = dir[ c ].parent;
 					}
-					strcpy( FILENAME, path );
-					*launchKernel = 4;
-					return;
-				}
 
-				if ( dir[ curC ].f & DIR_CRT_FILE ) 
-				{
-					u32 err = 0;
-
-					strcpy( FILENAME, path );
-
-					if ( strstr( FILENAME, "CART128") != 0 )
+					int stopPath = 0;
+					if ( dir[ cursorPos ].f & DIR_FILE_IN_D64 )
 					{
-						if ( modeC128 == 0 )
+						//logger->Write( "exec", LogNotice, "d64file: '%s'", dir[ cursorPos ].name[128] );
+						strcpy( d64file, (char*)&dir[ cursorPos ].name[128] );
+						fileIndex = dir[ cursorPos ].f & ((1<<SHIFT_TYPE)-1);
+						stopPath = 1;
+					}
+
+					strcat( path, "SD:" );
+					for ( s32 i = n - 1; i >= stopPath; i -- )
+					{
+						if ( i != n-1 )
+							strcat( path, "\\" );
+						strcat( path, (char*)dir[ nodes[i] ].name );
+					}
+
+
+					if ( dir[ curC ].f & DIR_PRG_FILE ) 
+					{
+						if ( strstr( path, "PRG128") != 0 && modeC128 == 0 )
 						{
 							*launchKernel = 0;
 							errorMsg = errorMessages[ 5 ];
 							previousMenuScreen = menuScreen;
 							menuScreen = MENU_ERROR;
+							return;
+						}
+						strcpy( FILENAME, path );
+						*launchKernel = 4;
+						return;
+					}
+
+					if ( dir[ curC ].f & DIR_CRT_FILE ) 
+					{
+						u32 err = 0;
+
+						strcpy( FILENAME, path );
+
+						if ( strstr( FILENAME, "CART128") != 0 )
+						{
+							if ( modeC128 == 0 )
+							{
+								*launchKernel = 0;
+								errorMsg = errorMessages[ 5 ];
+								previousMenuScreen = menuScreen;
+								menuScreen = MENU_ERROR;
+							} else
+							{
+								*launchKernel = 9;
+								errorMsg = NULL;
+							}
+						} else
+						if ( strstr( FILENAME, "georam") != 0 || strstr( FILENAME, "GEORAM") != 0 )
+						{
+							*launchKernel = 10;
+							errorMsg = NULL;
 						} else
 						{
-							*launchKernel = 9;
-							errorMsg = NULL;
-						}
-					} else
-					if ( strstr( FILENAME, "georam") != 0 || strstr( FILENAME, "GEORAM") != 0 )
-					{
-						*launchKernel = 10;
-						errorMsg = NULL;
-					} else
-					{
 
-						u32 tempKernel = checkCRTFile( logger, DRIVE, FILENAME, &err );
-						if ( err > 0 )
+							u32 tempKernel = checkCRTFile( logger, DRIVE, FILENAME, &err );
+							if ( err > 0 )
+							{
+								*launchKernel = 0;
+								errorMsg = errorMessages[ err ];
+								previousMenuScreen = menuScreen;
+								menuScreen = MENU_ERROR;
+							} else
+							{
+								*launchKernel = tempKernel;
+								errorMsg = NULL;
+							}
+						}
+						return;
+					}
+
+					if ( dir[ curC ].f & DIR_FILE_IN_D64 )
+					{
+						if ( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
+							 ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) // no SID-wire, FM emulation off
 						{
-							*launchKernel = 0;
-							errorMsg = errorMessages[ err ];
+							errorMsg = errorMessages[ 6 ];
 							previousMenuScreen = menuScreen;
 							menuScreen = MENU_ERROR;
 						} else
 						{
-							*launchKernel = tempKernel;
-							errorMsg = NULL;
+						//logger->Write( "exec", LogNotice, "2" );
+							extern u8 d64buf[ 1024 * 1024 ];
+							extern int readD64File( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size );
+
+							u32 imgsize = 0;
+
+							// mount file system
+							FATFS m_FileSystem;
+							if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
+								logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
+
+						//logger->Write( "exec", LogNotice, "path '%s'", path );
+							if ( !readD64File( logger, "", path, d64buf, &imgsize ) )
+								return;
+
+							// unmount file system
+							if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
+								logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: %s", DRIVE );
+
+							if ( d64ParseExtract( d64buf, imgsize, D64_GET_FILE + fileIndex, prgDataLaunch, (s32*)&prgSizeLaunch ) == 0 )
+							{
+								strcpy( FILENAME, path );
+								//logger->Write( "RaspiMenu", LogNotice, "loaded: %d bytes", prgSizeLaunch );
+								*launchKernel = 40; 
+							}
 						}
-					}
-					return;
-				}
-
-				if ( dir[ curC ].f & DIR_FILE_IN_D64 )
-				{
-				logger->Write( "exec", LogNotice, "2" );
-					extern u8 d64buf[ 1024 * 1024 ];
-					extern int readD64File( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size );
-
-					u32 imgsize = 0;
-
-					// mount file system
-					FATFS m_FileSystem;
-					if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
-						logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
-
-				logger->Write( "exec", LogNotice, "path '%s'", path );
-					if ( !readD64File( logger, "", path, d64buf, &imgsize ) )
 						return;
-
-					// unmount file system
-					if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
-						logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: %s", DRIVE );
-
-					if ( d64ParseExtract( d64buf, imgsize, D64_GET_FILE + fileIndex, prgDataLaunch, (s32*)&prgSizeLaunch ) == 0 )
-					{
-						strcpy( FILENAME, path );
-						logger->Write( "RaspiMenu", LogNotice, "loaded: %d bytes", prgSizeLaunch );
-						*launchKernel = 40; 
 					}
-					return;
 				}
 			}
 		}
@@ -958,8 +990,6 @@ void printMainMenu()
 	//sprintf( b, "%d", lastKeyDebug );
 	printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );*/
 
-	extern u8 c64screen[ 40 * 25 + 1024 * 4 ]; 
-
 	if ( subGeoRAM && subHasKernal )
 	{
 		//               "012345678901234567890123456789012345XXXX"
@@ -967,10 +997,9 @@ void printMainMenu()
 		printC64( 0, 24, "        ? back, RETURN/F1 launch        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		//               "012345678901234567890123456789012345XXXX"
 		printC64( 33, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		printC64( 8, 24, "?", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 8, 24, "\x9f", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 23, 24, "F1", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		c64screen[ 24 * 40 + 8 ] = 31;
 	} else
 	if ( subGeoRAM && !subHasKernal )
 	{
@@ -978,20 +1007,19 @@ void printMainMenu()
 		printC64( 0, 24, "        ? back, RETURN/F1 launch        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		//               "012345678901234567890123456789012345XXXX"
 		printC64( 29, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		printC64( 8, 24, "?", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 8, 24, "\x9f", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 23, 24, "F1", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		c64screen[ 24 * 40 + 8 ] = 31;
 	} else
 	if ( subSID )
 	{
 		printC64( 0, 23, "        choose PRG (also via F7)        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		printC64( 0, 24, "        ? back, RETURN/F3 launch        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		//               "012345678901234567890123456789012345XXXX"
-		printC64( 8, 24, "?", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 29, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 8, 24, "\x9f", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 23, 24, "F3", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		c64screen[ 24 * 40 + 8 ] = 31;
 	} else
 	{
 		printC64( 0, 23, "     F7 Browser, F8 Exit to Basic", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
@@ -1015,7 +1043,12 @@ void printMainMenu()
 	// menu headers + titels
 	for ( int i = 0; i < CATEGORY_NAMES; i++ )
 		if ( menuX[ i ] != -1 )
-			printC64( menuX[ i ], menuY[ i ], categoryNames[ i ], skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+		{
+			extern u32 wireKernalAvailable;
+			if ( i == 4 && !wireKernalAvailable )
+				printC64( menuX[ i ], menuY[ i ], categoryNames[ i ], 15, 0 ); else
+				printC64( menuX[ i ], menuY[ i ], categoryNames[ i ], skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+		}
 
 	for ( int i = 1; i < CATEGORY_NAMES; i++ )
 		if ( menuX[ i ] != -1 )
@@ -1033,15 +1066,33 @@ void printMainMenu()
 			if ( i == 4 && j == subHasKernal )
 				flag = 0x80;
 
-			printC64( menuItemPos[ i ][ j ][ 0 ], menuItemPos[ i ][ j ][ 1 ], key, skinValues.SKIN_MENU_TEXT_KEY, flag );
-			printC64( menuItemPos[ i ][ j ][ 0 ] + 2, menuItemPos[ i ][ j ][ 1 ], menuText[ i ][ j ], skinValues.SKIN_MENU_TEXT_ITEM, flag );
+			extern u32 wireKernalAvailable;
+			if ( i == 4 && !wireKernalAvailable )
+			{
+				printC64( menuItemPos[ i ][ j ][ 0 ], menuItemPos[ i ][ j ][ 1 ], key, 12, 0 );
+				printC64( menuItemPos[ i ][ j ][ 0 ] + 2, menuItemPos[ i ][ j ][ 1 ], menuText[ i ][ j ], 12, 0 );
+			} else
+			{
+				printC64( menuItemPos[ i ][ j ][ 0 ], menuItemPos[ i ][ j ][ 1 ], key, skinValues.SKIN_MENU_TEXT_KEY, flag );
+				printC64( menuItemPos[ i ][ j ][ 0 ] + 2, menuItemPos[ i ][ j ][ 1 ], menuText[ i ][ j ], skinValues.SKIN_MENU_TEXT_ITEM, flag );
+			}
 		}
 
 	// special menu
 	printC64( menuX[ 0 ], menuY[ 0 ]+1, "F1", skinValues.SKIN_MENU_TEXT_KEY, subGeoRAM ? 0x80 : 0 );
-	printC64( menuX[ 0 ], menuY[ 0 ]+2, "F3", skinValues.SKIN_MENU_TEXT_KEY, subSID ? 0x80 : 0 );
 	printC64( menuX[ 0 ]+3, menuY[ 0 ]+1, "GeoRAM", skinValues.SKIN_MENU_TEXT_ITEM, subGeoRAM ? 0x80 : 0 );
-	printC64( menuX[ 0 ]+3, menuY[ 0 ]+2, "SID+FM Emulation", skinValues.SKIN_MENU_TEXT_ITEM, subSID ? 0x80 : 0 );
+
+	extern u32 wireSIDAvailable;
+	if ( !wireSIDAvailable )
+	{
+		printC64( menuX[ 0 ], menuY[ 0 ]+2, "F3", skinValues.SKIN_MENU_TEXT_KEY, subSID ? 0x80 : 0 );
+		printC64( menuX[ 0 ]+3+4, menuY[ 0 ]+2, "FM Emulation", skinValues.SKIN_MENU_TEXT_ITEM, subSID ? 0x80 : 0 );
+		printC64( menuX[ 0 ]+3, menuY[ 0 ]+2, "SID+", 12, 0 );
+	} else
+	{
+		printC64( menuX[ 0 ], menuY[ 0 ]+2, "F3", skinValues.SKIN_MENU_TEXT_KEY, subSID ? 0x80 : 0 );
+		printC64( menuX[ 0 ]+3, menuY[ 0 ]+2, "SID+FM Emulation", skinValues.SKIN_MENU_TEXT_ITEM, subSID ? 0x80 : 0 );
+	}
 
 	printC64( menuX[ 0 ], menuY[ 0 ]+3, "F5", skinValues.SKIN_MENU_TEXT_KEY, 0 );
 	printC64( menuX[ 0 ]+3, menuY[ 0 ]+3, "Settings", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
@@ -1071,9 +1122,16 @@ void printSettingsScreen()
 	//               "012345678901234567890123456789012345XXXX"
 	printC64( 0,  1, "   .- Sidekick64 -- Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 	printC64( 0, 23, "    F5 Back to Menu, S Save Settings    ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	//               "012345678901234567890123456789012345XXXX"
+	printC64( 4, 23, "F5", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+	printC64( 21, 23, "S", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 
-	const u32 x = 1, x2 = 7,y1 = 1, y2 = 1;
+	u32 x = 1, x2 = 7,y1 = 1, y2 = 1;
 	u32 l = curSettingsLine;
+
+	extern u32 wireSIDAvailable;
+
+	if ( !wireSIDAvailable ) { y1 --; y2 --; }
 
 	// special menu
 	printC64( x+1, y1+3, "GeoRAM", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
@@ -1094,15 +1152,22 @@ void printSettingsScreen()
 		c64color[ x2+11+typeCurPos + (y1+7)*40 ] = skinValues.SKIN_MENU_TEXT_CATEGORY;
 
 	printC64( x+1,  y2+9, "SID+FM (using reSID and fmopl)", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+	if ( !wireSIDAvailable )
+		printC64( x+1,  y2+10, "No SID-wire, only SFX will work!", skinValues.SKIN_ERROR_BAR, 0 );
 
-	printC64( x+1,  y2+11, "SID #1", skinValues.SKIN_MENU_TEXT_ITEM, (l==2)?0x80:0 );
+	if ( !wireSIDAvailable ) { y2 ++; }
+
 	char sidStrS[ 6 ][ 21 ] = { "6581", "8580", "8580 w/ Digiboost", "8x 6581", "8x 8580", "8x 8580 w/ Digiboost" };
+	char sidStrO[ 3 ][ 8 ] = { "off", "on" };
+	char sidStrS2[ 4 ][ 20 ] = { "6581", "8580", "8580 w/ Digiboost", "none" };
+	char sidStrA[ 4 ][ 8 ] = { "$D400", "$D420", "$D500", "$DE00" };
+	
+	printC64( x+1,  y2+11, "SID #1", skinValues.SKIN_MENU_TEXT_ITEM, (l==2)?0x80:0 );
 	printC64( x2+10, y2+11, sidStrS[ settings[2] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==2)?0x80:0 );
 
 	if ( settings[2] < 3 )
 	{
 		printC64( x+1,  y2+12, "Register Read", skinValues.SKIN_MENU_TEXT_ITEM, (l==3)?0x80:0 );
-		char sidStrO[ 3 ][ 8 ] = { "off", "on" };
 		printC64( x2+10, y2+12, sidStrO[ settings[3] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==3)?0x80:0 );
 
 		printC64( x+1,  y2+13, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==4)?0x80:0 );
@@ -1115,11 +1180,9 @@ void printSettingsScreen()
 		printC64( x2+15, y2+13, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==5)?0x80:0 );
 
 		printC64( x+1,  y2+15, "SID #2", skinValues.SKIN_MENU_TEXT_ITEM, (l==6)?0x80:0 );
-		char sidStrS2[ 4 ][ 20 ] = { "6581", "8580", "8580 w/ Digiboost", "none" };
 		printC64( x2+10, y2+15, sidStrS2[ settings[6] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==6)?0x80:0 );
 
 		printC64( x+1,  y2+16, "Address", skinValues.SKIN_MENU_TEXT_ITEM, (l==7)?0x80:0 );
-		char sidStrA[ 4 ][ 8 ] = { "$D400", "$D420", "$D500", "$DE00" };
 		printC64( x2+10, y2+16, sidStrA[ settings[7] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==7)?0x80:0 );
 
 		printC64( x+1,  y2+17, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==8)?0x80:0 );
@@ -1153,6 +1216,13 @@ void printSettingsScreen()
 	}
 
 	printSidekickLogo();
+
+	if ( !wireSIDAvailable )
+	{
+		for ( int i = 12 * 40; i < 20 * 40; i++ )
+			c64color[ i ] = 12;
+	}
+
 
 	startInjectCode();
 	injectPOKE( 53280, skinValues.SKIN_MENU_BORDER_COLOR );
