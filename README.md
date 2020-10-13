@@ -23,8 +23,11 @@ The C16/+4 version comes with two fabolous games ported to run directly off the 
 
 ## Changelog
 
-recent changes:
-- browser scans directories on-demand (avoids long initial launch time on SD cards with many files)
+recent changes (higher = newer):
+- auto-detection of SID and kernal-replacement wires (and disabling menu entries if not present)
+- more accurate control of the reSID-emulation and thus improved quality (currently only C64/C128)
+- more robust (faking) behavior for SFX sound expander detection routines (currently only C64/C128)
+- browser scans directories on-demand (avoids long initial launch time on SD cards with many files), currently only for C64/C128 
 - support for "autostart" GeoRAM-images which can be started with SYS56832: put the .GEORAM-file in SD:CRT and use it like any other .CRT-file
 - various bug fixes in the browser
 
