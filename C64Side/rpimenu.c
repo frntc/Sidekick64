@@ -163,6 +163,17 @@ __asm__ ("loop:");
     __asm__ ("pla");
 }
 
+// helps Sidekick64 detect if extra wires are connected
+void wireDetection()
+{
+    __asm__ ("sta $df10");  // enable kernal replacement
+    __asm__ ("lda $e000");  // access kernal (Sidekick64 will notice if wire connected)
+    __asm__ ("sta $df11");  // disable kernal replacement
+
+    __asm__ ("lda #$00");
+    __asm__ ("sta $d4ff");  // some access to the SID address range
+}
+
 int main (void)
 {
     char key;
@@ -178,6 +189,14 @@ int main (void)
     copyCharset();
     updateScreen();
 
+    wireDetection();
+    *((char *)(0xdf01)) = 0; // dummy keypress
+    //updateScreen();
+
+    wireDetection();
+    *((char *)(0xdf01)) = 0; // dummy keypress
+    updateScreen();
+
     while ( 1 )
     {
         // sendKeypress
@@ -185,13 +204,14 @@ int main (void)
         if ( key == 29 && *((char *)(0x0427)) != 0 )
         {
             __asm__ ("lda #$0a");
-            __asm__ ("ldx #$28");
+            __asm__ ("ldx #$20");
             __asm__ ("loop:");
             __asm__ ("sta $d850,x");
             __asm__ ("dex");
             __asm__ ("bne loop");
         }
 
+        wireDetection();
         *((char *)(0xdf01)) = key;
         updateScreen();
     }
