@@ -160,7 +160,7 @@ static void launchPrepareAndWarmCache()
 		if ( CPU_READS_FROM_BUS && ROML_ACCESS )								\
 			WRITE_D0to7_TO_BUS( launchCode[ GET_ADDRESS + LAUNCH_BYTES_TO_SKIP ] );	\
 																				\
-		FINISH_BUS_HANDLING														\
+		OUTPUT_LATCH_AND_FINISH_BUS_HANDLING									\
 		return;																	\
 	}
 

@@ -129,15 +129,6 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	} else 
 		cfgSID2_Disabled = 0;
 
-	if ( !wireSIDAvailable )
-	{
-		cfgVolSID1_Left  = 0;
-		cfgVolSID1_Right = 0;
-		cfgVolSID2_Left  = 0;
-		cfgVolSID2_Right = 0;
-		cfgSID2_Disabled = 0;
-	}
-
 	if ( addr == 0 ) cfgSID2_PlaySameAsSID1 = 1; else cfgSID2_PlaySameAsSID1 = 0;
 	if ( mode == 0 ) cfgMixStereo = 1; else cfgMixStereo = 0;
 
@@ -145,6 +136,16 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	cfgSID2_Addr = sid2addr; // 0 = $d420, 1 = $d500, 2 = $de00
 	cfgRegisterRead = rr;
 	cfgEmulateOPL2 = exp;
+
+	if ( !wireSIDAvailable )
+	{
+		cfgVolSID1_Left  = 0;
+		cfgVolSID1_Right = 0;
+		cfgVolSID2_Left  = 0;
+		cfgVolSID2_Right = 0;
+		cfgSID2_Disabled = 0;
+		cfgRegisterRead  = 0;
+	}
 
 	if ( !exp )
 	{
@@ -313,15 +314,18 @@ static int busValueTTL = 0;
 static unsigned long long nCyclesEmulated = 0;
 static unsigned long long samplesElapsed = 0;
 
-static void prepareOnReset()
+static void prepareOnReset( bool refresh = false )
 {
 	if ( launchPrg )
 		{disableCart = 0; SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );} else
 		{SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );}
 
-	CleanDataCache();
-	InvalidateDataCache();
-	InvalidateInstructionCache();
+	if ( !refresh )
+	{
+		CleanDataCache();
+		InvalidateDataCache();
+		InvalidateInstructionCache();
+	}
 
 	if ( launchPrg )
 	{
@@ -335,6 +339,8 @@ static void prepareOnReset()
 	resetCounter = cycleCountC64 = nCyclesEmulated = samplesElapsed = 0;
 }
 
+//static u32 haltC64 = 0, letgoC64 = 0;
+//static u32 SID_not_initialized = 1;
 
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler( void *pParam );
@@ -435,8 +441,21 @@ void CKernel::Run( void )
 	} 
 	#endif
 
-	//	logger->Write( "", LogNotice, "initialize SIDs..." );
-	initSID();
+	//if ( SID_not_initialized )
+	{
+		//letgoC64 = 0; haltC64 = 1;
+
+		//	logger->Write( "", LogNotice, "initialize SIDs..." );
+		initSID();
+
+		//
+		// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
+		//
+		initSoundOutput( &m_pSound, pVCHIQ );
+
+		//haltC64 = 0; letgoC64 = 1;
+		//SID_not_initialized = 0;
+	}
 
 	#ifdef COMPILE_MENU
 	disableCart = 0;
@@ -457,16 +476,13 @@ void CKernel::Run( void )
 	#endif
 
 	//
-	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
-	//
-	initSoundOutput( &m_pSound, pVCHIQ );
-
-	//
 	// setup FIQ
 	//
 	resetReleased = 0xff;
+	//haltC64 = letgoC64 = 0;
 
 	#ifdef COMPILE_MENU
+	prepareOnReset();
 	m_InputPin.ConnectInterrupt( KernelSIDFIQHandler, kernelMenu );
 	#else
 	m_InputPin.ConnectInterrupt( this->FIQHandler, this );
@@ -475,7 +491,7 @@ void CKernel::Run( void )
 
 #ifndef COMPILE_MENU
 
-	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+	latchSetClear( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 
 	cycleCountC64 = 0;
 	while ( cycleCountC64 < 10 ) 
@@ -509,12 +525,15 @@ void CKernel::Run( void )
 	unsigned int ringRead = 0;
 
 	#ifdef COMPILE_MENU
-	prepareOnReset();
+	prepareOnReset( true );
 
 	resetCounter = 0;
-	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+	latchSetClear( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 
 startHereAfterReset:
+
+
+	latchSetClear( LATCH_RESET, 0 );
 	if ( launchPrg )
 	{
 		while ( !disableCart )
@@ -524,16 +543,15 @@ startHereAfterReset:
 			#endif
 			asm volatile ("wfi");
 
-			/*if ( cycleCountC64 > 2000000 && currentOfs < prgSize )
-			//if ( currentOfs >= prgSize )
+			if ( cycleCountC64 > 2000000 )
 			{
-				DELAY(1<<27);
-				latchSetClearImm( 0, LATCH_RESET | allUsedLEDs | LATCH_ENABLE_KERNAL );
+				cycleCountC64 = 0;
+				latchSetClear( 0, LATCH_RESET );
 				DELAY(1<<20);
-				latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
-			}*/
+				latchSetClear( LATCH_RESET, 0 );
+			}
 		}
-		latchSetClearImm( LATCH_LED0, 0 );
+		//latchSetClearImm( LATCH_LED0, 0 );
 	} 
 	#endif
 
@@ -580,10 +598,10 @@ startHereAfterReset:
 		
 			ringRead = ringWrite;
 
-			prepareOnReset();
-			latchSetClearImm( allUsedLEDs, LATCH_RESET | LATCH_ENABLE_KERNAL );
+			prepareOnReset( true );
+			latchSetClear( allUsedLEDs, LATCH_RESET );
 			DELAY(1<<10);
-			latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+			latchSetClear( LATCH_RESET, allUsedLEDs );
 			resetCounter = resetReleased = resetPressed = 0;
 			goto startHereAfterReset;
 		}
@@ -894,7 +912,6 @@ void CKernel::FIQHandler (void *pParam)
 		LAUNCH_FIQ( resetCounter )
 	}
 	#endif
-
 	static s32 latchDelayOut = 10;
 
 	START_AND_READ_ADDR0to7_RW_RESET_CS
@@ -918,6 +935,25 @@ void CKernel::FIQHandler (void *pParam)
 	fCount &= 255;
 
 	cycleCountC64 ++;
+
+/*	if ( haltC64 )
+	{
+		haltC64 = 0;
+		WAIT_UP_TO_CYCLE( WAIT_TRIGGER_DMA ); 
+		CLR_GPIO( bDMA ); 
+	} 
+	if ( letgoC64 )
+	{
+		letgoC64 = 0;
+		WAIT_UP_TO_CYCLE( WAIT_RELEASE_DMA ); 
+		SET_GPIO( bDMA ); 
+	}
+
+	if ( SID_not_initialized )
+	{
+		OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+		return;
+	}*/
 
 	#ifdef COMPILE_MENU
 	// preload cache
@@ -1202,15 +1238,11 @@ void CKernel::FIQHandler (void *pParam)
 		}
 	} else
 	{
-
-		//prepareOutputLatch4Bit();
-		//outputLatch();
 		prepareOutputLatch4Bit();
 		outputLatch();
-		//OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 	}
 	#endif
-	FINISH_BUS_HANDLING
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 }
 
 #ifndef COMPILE_MENU

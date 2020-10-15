@@ -238,15 +238,18 @@ static u32 allUsedLEDs = 0;
 static unsigned long long nCyclesEmulated = 0;
 static unsigned long long samplesElapsed = 0;
 
-static void prepareOnReset()
+static void prepareOnReset( bool refresh = false )
 {
 	if ( launchPrg )
 		{disableCart = 0; SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );} else
 		{SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );}
 
-	CleanDataCache();
-	InvalidateDataCache();
-	InvalidateInstructionCache();
+	if ( !refresh )
+	{
+		CleanDataCache();
+		InvalidateDataCache();
+		InvalidateInstructionCache();
+	}
 
 	if ( launchPrg )
 		launchPrepareAndWarmCache();
@@ -341,6 +344,11 @@ void CKernel::Run( void )
 	//	logger->Write( "", LogNotice, "initialize SIDs..." );
 	initSID8();
 
+	//
+	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
+	//
+	initSoundOutput( &m_pSound, pVCHIQ );
+
 	#ifdef COMPILE_MENU
 	if ( FILENAME == NULL && !hasData )
 	{
@@ -356,16 +364,12 @@ void CKernel::Run( void )
 	#endif
 
 	//
-	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
-	//
-	initSoundOutput( &m_pSound, pVCHIQ );
-
-	//
 	// setup FIQ
 	//
 	resetReleased = 0xff;
 
 	#ifdef COMPILE_MENU
+	prepareOnReset();
 	m_InputPin.ConnectInterrupt( KernelSIDFIQHandler8, kernelMenu );
 	#else
 	m_InputPin.ConnectInterrupt( this->FIQHandler, this );
@@ -411,9 +415,9 @@ void CKernel::Run( void )
 	unsigned int ringRead = 0;
 
 	#ifdef COMPILE_MENU
-	prepareOnReset();
+	prepareOnReset( true );
 
-	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
+	latchSetClear( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 	resetCounter = 0;
 
 startHereAfterReset:
@@ -425,6 +429,13 @@ startHereAfterReset:
 			TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
 			#endif
 			asm volatile ("wfi");
+			if ( cycleCountC64 > 2000000 )
+			{
+				cycleCountC64 = 0;
+				latchSetClear( 0, LATCH_RESET );
+				DELAY(1<<20);
+				latchSetClear( LATCH_RESET, 0 );
+			}
 		}
 	} 
 	#endif
@@ -461,11 +472,10 @@ startHereAfterReset:
 					sid[ i ]->write( j, 0 );
 
 
-			prepareOnReset();
-			latchSetClearImm( allUsedLEDs, LATCH_RESET | LATCH_ENABLE_KERNAL );
+			prepareOnReset( true );
+			latchSetClear( allUsedLEDs, LATCH_RESET );
 			DELAY(1<<10);
-			latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
-			ringRead = ringWrite;
+			latchSetClear( LATCH_RESET, allUsedLEDs );
 			resetCounter = resetReleased = resetPressed = 0;
 			goto startHereAfterReset;
 		}

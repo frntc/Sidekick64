@@ -48,6 +48,6 @@ void initLatch()
 	latchClr = latchSet = 0;
 	latchDOld = 0xFFFFFFFF;
 	i2cBufferCountLast = i2cBufferCountCur = 0;
-	putI2CCommand( 0 );
+	//putI2CCommand( 0 );
 }
 
