@@ -28,8 +28,8 @@
 
 * = $8000
 
-MEMCPYADR = $33c            ; addr of memcpy (datasette buffer)
-TRAPADR   = ($33c+$40)      ; addr of reset trap (also in datasette buffer)
+TRAPADR   = ($33c)         ; addr of reset trap (also in datasette buffer)
+MEMCPYADR = $1000          ; addr of memcpy
 
 RESTORE_LOWER = $334
 RESTORE_UPPER = $335
@@ -44,7 +44,7 @@ coldstart
     txs
     ldx #$05
     stx $d016
-    jsr $fdb3        	    ; init CIA
+    jsr $fdb3        	   ; init CIA
     jsr $fda3               ; prepare IRQ
 
     ;jsr $fd50              ; init mem, faster code below
@@ -81,7 +81,7 @@ coldstart
 
 warmstart
 
-    jsr $ff8a               ; restore lernal vectors
+    jsr $ff8a               ; restore kernal vectors
 
     lda #$00                ; clear start of BASIC area
     sta $0800
@@ -104,6 +104,14 @@ warmstart
     cpx #(RESET_TRAP_END-RESET_TRAP)
     bne loopCPYRSTTRAP
 
+    ldx #$0                 ; copy reset trap to ram
+  loopCPYMEMCPY
+    lda MEMCPYA000,x
+    sta MEMCPYADR,x
+    inx
+    cpx #(MEMCPYA000_END-MEMCPYA000)
+    bne loopCPYMEMCPY
+
     lda <#TRAPADR           ; setup reset trap, called after basic init
     sta $324
     lda >#TRAPADR
@@ -112,6 +120,64 @@ warmstart
     jmp $fcfe
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+MEMCPYA000
+    sta $de02   ; transfer of PRG-parts starting at $a000
+
+    ; number of 256-byte pages to copy
+    lda $de01
+    lda $de01
+    tay
+    cmp #0
+    bne COPY_STUFF
+
+    rts
+
+    COPY_STUFF
+    ;inc $d020
+    pha
+    
+COPYTEMP_LOOPs0
+    ldx #$00
+COPYTEMP_LOOPs1
+    lda $de00
+    sta $2000,x
+    inx
+    bne COPYTEMP_LOOPs1
+    inc (COPYTEMP_LOOPs1-MEMCPYA000+MEMCPYADR) + 5
+    dey
+    bne COPYTEMP_LOOPs0
+
+    lda $01
+    sta $fb
+
+    lda #$34
+    sta $01         ; only RAM
+
+    ; number of 256-byte pages to copy
+    pla
+    tay
+COPYA000_LOOPs0
+    ldx #$00
+COPYA000_LOOPs1
+    lda $2000,x
+    sta $a000,x
+    inx
+    bne COPYA000_LOOPs1
+    inc (COPYA000_LOOPs1-MEMCPYA000+MEMCPYADR) + 2
+    inc (COPYA000_LOOPs1-MEMCPYA000+MEMCPYADR) + 5
+    dey
+    bne COPYA000_LOOPs0
+
+    lda $fb
+    sta $01
+
+NOTHING_ABOVE_A000
+
+    rts
+MEMCPYA000_END
+
+
 
 RESET_TRAP
     sei
@@ -126,15 +192,36 @@ RESET_TRAP
     lda RESTORE_UPPER
     sta $325          
 
-    ldx #$0                 ; copy memcpy to ram (actually not necessary this way)
-  loopCPYMEMCPY
-    lda memcpy,x
-    sta MEMCPYADR,x
-    inx
-    cpx #(memcpy_end-memcpy)
-    bne loopCPYMEMCPY
+    ; copy higher part of PRG (if present)
+    jsr MEMCPYADR
 
-    jsr MEMCPYADR           ; copy "basic" program
+    ; copy lower part of PRG
+    sta $de00
+
+    ; number of 256-byte pages to copy
+    ldy $de01
+    ldy $de01
+
+    ; lo-byte of destination address
+    lda $de00
+    sta (LOOPs1-RESET_TRAP+TRAPADR) + 4
+    
+    ; hi-byte of destination address
+    lda $de00
+    sta (LOOPs1-RESET_TRAP+TRAPADR) + 5
+
+LOOPs0
+     ldx #$00
+LOOPs1
+     lda $de00
+     sta $0801,x
+     inx
+     bne LOOPs1
+
+     inc (LOOPs1-RESET_TRAP+TRAPADR) + 5
+
+     dey
+     bne LOOPs0
 
     lda #$01                ; set current file ("read" from drive 8)
     ldx #$08
@@ -189,38 +276,6 @@ RESET_TRAP
     cli
     rts
 RESET_TRAP_END
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-memcpy
-    sta $de00
-
-    ; number of 256-byte pages to copy
-    ldy $de01
-
-    ; lo-byte of destination address
-    lda $de00
-    sta MEMCPYADR + 24
-    
-    ; hi-byte of destination address
-    lda $de00
-    sta MEMCPYADR + 25
-
-LOOPs0
-     ldx #$00
-LOOPs1
-     lda $de00
-     sta $0801,x
-     inx
-     bne LOOPs1
-
-     inc MEMCPYADR + 25
-
-     dey
-     bne LOOPs0
-
-     rts
-memcpy_end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
