@@ -1,0 +1,288 @@
+;   psid64 - create a C64 executable from a PSID file
+;   Copyright (C) 2001-2014  Roland Hermans <rolandh@users.sourceforge.net>
+
+;	modified for integration into the Sidekick64 software
+
+;
+;   This program is free software; you can redistribute it and/or modify
+;   it under the terms of the GNU General Public License as published by
+;   the Free Software Foundation; either version 2 of the License, or
+;   (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program; if not, write to the Free Software
+;   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+	.fopt 0, "psidboot.o65", 0
+	.fopt 3, "Roland Hermans <rolandh@users.sourceforge.net>", 0
+
+#define MAX_BLOCKS			5
+
+#ifdef SCREEN
+r1_org	= $00f7
+#else /* SCREEN */
+r1_org	= $00f8
+#endif /* SCREEN */
+
+
+	lda #<song
+	jmp start
+
+
+r1_src	= *
+	* = r1_org
+
+	; Parameters
+#ifdef SCREEN
+chars	.byte 0				; $00f7
+#endif /* SCREEN */
+src	.word 0				; $00f8
+dest	.word 0				; $00fa
+counter	.byte 0				; $00fc
+zp	.word 0				; $00fd
+numblk	.byte 0				; $00ff
+blocks	.dsb 4*MAX_BLOCKS, 0		; $0100 load_lo/load_hi/size_lo/size_hi
+
+memmove	.(
+	; Move all blocks to highest memory area
+l1	dec src+1
+	dec dest+1
+l2	lda (src),y
+	sta (dest),y
+	iny
+	bne l2
+	dec counter
+	bne l1
+
+	; Move the blocks to the correct locations
+	ldx numblk
+loop	lda blocks,x
+	sta dest
+	lda blocks+MAX_BLOCKS,x
+	sta dest+1
+	ldy #0
+	lda blocks+3*MAX_BLOCKS,x
+	beq skip1
+	sta counter
+copy1	lda (zp),y
+	sta (dest),y
+	iny
+	bne copy1
+	inc zp+1
+	inc dest+1
+	dec counter
+	bne copy1
+skip1	lda blocks+2*MAX_BLOCKS,x
+	beq skip2
+	sta counter
+copy2	lda (zp),y
+	sta (dest),y
+	iny
+	cpy counter
+	bne copy2
+	tya
+	clc
+	adc zp
+	sta zp
+	bcc skip2
+	inc zp+1
+skip2	dex
+	bpl loop
+
+#ifdef SCREEN
+	; Copy character ROM data for screens $4000-$8000 or $C000-$D000
+	lda chars
+	beq nochars
+	sta dest+1
+	lda #$d8
+	sta zp+1
+	ldy #0
+	sty zp
+	sty dest
+	ldx #3
+;$01?	dec 1				; $33
+lda #$37
+sta $01
+copy3	
+;lda (zp),y
+lda $df55
+	sta (dest),y
+	iny
+	bne copy3
+	inc zp+1
+	inc dest+1
+	dex
+	bpl copy3
+	txa				; create character $7f for progress bar
+	dec dest+1
+	ldy #$f8
+cbar1	sta (dest),y
+	iny
+	bne cbar1
+nochars
+#endif /* SCREEN */
+	.)
+
+r1_absmode_len	= * - r1_org
+
+	* =				; resolving of globals is only possible
+
+r1_relmode_start			; in relocating mode
+#ifdef SCREEN
+	lda #<barsprptr
+	sta screen+$3f8
+#endif /* SCREEN */
+	lda #$37
+	sta 1
+	jmp player
+r1_relmode_len = * - r1_relmode_start
+
+r1_len = r1_absmode_len + r1_relmode_len
+
+
+start	.(
+	sei
+	ldx #$ff
+	txs
+	cld
+	pha				; Store default song number
+	lda $02a6
+	and #1
+	pha				; Store pal/ntsc flag
+	lda $a2
+	pha				; Store seed for random number generator
+
+	lda #$37
+	sta 1
+	jsr $ff84			; IOINIT kernal function
+
+	; Initialize VIC-II chip
+	ldx #$2e
+vicinit	lda vicdata-1,x
+	sta $d000-1,x
+	dex
+	bne vicinit
+
+#ifdef SCREEN
+	lda #<dd00			; Set VIC-II memory bank
+	sta $dd00
+
+	; Initialize color memory
+	lda #<COL_BACKGROUND
+colinit	sta $d800,x
+	sta $d900,x
+	sta $da00,x
+	sta $db00,x
+	inx
+	bne colinit
+
+	ldx #28				; set colors of program name
+	lda #<COL_TITLE
+prgcol	sta $d800+45-3,x
+	dex
+	bpl prgcol
+	ldx #14
+l1	lda linecol,x
+	sta $d800+92,x
+	dex
+	bpl l1
+
+	ldx #7
+ll1
+	lda #<COL_PARAMETER
+	sta $d800+33,x
+	sta $d800+73,x
+	lda #<COL_VALUE
+	sta $d800+113,x
+	sta $d800+153,x
+	dex
+	bpl ll1
+
+
+	ldy #240			; set color of information lines
+l2	ldx #39
+	lda #<COL_VALUE
+l3	cpx #9
+	beq l4
+	bcs l5
+	lda #<COL_PARAMETER
+	.byte $2c			; bit $xxxx
+l4	lda #<COL_COLON
+l5	dey
+	sta $d800+160,y
+	sta $d800+320,y
+	dex
+	bpl l3
+	tya
+	bne l2
+
+	lda #<COL_LEGEND		; set color of area for instructions
+instcol	sta $d800+600,y
+	iny
+	cpy #160
+	bne instcol
+
+#ifndef SMOOTH_SCROLL
+	ldx #19
+	ldy #0
+stilco2	lda #<COL_SCROLLER
+	cpx #3
+	bcs skip
+	lda scrollcol,x
+skip	sta $d800+840,x
+	sta $d800+860,y
+	iny
+	dex
+	bpl stilco2
+#endif /* SMOOTH_SCROLL */
+#endif /* SCREEN */
+
+	lda #$34
+	sta 1
+
+	lda #<stopvec
+	sta $0328
+	lda #>stopvec
+	sta $0329
+
+	ldy #r1_len
+copyr1	lda r1_src-1,y
+	sta r1_org-1,y
+	dey
+	bne copyr1
+
+	jmp memmove
+
+
+#ifdef SCREEN
+vicdata	.byte $00,$9a,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$6b,$37,$00,$00,$01,$08,$00
+	.byte <d018,$0f,$00,$00,$00,$00,$00,$00
+	.byte <COL_BORDER,<COL_BACKGROUND,$01,$02,$03,$04,$00,<COL_BAR_FG
+	.byte $02,$03,$04,$05,$06,$07
+
+linecol	.byte <COL_LINE_0,<COL_LINE_1,<COL_LINE_2,<COL_LINE_3,<COL_LINE_4
+	.byte <COL_LINE_5,<COL_LINE_6,<COL_LINE_7,<COL_LINE_8,<COL_LINE_9
+	.byte <COL_LINE_10,<COL_LINE_11,<COL_LINE_12,<COL_LINE_13,<COL_LINE_14
+
+#ifndef SMOOTH_SCROLL
+scrollcol .byte 11,12,15
+#endif /* ! SMOOTH_SCROLL */
+
+#else /* SCREEN */
+
+vicdata	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$6b,$37,$00,$00,$00,$08,$00
+	.byte $14,$0f,$00,$00,$00,$00,$00,$00
+	.byte <COL_BORDER,$06,$01,$02,$03,$04,$00,$01
+	.byte $02,$03,$04,$05,$06,$07
+#endif /* SCREEN */
+
+	.)

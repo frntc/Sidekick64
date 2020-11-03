@@ -1,0 +1,88 @@
+*** stildefs.h.orig	Sat Nov 17 13:29:03 2001
+--- stildefs.h	Sat Nov 17 13:41:13 2001
+***************
+*** 5,47 ****
+  #ifndef _STILDEFS_H
+  #define _STILDEFS_H
+  
+! #if defined(__linux__) || defined(__FreeBSD__) || defined(solaris2) || defined(sun) || defined(sparc) || defined(sgi)
+! #define UNIX
+! #endif
+! 
+! #if defined(__MACOS__)
+! #define MAC
+! #endif
+! 
+! #if defined(__amigaos__)
+! #define AMIGA
+! #endif
+  
+  // On a per OS basis:
+  // - Define what the pathname separator is.
+  // - Define what the function is to compare strings case-insensitively.
+  // - Define what the function is to compare portions of strings case-insensitively.
+  //
+! #ifdef UNIX
+!     #define SLASH '/'
+!     #define MYSTRCMP strcasecmp
+!     #define MYSTRNCMP strncasecmp
+! #else
+! #ifdef MAC
+!     #define SLASH ':'
+!     #define MYSTRCMP stricmp
+!     #define MYSTRNCMP strnicmp
+  #else
+! #ifdef AMIGA
+!     #define SLASH '/'
+!     #define MYSTRCMP stricmp
+!     #define MYSTRNCMP strnicmp
+! #else // WinDoze
+!     #define SLASH '\\'
+!     #define MYSTRCMP stricmp
+!     #define MYSTRNCMP strnicmp
+! #endif
+  #endif
+  #endif
+  
+  // Common definition for boolean
+--- 5,27 ----
+  #ifndef _STILDEFS_H
+  #define _STILDEFS_H
+  
+! #include "config.h"
+  
+  // On a per OS basis:
+  // - Define what the pathname separator is.
+  // - Define what the function is to compare strings case-insensitively.
+  // - Define what the function is to compare portions of strings case-insensitively.
+  //
+! #define SLASH '/'
+! #ifdef HAVE_STRCASECMP
+! #define MYSTRCMP strcasecmp
+  #else
+! #define MYSTRCMP stricmp
+  #endif
++ #ifdef HAVE_STRNCASECMP
++ #define MYSTRNCMP strncasecmp
++ #else
++ #define MYSTRNCMP strnicmp
+  #endif
+  
+  // Common definition for boolean
+***************
+*** 60,66 ****
+  
+  // Maximum size of a single line in STIL - also accounts for some extra
+  // padding, just in case.
+! #define STIL_MAX_LINE_SIZE 91
+  
+  // Maximum size of a single STIL entry (in bytes).
+  #define STIL_MAX_ENTRY_SIZE STIL_MAX_LINE_SIZE*100
+--- 40,46 ----
+  
+  // Maximum size of a single line in STIL - also accounts for some extra
+  // padding, just in case.
+! #define STIL_MAX_LINE_SIZE 129
+  
+  // Maximum size of a single STIL entry (in bytes).
+  #define STIL_MAX_ENTRY_SIZE STIL_MAX_LINE_SIZE*100
