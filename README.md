@@ -24,6 +24,9 @@ The C16/+4 version comes with two fabolous games ported to run directly off the 
 ## Changelog
 
 recent changes (higher = newer):
+- integration of PSID64 enables .SID-file support (.SID are converted to .PRG on the fly and launched)
+- PRG launcher now supports large files (>250 blocks)
+- scanning directories on the SD-card is faster, entries are sorted alphabetically
 - auto-detection of SID and kernal-replacement wires (and disabling menu entries if not present)
 - more accurate control of the reSID-emulation and thus improved quality (currently only C64/C128)
 - more robust (faking) behavior for SFX sound expander detection routines (currently only C64/C128)
@@ -112,9 +115,11 @@ IMPORTANT: when using a SID (or replacement) which supports register reading (= 
 Normally you would use an external power supply for the RPi. Although the circuitry has pull-ups/pull-downs to not mess with the bus at boot time, the safest way is to boot the RPi first and then turn on the C64.
 The RPi is ready when the splash screen appears.
 
-Use the following on your own risk (I do this, and it never destroyed anything, but as said - your choice): the latest revision offers to solder pads to grab the +5V supply from the C64. You can either connect a USB-cable and power
-the RPi this way, or close the jumper "close to power..." to power the RPi via the +5V GPIO. NEVER power the RPi from the C64 and externally at the same time. NEVER! The current of the RPi has been measured to be up to 450mA which is within
+Use the following on your own risk (I do this, and it never destroyed anything, but as said - your choice): the latest revision offers to solder pads to grab the +5V supply from the C64/C128. You can either connect a USB-cable and power
+the RPi this way, or close the jumper "close to power..." to power the RPi via the +5V GPIO. NEVER power the RPi from the C64/C128 and externally at the same time. NEVER! The current of the RPi has been measured to be up to 450mA which is within
 the specificiations of the C64. In any case I recommend to not try powering the RPi with a standard PSU/brick of death.
+
+Do never power the Sidekick64 from a C16/+4, always use an external power supply for these computers!
 
 ## Sidekick128 for C128
 
