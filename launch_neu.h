@@ -50,8 +50,7 @@ static u32	disableCart, ultimaxDisabled, transferStarted, currentOfs, transferPa
 static u32 prgSize;
 static unsigned char prgData[ 65536 ] AAA;
 static u32 startAddr, prgSizeAboveA000, prgSizeBelowA000;
-
-static volatile u8 forceReadLaunch;
+volatile u8 forceReadLaunch;
 
 // in case the launch code starts with the loading address
 #define LAUNCH_BYTES_TO_SKIP	0
@@ -61,12 +60,14 @@ static int launchGetProgram( const char *FILENAME, bool hasData = false, u8 *prg
 {
 	if ( !hasData )
 	{
-		if ( !readFile( logger, (char*)DRIVE, (const char*)FILENAME, prgData, &prgSize ) )
-			return 0; 
+		if ( readFile( logger, (char*)DRIVE, (const char*)FILENAME, prgData, &prgSize ) )
+			return 1; 
+		return 0;
 	} else
 	{
 		prgSize = prgSizeExt;
 		memcpy( prgData, prgDataExt, prgSize );
+		return 1;
 	}
 
 	startAddr = prgData[ 0 ] + prgData[ 1 ] * 256;
@@ -77,8 +78,6 @@ static int launchGetProgram( const char *FILENAME, bool hasData = false, u8 *prg
 		prgSizeAboveA000 = 0;
 	} else
 		prgSizeAboveA000 = prgSize - prgSizeBelowA000;
-
-	return 1;
 }
 
 static void launchInitLoader( bool ultimax, bool c128 )

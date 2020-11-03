@@ -9,7 +9,11 @@ OBJS = lowlevel_arm64.o gpio_defs.o helpers.o latch.o oled.o ./OLED/ssd1306xled.
 ### MENU C64/C128 ###
 ifeq ($(kernel), menu)
 CFLAGS += -DCOMPILE_MENU=1
-OBJS += kernel_menu.o kernel_kernal.o kernel_launch.o kernel_ef.o kernel_fc3.o kernel_ar.o kernel_cart128.o crt.o dirscan.o config.o kernel_rkl.o c64screen.o tft_st7789.o
+OBJS += kernel_menu.o kernel_kernal.o kernel_launch.o kernel_ef.o kernel_fc3.o kernel_ar.o kernel_cart128.o crt.o dirscan.o config.o kernel_rkl.o c64screen.o tft_st7789.o launch.o
+
+OBJS += ./PSID/sidtune/PP20.o ./PSID/sidtune/PSID.o ./PSID/sidtune/SidTune.o ./PSID/sidtune/SidTuneTools.o 
+OBJS += ./PSID/libpsid64/psid64.o  ./PSID/libpsid64/reloc65.o  ./PSID/libpsid64/screen.o   ./PSID/libpsid64/theme.o  
+#OBJS += ./PSID/libpsid64/exomizer/chunkpool.o  ./PSID/libpsid64/exomizer/exomizer.o  ./PSID/libpsid64/exomizer/match.o  ./PSID/libpsid64/exomizer/optimal.o  ./PSID/libpsid64/exomizer/output.o  ./PSID/libpsid64/exomizer/radix.o  ./PSID/libpsid64/exomizer/search.o  ./PSID/libpsid64/exomizer/sfx64ne.o  
 
 CFLAGS += -DCOMPILE_MENU_WITH_SOUND=1
 OBJS += kernel_sid.o kernel_sid8.o sound.o ./resid/dac.o ./resid/filter.o ./resid/envelope.o ./resid/extfilt.o ./resid/pot.o ./resid/sid.o ./resid/version.o ./resid/voice.o ./resid/wave.o fmopl.o 

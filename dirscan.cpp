@@ -8,8 +8,8 @@
  
  dirscan.cpp
 
- RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
-          - code for reading/parsing D64 files
+ Sidekick64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
+            - code for reading/parsing D64 files
  Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  .d64 reader below adapted from d642prg V2.09, original source (C)Covert Bitops, (C)2003/2009 by iAN CooG/HokutoForce^TWT^HVSC
@@ -31,6 +31,11 @@
 */
 #include "dirscan.h"
 #include "linux/kernel.h"
+#include <circle/util.h>
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
 DIRENTRY dir[ MAX_DIR_ENTRIES ];
 s32 nDirEntries;
@@ -262,10 +267,38 @@ int readD64File( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *d
 	return 1;
 }
 
+int compareEntries( const void *e1, const void *e2 )
+{
+	DIRENTRY *a = (DIRENTRY*)e1;
+	DIRENTRY *b = (DIRENTRY*)e2;
+
+	if ( a->f && !b->f ) return -1;
+	if ( b->f && !a->f ) return 1;
+
+	return strcasecmp( (char*)a->name, (char*)b->name );
+}
+
+void quicksort( DIRENTRY *begin, DIRENTRY *end )
+{
+	DIRENTRY *ptr = begin, *split = begin + 1;
+	if ( end - begin < 1 ) return;
+	while ( ++ptr <= end ) {
+		if ( compareEntries( ptr, begin ) < 0 ) {
+			DIRENTRY tmp = *ptr; *ptr = *split; *split = tmp;
+			++split;
+		}
+	}
+	DIRENTRY tmp = *begin; *begin = *( split - 1 ); *( split - 1 ) = tmp;
+	quicksort( begin, split - 1 );
+	quicksort( split, end );
+}
 
 void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xffffffff, u32 level = 0, u32 takeAll = 0, u32 *nAdded = NULL )
 {
 	char temp[ 4096 ];
+
+	DIRENTRY sort[ 2048 ];
+	u32 sortCur = 0;
 
 	if ( parent != 0xffffffff )
 		d[ parent ].f |= DIR_SCANNED;
@@ -290,21 +323,35 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 				// folder? 
 				if ( ( FileInfo.fattrib & ( AM_DIR ) ) )
 				{
+					strcpy( (char*)sort[sortCur].name, FileInfo.fname );
+					sort[ sortCur ].level = FileInfo.fattrib;
+					sort[ sortCur ].size = 0;
+					sort[ sortCur++ ].f = 1;
 					nAdditionalEntries ++;
 				} else
 				{
 					if ( strstr( FileInfo.fname, ".crt" ) > 0 || strstr( FileInfo.fname, ".CRT" ) > 0 ||
 						 strstr( FileInfo.fname, ".georam" ) > 0 || strstr( FileInfo.fname, ".GEORAM" ) > 0 || 
 						 strstr( FileInfo.fname, ".prg" ) > 0 || strstr( FileInfo.fname, ".PRG" ) > 0 || 
+						 strstr( FileInfo.fname, ".sid" ) > 0 || strstr( FileInfo.fname, ".SID" ) > 0 || 
 						 strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".BIN" ) > 0 ||
 						 strstr( FileInfo.fname, ".rom" ) > 0 || strstr( FileInfo.fname, ".ROM" ) > 0 )
 					{
+						strcpy( (char*)sort[sortCur].name, FileInfo.fname );
+						sort[ sortCur ].level = FileInfo.fattrib;
+						sort[ sortCur ].size = FileInfo.fsize;
+						sort[ sortCur++ ].f = 0;
 						nAdditionalEntries ++;
 					}
 
 					if ( strstr( FileInfo.fname, ".d64" ) > 0 || strstr( FileInfo.fname, ".D64" ) > 0 || 
 						 strstr( FileInfo.fname, ".d71" ) > 0 || strstr( FileInfo.fname, ".D71" ) > 0 )
 					{
+						strcpy( (char*)sort[sortCur].name, FileInfo.fname );
+						sort[ sortCur ].level = FileInfo.fattrib;
+						sort[ sortCur ].size = 0; //FileInfo.fsize;
+						sort[ sortCur++ ].f = 1;
+
 						strcpy( temp, DIRPATH );
 						strcat( temp, "\\" );
 						strcat( temp, FileInfo.fname );
@@ -326,6 +373,13 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 		}
 
 		f_closedir( &dir );
+
+
+		if ( !nAdditionalEntries )
+			return;
+
+		//qsort( &sort[ 0 ], sortCur, sizeof( DIRENTRY ), compareEntries );
+		quicksort( &sort[ 0 ], &sort[ sortCur - 1 ] );
 
 		//logger->Write( "insert", LogNotice, "additional entries %d", nAdditionalEntries );
 
@@ -351,122 +405,117 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 	}
 
 
-	DIR dir;
+/*	DIR dir;
 	FILINFO FileInfo;
 	FRESULT res = f_findfirst( &dir, &FileInfo, DIRPATH, "*" );
 
 	for ( u32 i = 0; res == FR_OK && FileInfo.fname[ 0 ]; i++ )
-	{
-		if ( ( FileInfo.fattrib & ( AM_DIR ) ) )
-		{
-			strcpy( temp, DIRPATH );
-			strcat( temp, "\\" );
-			strcat( temp, FileInfo.fname );
+	{*/
+	u32 pos = 0;
 
-			strcpy( (char*)d[ *n ].name, FileInfo.fname );
-			d[ *n ].f = DIR_DIRECTORY;
+	do {
+		d[*n].size = sort[ pos ].size;
+
+		// file or folder?
+		if ( sort[ pos ].level & AM_DIR )
+		{
+			strcpy( (char*)d[*n].name, (char*)sort[ pos ].name );
+			d[*n].f = DIR_DIRECTORY;
 			if ( takeAll )
 				d[ *n ].f |= DIR_LISTALL;
-			d[ *n ].parent = parent;
-			d[ *n ].level = level;
-			u32 curIdx = *n;
-			( *n )++;
-
-			// omitted recursion here, directories are parsed on demand
-			//readDirectory( temp, d, n, curIdx, level + 1 );
-
-			d[ curIdx ].next = *n;
+			d[*n].parent = parent;
+			d[*n].level = level;
+			d[*n].next = 1 + *n; (*n) ++;
 		} else
 		{
-			if ( !( FileInfo.fattrib & ( AM_HID | AM_SYS ) ) )
+			strcpy( (char*)d[*n].name, (char*)sort[ pos ].name );
+
+			if ( strstr( (char*)sort[ pos ].name, ".d64" ) > 0 || strstr( (char*)sort[ pos ].name, ".D64" ) > 0 ||
+			 	 strstr( (char*)sort[ pos ].name, ".d71" ) > 0 || strstr( (char*)sort[ pos ].name, ".D71" ) > 0 )
 			{
-				strcpy( (char*)d[ *n ].name, FileInfo.fname );
-				//strcpy( (char*)d[ *n ].name, "test" );
+				strcpy( temp, DIRPATH );
+				strcat( temp, "\\" );
+				strcat( temp, (char*)sort[ pos ].name );
 
-				if ( strstr( FileInfo.fname, ".d64" ) > 0 || strstr( FileInfo.fname, ".D64" ) > 0 ||
-					 strstr( FileInfo.fname, ".d71" ) > 0 || strstr( FileInfo.fname, ".D71" ) > 0 )
+				u32 imgsize = 0;
+				if ( !readD64File( logger, "", temp, d64buf, &imgsize ) )
 				{
-					strcpy( temp, DIRPATH );
-					strcat( temp, "\\" );
-					strcat( temp, FileInfo.fname );
+					logger->Write( "RaspiMenu", LogPanic, "-> error loading file %d", temp );
+				}
 
-					u32 imgsize = 0;
-					if ( !readD64File( logger, "", temp, d64buf, &imgsize ) )
-					{
-						logger->Write( "RaspiMenu", LogPanic, "-> error loading file %d", temp );
-					}
+				u32 parentOfD64Files = *n;
+				d[*n].f = DIR_D64_FILE  | ( 5 << SHIFT_TYPE );
+				d[*n].parent = parent;
+				d[*n].level = level;
+				(*n) ++;
 
-					u32 parentOfD64Files = *n;
+				d[*n].f = DIR_FILE_IN_D64  | ( 5 << SHIFT_TYPE );
+				d[*n].parent = parentOfD64Files;
+				d[*n].level = level + 1;
 
-					d[ *n ].f = DIR_D64_FILE | ( 5 << SHIFT_TYPE );
-					d[ *n ].parent = parent;
-					d[ *n ].level = level;
-					( *n )++;
+				char header[ 32 ] = { 0 };
+				if ( d64ParseExtract( d64buf, imgsize, D64_GET_HEADER, (u8*)header ) == 0 )
+					strcpy( (char*)d[ *n ].name, header );
+				( *n )++;
 
-					d[ *n ].f = DIR_FILE_IN_D64 | ( 5 << SHIFT_TYPE );
-					d[ *n ].parent = parentOfD64Files;
-					d[ *n ].level = level + 1;
+				u32 curIdx = *n;
 
-					char header[ 32 ] = { 0 };
-					if ( d64ParseExtract( d64buf, imgsize, D64_GET_HEADER, (u8*)header ) == 0 )
-						strcpy( (char*)d[ *n ].name, header );
-					( *n )++;
+				d64ParseExtract( d64buf, imgsize, D64_GET_DIR, (u8*)d, n );
 
-					u32 curIdx = *n;
-
-					d64ParseExtract( d64buf, imgsize, D64_GET_DIR, (u8*)d, n );
-
-					for ( s32 i = curIdx; i < *n; i++ )
-					{
-						d[ i ].level = level + 1;
-						d[ i ].parent = parentOfD64Files;
-					}
-
-					d[ curIdx - 2 ].next = *n;
-
-				} else
-				if ( strstr( FileInfo.fname, ".crt" ) > 0 || strstr( FileInfo.fname, ".CRT" ) > 0 )
+				for ( s32 i = curIdx; i < *n; i++ )
 				{
-					d[ *n ].f = DIR_CRT_FILE;
-					d[ *n ].parent = parent;
-					d[ *n ].level = level;
-					( *n )++;
-				} else 
-				if ( strstr( FileInfo.fname, ".georam" ) > 0 || strstr( FileInfo.fname, ".GEORAM" ) > 0 )
-				{
-					d[ *n ].f = DIR_CRT_FILE;
-					d[ *n ].parent = parent;
-					d[ *n ].level = level;
-					( *n )++;
-				} else
-				if ( strstr( FileInfo.fname, ".prg" ) > 0 || strstr( FileInfo.fname, ".PRG" ) > 0 )
-				{
-					d[ *n ].f = DIR_PRG_FILE;
-					d[ *n ].parent = parent;
-					d[ *n ].level = level;
-					( *n )++;
-				} else
-				if ( strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".bin" ) > 0 )
-				{
-					d[ *n ].f = DIR_PRG_FILE;
-					d[ *n ].parent = parent;
-					d[ *n ].level = level;
-					( *n )++;
-				} else
-				if ( strstr( FileInfo.fname, ".rom" ) > 0 || strstr( FileInfo.fname, ".ROM" ) > 0 || takeAll == 1 || (d[ parent ].f & DIR_LISTALL) )
-				{
-					d[ *n ].f = DIR_CRT_FILE;
-					d[ *n ].parent = parent;
-					d[ *n ].level = level;
-					( *n )++;
-				} 
-			}
+					d[ i ].level = level + 1;
+					d[ i ].parent = parentOfD64Files;
+				}
+
+				d[ curIdx - 2 ].next = *n;
+
+			} else
+			if ( strstr( (char*)sort[ pos ].name, ".crt" ) > 0 || strstr( (char*)sort[ pos ].name, ".CRT" ) > 0 )
+			{
+				d[ *n ].f = DIR_CRT_FILE;
+				d[ *n ].parent = parent;
+				d[ *n ].level = level;
+				( *n )++;
+			} else 
+			if ( strstr( (char*)sort[ pos ].name, ".georam" ) > 0 || strstr( (char*)sort[ pos ].name, ".GEORAM" ) > 0 )
+			{
+				d[ *n ].f = DIR_CRT_FILE;
+				d[ *n ].parent = parent;
+				d[ *n ].level = level;
+				( *n )++;
+			} else
+			if ( strstr( (char*)sort[ pos ].name, ".prg" ) > 0 || strstr( (char*)sort[ pos ].name, ".PRG" ) > 0 )
+			{
+				d[ *n ].f = DIR_PRG_FILE;
+				d[ *n ].parent = parent;
+				d[ *n ].level = level;
+				( *n )++;
+			} else
+			if ( strstr( (char*)sort[ pos ].name, ".sid" ) > 0 || strstr( (char*)sort[ pos ].name, ".SID" ) > 0 )
+			{
+				d[ *n ].f = DIR_SID_FILE;
+				d[ *n ].parent = parent;
+				d[ *n ].level = level;
+				( *n )++;
+			} else
+			if ( strstr( (char*)sort[ pos ].name, ".bin" ) > 0 || strstr( (char*)sort[ pos ].name, ".bin" ) > 0 )
+			{
+				d[ *n ].f = DIR_PRG_FILE;
+				d[ *n ].parent = parent;
+				d[ *n ].level = level;
+				( *n )++;
+			} else
+			if ( strstr( (char*)sort[ pos ].name, ".rom" ) > 0 || strstr( (char*)sort[ pos ].name, ".ROM" ) > 0 || takeAll == 1 || (d[ parent ].f & DIR_LISTALL) )
+			{
+				d[ *n ].f = DIR_CRT_FILE;
+				d[ *n ].parent = parent;
+				d[ *n ].level = level;
+				( *n )++;
+			} 
 		}
 
-		res = f_findnext( &dir, &FileInfo );
-	}
-
-	f_closedir( &dir );
+	} while ( ++pos < sortCur );
 }
 
 void insertDirectoryContents( int node, char *basePath, int listAll )
@@ -521,6 +570,7 @@ void scanDirectories( char *DRIVE )
 	APPEND_SUBTREE_UNSCANNED( "CRT", "SD:CRT", 0 )
 	APPEND_SUBTREE_UNSCANNED( "D64", "SD:D64", 0 )
 	APPEND_SUBTREE_UNSCANNED( "PRG", "SD:PRG", 0 )
+	APPEND_SUBTREE_UNSCANNED( "SID", "SD:SID", 0 )
 	APPEND_SUBTREE_UNSCANNED( "PRG128", "SD:PRG128", 0 )
 	APPEND_SUBTREE_UNSCANNED( "CART128", "SD:CART128", 0 )
 

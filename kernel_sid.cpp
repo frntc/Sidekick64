@@ -314,6 +314,9 @@ static int busValueTTL = 0;
 static unsigned long long nCyclesEmulated = 0;
 static unsigned long long samplesElapsed = 0;
 
+static u32 resetFromCodeState = 0;
+static u32 _playingPSID = 0;
+
 static void prepareOnReset( bool refresh = false )
 {
 	if ( launchPrg )
@@ -327,14 +330,21 @@ static void prepareOnReset( bool refresh = false )
 		InvalidateInstructionCache();
 	}
 
+	if ( _playingPSID )
+	{
+		extern unsigned char charset[ 4096 ];
+		CACHE_PRELOADL2STRM( &charset[ 2048 ] );
+		FORCE_READ_LINEAR32( (void*)&charset[ 2048 ], 1024 );
+	}
+
 	if ( launchPrg )
 	{
 		launchPrepareAndWarmCache();
 	}
 
 	// FIQ handler
-	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 4*1024 );
-	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 4*1024, 32768 );
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 6*1024 );
+	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 6*1024, 32768 );
 
 	resetCounter = cycleCountC64 = nCyclesEmulated = samplesElapsed = 0;
 }
@@ -342,10 +352,11 @@ static void prepareOnReset( bool refresh = false )
 //static u32 haltC64 = 0, letgoC64 = 0;
 //static u32 SID_not_initialized = 1;
 
+
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler( void *pParam );
 
-void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 )
+void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 )
 #else
 void CKernel::Run( void )
 #endif
@@ -374,6 +385,8 @@ void CKernel::Run( void )
 	SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );
 
 	#ifdef COMPILE_MENU
+	_playingPSID = playingPSID;
+
 	if ( screenType == 0 )
 	{
 		splashScreen( raspi_sid_splash );
@@ -480,6 +493,7 @@ void CKernel::Run( void )
 	//
 	resetReleased = 0xff;
 	//haltC64 = letgoC64 = 0;
+	resetFromCodeState = 0;
 
 	#ifdef COMPILE_MENU
 	prepareOnReset();
@@ -532,7 +546,6 @@ void CKernel::Run( void )
 
 startHereAfterReset:
 
-
 	latchSetClear( LATCH_RESET, 0 );
 	if ( launchPrg )
 	{
@@ -543,6 +556,14 @@ startHereAfterReset:
 			#endif
 			asm volatile ("wfi");
 
+			if ( resetFromCodeState == 2 )
+			{
+				EnableIRQs();
+				m_InputPin.DisableInterrupt();
+				m_InputPin.DisconnectInterrupt();
+				return;		
+			}
+			
 			if ( cycleCountC64 > 2000000 )
 			{
 				cycleCountC64 = 0;
@@ -1011,8 +1032,42 @@ void CKernel::FIQHandler (void *pParam)
 	// |  \ |___ /~~\ |__/    |     |  | 
 	//                                   
 	#ifdef EMULATE_OPL2
-	if ( cfgEmulateOPL2 )
+	if ( cfgEmulateOPL2 || _playingPSID )
 	{
+		if ( _playingPSID )
+		{
+			if ( IO2_ACCESS && CPU_READS_FROM_BUS && GET_IO12_ADDRESS == 0x55 )
+			{
+				static u32 oc = 0;
+				extern unsigned char charset[ 4096 ];
+				u32 D = charset[ 2048 + oc ];
+				oc ++; oc &= 1023;
+				WRITE_D0to7_TO_BUS( D )
+				CACHE_PRELOADL2STRM( &charset[ 2048 + oc ] );
+				OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+				return;
+			}
+			if ( resetFromCodeState == 0 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x11 )
+			{
+				READ_D0to7_FROM_BUS( D )
+				if ( D == 0x22 )
+					resetFromCodeState = 1;
+				OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+				return;
+			}
+			if ( resetFromCodeState == 1 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x33 )
+			{
+				READ_D0to7_FROM_BUS( D )
+				if ( D == 0x44 )
+				{
+					resetFromCodeState = 2;
+					latchSetClear( 0, LATCH_RESET );
+				}
+				OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+				return;
+			}
+		}
+
 		if ( ( CPU_READS_FROM_BUS && IO2_ACCESS ) && ( GET_IO12_ADDRESS == 0x60 ) )
 		{
 			//

@@ -45,18 +45,59 @@ static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_launch.tga";
 
 static u32	configGAMEEXROMSet, configGAMEEXROMClr;
 static u32	resetCounter, c64CycleCount;
-static u32	disableCart, transferStarted, currentOfs;
+static u32	disableCart, transferStarted, currentOfs, transferPart;
 
 u32 prgSize;
 unsigned char prgData[ 65536 ] AAA;
+static u32 startAddr, prgSizeAboveA000, prgSizeBelowA000;
 
 // in case the launch code starts with the loading address
 #define LAUNCH_BYTES_TO_SKIP	0
 static unsigned char launchCode[ 65536 ] AAA;
 
+static u32 resetFromCodeState = 0;
+static u32 _playingPSID = 0;
+
+extern volatile u8 forceReadLaunch;
+
+void prepareOnReset( bool refresh = false )
+{
+	if ( !refresh )
+	{
+		CleanDataCache();
+		InvalidateDataCache();
+		InvalidateInstructionCache();
+	}
+
+	if ( _playingPSID )
+	{
+		extern unsigned char charset[ 4096 ];
+		CACHE_PRELOADL2STRM( &charset[ 2048 ] );
+		FORCE_READ_LINEAR32( (void*)&charset[ 2048 ], 1024 );
+	}
+
+	// .PRG data
+	CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], prgSize, CACHE_PRELOADL2KEEP )
+	FORCE_READ_LINEAR32a( prgData, prgSize, prgSize * 8 );
+
+	// launch code / CBM80
+	CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 512, CACHE_PRELOADL1KEEP )
+	FORCE_READ_LINEAR32a( launchCode, 512, 512 * 16 );
+
+	for ( u32 i = 0; i < prgSizeAboveA000; i++ )
+		forceReadLaunch = prgData[ prgSizeBelowA000 + i + 2 ];
+
+	for ( u32 i = 0; i < prgSizeBelowA000 + 2; i++ )
+		forceReadLaunch = prgData[ i ];
+
+	// FIQ handler
+	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 1024 );
+	FORCE_READ_LINEAR32( (void*)&FIQ_HANDLER, 1024 );
+}
+
 
 #ifdef COMPILE_MENU
-void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 )
+void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 )
 #else
 void CKernelLaunch::Run( void )
 #endif
@@ -83,6 +124,8 @@ void CKernelLaunch::Run( void )
 	#endif
 
 	#ifdef COMPILE_MENU
+	_playingPSID = playingPSID;
+
 	if ( screenType == 0 )
 	{
 		splashScreen( sidekick_launch_oled );
@@ -125,37 +168,56 @@ void CKernelLaunch::Run( void )
 	readFile( logger, (char*)DRIVE, (const char*)FILENAME, prgData, &prgSize );
 	#endif
 
+	startAddr = prgData[ 0 ] + prgData[ 1 ] * 256;
+	prgSizeBelowA000 = 0xa000 - startAddr;
+	if ( prgSizeBelowA000 > prgSize - 2 )
+	{
+		prgSizeBelowA000 = prgSize - 2;
+		prgSizeAboveA000 = 0;
+	} else
+		prgSizeAboveA000 = prgSize - prgSizeBelowA000;
+
+	resetFromCodeState = 0;
 
 	// setup FIQ
+	prepareOnReset();
 	DisableIRQs();
 	m_InputPin.ConnectInterrupt( FIQ_HANDLER, FIQ_PARENT );
 	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
 
+	c64CycleCount = resetCounter = 0;
+	disableCart = transferStarted = currentOfs = 0;
+	transferPart = 1;
+
 	// warm caches
+	prepareOnReset( true );
+	DELAY(1<<18);
+	prepareOnReset( true );
+	DELAY(1<<18);
+	prepareOnReset( true );
 
-	// .PRG data
-	CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], 65536, CACHE_PRELOADL2KEEP )
-	FORCE_READ_LINEAR32a( prgData, prgSize, 65536 * 8 );
-
-	// launch code / CBM80
-	CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 8192, CACHE_PRELOADL2KEEP )
-	FORCE_READ_LINEAR32a( launchCode, 8192, 65536 * 8 );
-
-	// FIQ handler
-	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 1024 );
-	FORCE_READ_LINEAR32( (void*)&FIQ_HANDLER, 1024 );
+	// ready to go
+	latchSetClear( LATCH_RESET, 0 );
 
 	c64CycleCount = resetCounter = 0;
 	disableCart = transferStarted = currentOfs = 0;
-
-	// ready to go
-	latchSetClearImm( LATCH_RESET, 0 );
+	transferPart = 1;
+	CACHE_PRELOADL2KEEP( &prgData[ prgSizeBelowA000 + 2 ] );
+	CACHE_PRELOADL2KEEP( &prgData[ 0 ] );
 
 	// wait forever
 	while ( true )
 	{
 		#ifdef COMPILE_MENU
 		TEST_FOR_JUMP_TO_MAINMENU( c64CycleCount, resetCounter )
+
+		if ( resetFromCodeState == 2 )
+		{
+			EnableIRQs();
+			m_InputPin.DisableInterrupt();
+			m_InputPin.DisconnectInterrupt();
+			return;		
+		}
 		#endif
 
 		asm volatile ("wfi");
@@ -164,7 +226,6 @@ void CKernelLaunch::Run( void )
 	// and we'll never reach this...
 	m_InputPin.DisableInterrupt();
 }
-
 
 #ifdef COMPILE_MENU
 void KernelLaunchFIQHandler( void *pParam )
@@ -183,7 +244,7 @@ void CKernelLaunch::FIQHandler (void *pParam)
 	// read the rest of the signals
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
 
-	if ( resetCounter > 3  )
+	if ( resetCounter > 3 && resetFromCodeState != 2 )
 	{
 		disableCart = transferStarted = 0;
 		SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );
@@ -193,30 +254,100 @@ void CKernelLaunch::FIQHandler (void *pParam)
 
 	if ( disableCart )
 	{
-		FINISH_BUS_HANDLING
-		return;
+		if ( _playingPSID )
+		{
+			if ( IO2_ACCESS && CPU_READS_FROM_BUS && GET_IO12_ADDRESS == 0x55 )
+			{
+				static u32 oc = 0;
+				extern unsigned char charset[ 4096 ];
+				u32 D = charset[ 2048 + oc ];
+				oc ++; oc &= 1023;
+				WRITE_D0to7_TO_BUS( D )
+				CACHE_PRELOADL2STRM( &charset[ 2048 + oc ] );
+			}
+			if ( resetFromCodeState == 0 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x11 )
+			{
+				READ_D0to7_FROM_BUS( D )
+				if ( D == 0x22 )
+					resetFromCodeState = 1;
+			}
+			if ( resetFromCodeState == 1 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x33 )
+			{
+				READ_D0to7_FROM_BUS( D )
+				if ( D == 0x44 )
+				{
+					resetFromCodeState = 2;
+					latchSetClear( 0, LATCH_RESET );
+				}
+			}
+			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+			return;
+		}
 	}
+
+	// access to CBM80 ROM (launch code)
+	if ( CPU_READS_FROM_BUS && ACCESS( ROM_LH ) )
+		WRITE_D0to7_TO_BUS( launchCode[ GET_ADDRESS + LAUNCH_BYTES_TO_SKIP ] );
 
 	if ( IO1_ACCESS ) 
 	{
 		if ( CPU_WRITES_TO_BUS ) 
 		{
-			// any write to IO1 will (re)start the PRG transfer
-			currentOfs = 0;
 			transferStarted = 1;
-			FINISH_BUS_HANDLING
+
+			// any write to IO1 will (re)start the PRG transfer
+			if ( GET_IO12_ADDRESS == 2 )
+			{
+				currentOfs = prgSizeBelowA000 + 2;
+				transferPart = 1; 
+				CACHE_PRELOADL2KEEP( &prgData[ prgSizeBelowA000 + 2 ] );
+				FINISH_BUS_HANDLING
+				forceReadLaunch = prgData[ prgSizeBelowA000 + 2 ];
+			} else
+			{
+				currentOfs = 0;
+				transferPart = 0;
+				CACHE_PRELOADL2KEEP( &prgData[ 0 ] );
+				FINISH_BUS_HANDLING
+				forceReadLaunch = prgData[ 0 ];
+			}
 			return;
 		} else
 		// if ( CPU_READS_FROM_BUS ) 
 		{
 			if ( GET_IO12_ADDRESS == 1 )	
+			{
 				// $DE01 -> get number of 256-byte pages
-				D = ( prgSize + 255 ) >> 8; else
+				if ( transferPart == 1 ) // PRG part above $a000
+					D = ( prgSizeAboveA000 + 255 ) >> 8;  else
+					D = ( prgSizeBelowA000 + 255 ) >> 8; 
+				WRITE_D0to7_TO_BUS( D )
+				CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );
+				FINISH_BUS_HANDLING
+				forceReadLaunch = prgData[ currentOfs ];
+			} else
+			{
 				// $DE00 -> get next byte
-				D = prgData[ currentOfs++ ];
+/*				if ( transferPart == 1 ) // PRG part above $a000
+				{
+					//D = prgData[ prgSizeBelowA000 + 2 + currentOfs++ ]; 
+					D = forceReadLaunch;	currentOfs ++;
+					//D = (currentOfs ++) & 255;
+					WRITE_D0to7_TO_BUS( D )
+					CACHE_PRELOADL2KEEP( &prgData[ prgSizeBelowA000 + 2 + currentOfs ] );
+					FINISH_BUS_HANDLING
+					forceReadLaunch = prgData[ prgSizeBelowA000 + 2 + currentOfs ];
+				} else*/
+				{
+					D = forceReadLaunch;	currentOfs ++;
+					//D = prgData[ currentOfs++ ];
+					WRITE_D0to7_TO_BUS( D )
+					CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );
+					FINISH_BUS_HANDLING
+					forceReadLaunch = prgData[ currentOfs ];
+				}
+			}
 				
-			WRITE_D0to7_TO_BUS( D )
-			FINISH_BUS_HANDLING
 			return;
 		}
 	}
@@ -234,10 +365,6 @@ void CKernelLaunch::FIQHandler (void *pParam)
 		}
 	}
 
-	// access to CBM80 ROM (launch code)
-	if ( CPU_READS_FROM_BUS && ACCESS( ROM_LH ) )
-		WRITE_D0to7_TO_BUS( launchCode[ GET_ADDRESS + LAUNCH_BYTES_TO_SKIP ] );
-
-	FINISH_BUS_HANDLING
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 }
 

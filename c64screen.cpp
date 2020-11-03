@@ -38,10 +38,38 @@
 #include "config.h"
 #include "crt.h"
 #include "kernel_menu.h"
+#include "PSID/psid64/psid64.h"
+
+const int VK_F1 = 133;
+const int VK_F2 = 137;
+const int VK_F3 = 134;
+const int VK_F4 = 138;
+const int VK_F5 = 135;
+const int VK_F6 = 139;
+const int VK_F7 = 136;
+const int VK_F8 = 140;
+
+const int VK_ESC = 95;
+const int VK_DEL = 20;
+const int VK_RETURN = 13;
+const int VK_SHIFT_RETURN = 141;
+
+const int VK_LEFT  = 157;
+const int VK_RIGHT = 29;
+const int VK_UP    = 145;
+const int VK_DOWN  = 17;
+
+const int ACT_EXIT			= 1;
+const int ACT_BROWSER		= 2;
+const int ACT_GEORAM		= 3;
+const int ACT_SID			= 4;
+const int ACT_LAUNCH_CRT	= 5;
+const int ACT_LAUNCH_PRG	= 6;
+const int ACT_LAUNCH_KERNAL = 7;
+const int ACT_NOTHING		= 0;
 
 extern CLogger *logger;
 
-// todo 
 extern u32 prgSizeLaunch;
 extern unsigned char prgDataLaunch[ 65536 ];
 
@@ -103,6 +131,41 @@ u8 PETSCII2ScreenCode( u8 c )
 	return c - 128;
 }
 
+static const u8 scrtab[256] = {
+	0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, // 0x00
+	0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, // 0x08
+	0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, // 0x10
+	0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f, // 0x18
+	0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, // 0x20  !"#$%&'
+	0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, // 0x28 ()*+,-./
+	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, // 0x30 01234567
+	0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, // 0x38 89:;<=>?
+	0x00, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, // 0x40 @ABCDEFG
+	0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, // 0x48 HIJKLMNO
+	0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, // 0x50 PQRSTUVW
+	0x58, 0x59, 0x5a, 0x1b, 0xbf, 0x1d, 0x1e, 0x64, // 0x58 XYZ[\]^_
+	0x27, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, // 0x60 `abcdefg
+	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, // 0x68 hijklmno
+	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, // 0x70 pqrstuvw
+	0x18, 0x19, 0x1a, 0x1b, 0x5d, 0x1d, 0x1f, 0x20, // 0x78 xyz{|}~ 
+	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x80
+	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x88
+	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x90
+	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x98
+	0x20, 0x21, 0x03, 0x1c, 0xbf, 0x59, 0x5d, 0xbf, // 0xa0 ��������
+	0x22, 0x43, 0x01, 0x3c, 0xbf, 0x2d, 0x52, 0x63, // 0xa8 ��������
+	0x0f, 0xbf, 0x32, 0x33, 0x27, 0x15, 0xbf, 0xbf, // 0xb0 ��������
+	0x2c, 0x31, 0x0f, 0x3e, 0xbf, 0xbf, 0xbf, 0x3f, // 0xb8 ��������
+	0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x43, // 0xc0 ��������
+	0x45, 0x45, 0x45, 0x45, 0x49, 0x49, 0x49, 0x49, // 0xc8 ��������
+	0xbf, 0x4e, 0x4f, 0x4f, 0x4f, 0x4f, 0x4f, 0x18, // 0xd0 ��������
+	0x4f, 0x55, 0x55, 0x55, 0x55, 0x59, 0xbf, 0xbf, // 0xd8 ��������
+	0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x03, // 0xe0 ��������
+	0x05, 0x05, 0x05, 0x05, 0x09, 0x09, 0x09, 0x09, // 0xe8 ��������
+	0xbf, 0x0e, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0xbf, // 0xf0 ��������
+	0x0f, 0x15, 0x15, 0x15, 0x15, 0x19, 0xbf, 0x19  // 0xf8 ��������
+};
+
 void printC64( u32 x, u32 y, const char *t, u8 color, u8 flag, u32 convert, u32 maxL )
 {
 	u32 l = min( strlen( t ), maxL );
@@ -123,6 +186,8 @@ void printC64( u32 x, u32 y, const char *t, u8 color, u8 flag, u32 convert, u32 
 				c = c + 'a' - 'A';
 			if ( ( c >= 'a' ) && ( c <= 'z' ) )
 				c2 = c + 1 - 'a';
+			if ( c == '_' )
+				c2 = 100;
 		}
 
 		c64screen[ x + y * 40 + i ] = c2 | flag;
@@ -192,12 +257,14 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 			leading ++;
 		}
 
-		sprintf( temp, "%s%s", t2, dir[ idx ].name );
-		if ( strlen( temp ) > 34 )
-			temp[ 35 ] = 0;
-
 		if ( (dir[ idx ].parent != 0xffffffff && dir[ dir[ idx ].parent ].f & DIR_D64_FILE && dir[ idx ].parent == (u32)(idx - 1) ) )
 		{
+			if ( dir[ idx ].size > 0 )
+				sprintf( temp, "%s%s                              ", t2, dir[ idx ].name ); else
+				sprintf( temp, "%s%s", t2, dir[ idx ].name );
+			
+			if ( strlen( temp ) > 34 ) temp[ 35 ] = 0;
+
 			if ( idx == cursorPos )
 			{
 				printC64( 2, lines + 3, temp, color, 0x80, convert ); 
@@ -207,7 +274,22 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 				printC64( 2 + leading, lines + 3, (char*)dir[ idx ].name, color, 0x80, convert ); 
 			}
 		} else
+		{
+			if ( dir[ idx ].size > 0 )
+				sprintf( temp, "%s%s                              ", t2, dir[ idx ].name ); else
+				sprintf( temp, "%s%s", t2, dir[ idx ].name );
+			if ( strlen( temp ) > 34 ) temp[ 35 ] = 0;
+
 			printC64( 2, lines + 3, temp, color, (idx == cursorPos) ? 0x80 : 0, convert );
+
+			if ( dir[ idx ].size > 0 )
+			{
+				if ( dir[ idx ].size / 1024 > 999 )
+					sprintf( temp, " %1.1fm", (float)dir[ idx ].size / (1024 * 1024) ); else
+					sprintf( temp, " %3dk", dir[ idx ].size / 1024 );
+				printC64( 32, lines + 3, temp, color, (idx == cursorPos) ? 0x80 : 0, convert );
+			}
+		}
 		lastVisible = idx;
 
 		if ( dir[ idx ].f & DIR_DIRECTORY || dir[ idx ].f & DIR_D64_FILE )
@@ -296,10 +378,10 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 
 	extern u32 wireKernalAvailable;
 
-	if ( key == 140 /*F8*/ ) { resetMenuState(0); return 1;/* Exit */ } else
-	if ( key == 136 /*F7*/ ) { resetMenuState(3); return 2;/* Browser */ } else
-	if ( key == 133 /*F1*/ ) { resetMenuState(1); return 3;/* GEORAM */ } else
-	if ( key == 134 /*F3*/ ) { resetMenuState(2); return 4;/* SID */ } else
+	if ( key == VK_F8 ) { resetMenuState(0); return ACT_EXIT;/* Exit */ } else
+	if ( key == VK_F7 ) { resetMenuState(3); return ACT_BROWSER;/* Browser */ } else
+	if ( key == VK_F1 ) { resetMenuState(1); return ACT_GEORAM;/* GEORAM */ } else
+	if ( key == VK_F3 ) { resetMenuState(2); return ACT_SID;/* SID */ } else
 	{
 		if ( key >= 'A' && key < 'A' + menuItems[ 2 ] ) // CRT
 		{
@@ -309,7 +391,7 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 			if ( menuItemStr )
 				strcpy( menuItemStr, menuText[ 2 ][ i ] );
 			//logger->Write( "RaspiMenu", LogNotice, "%s -> %s\n", menuText[ 2 ][ i ], menuFile[ 2 ][ i ] );
-			return 5;
+			return ACT_LAUNCH_CRT;
 		} else
 		if ( key >= 'A' + menuItems[ 2 ] && key < 'A' + menuItems[ 2 ] + menuItems[ 3 ] ) // PRG
 		{
@@ -318,7 +400,7 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 			if ( menuItemStr )
 				strcpy( menuItemStr, menuText[ 3 ][ i ] );
 			//logger->Write( "RaspiMenu", LogNotice, "%s -> %s\n", menuText[ 3 ][ i ], menuFile[ 3 ][ i ] );
-			return 6;
+			return ACT_LAUNCH_PRG;
 		} else
 		if ( key >= '1' && key < '1' + menuItems[ 1 ] ) // FREEZER
 		{
@@ -326,7 +408,7 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 			int i = key - '1';
 			*FILE = menuFile[ 1 ][ i ];
 			//logger->Write( "RaspiMenu", LogNotice, "%s -> %s\n", menuText[ 1 ][ i ], menuFile[ 1 ][ i ] );
-			return 5;
+			return ACT_LAUNCH_CRT;
 		} else
 		if ( key >= '1' + menuItems[ 1 ] && key < '1' + menuItems[ 1 ] + menuItems[ 4 ] && wireKernalAvailable ) // KERNAL
 		{
@@ -338,11 +420,11 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 			if ( addIdx != NULL )
 				*addIdx = i;
 			//logger->Write( "RaspiMenu", LogNotice, "%s -> %s\n", menuText[ 4 ][ i ], menuFile[ 4 ][ i ] );
-			return 7;
+			return ACT_LAUNCH_KERNAL;
 		}
 	}
 
-	return 0;
+	return ACT_NOTHING;
 }
 
 extern void deactivateCart();
@@ -393,8 +475,6 @@ void applySIDSettings()
 						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12] );
 }
 
-//static int lastKeyDebug = 0;
-
 // ugly, hard-coded handling of UI
 void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, char *menuItemStr, u32 *startC128 = NULL )
 {
@@ -404,16 +484,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 	if ( menuScreen == MENU_MAIN )
 	{
-		//lastKeyDebug = k;
-		//if ( k == 'z' || k == 'Z' )
-		if ( k == 136 /* F7 */ )
+		if ( k == VK_F7 )
 		{
 			menuScreen = MENU_BROWSER;
 			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
-		//if ( k == 'y' || k == 'Y' )
-		if ( k == 135 /* F5 */ )
+		if ( k == VK_F5 )
 		{
 			menuScreen = MENU_CONFIG;
 			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
@@ -425,7 +502,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 		if ( subSID == 1 )
 		{
-			if ( k == 95 )
+			if ( k == VK_ESC )
 			{
 				resetMenuState();
 				subHasLaunch = -1;
@@ -433,7 +510,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				return;
 			}
 			// start 
-			if ( ( r == 4 ) || ( k == 13 ) )
+			if ( ( r == ACT_SID ) || ( k == VK_RETURN ) )
 			{
 				FILENAME[ 0 ] = 0;
 				*launchKernel = 8;
@@ -443,7 +520,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 		if ( subGeoRAM == 1 )
 		{	
-			if ( k == 95 )
+			if ( k == VK_ESC )
 			{
 				resetMenuState();
 				subHasKernal = -1;
@@ -452,13 +529,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				return;
 			}
 			// 
-			if ( r == 7 ) // kernal selected
+			if ( r == ACT_LAUNCH_KERNAL ) // kernal selected
 			{
 				strcpy( filenameKernal, filename );
 				return;
 			}
-			// start 
-			if ( ( ( r == 3 ) || ( k == 13 ) ) )
+			// 
+			if ( ( ( r == ACT_GEORAM ) || ( k == VK_RETURN ) ) )
 			{
 				*launchKernel = 3;
 				return;
@@ -468,20 +545,20 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 		u32 err = 0, tempKernel = 0;
 		switch ( r )
 		{
-		case 1: // exit to basic
+		case ACT_EXIT: // exit to basic
 			deactivateCart();
 			return;
-		case 2: // Browser
+		case ACT_BROWSER: // Browser
 			break;
-		case 3: // GeoRAM
+		case ACT_GEORAM: // GeoRAM
 			subGeoRAM = 1;
 			subSID = 0;
 			return;
-		case 4: // SID+FM
+		case ACT_SID: // SID+FM
 			subSID = 1;
 			subGeoRAM = 0;
 			return;
-		case 5: // .CRT file
+		case ACT_LAUNCH_CRT: // .CRT file
 			if ( strstr( filename, "georam") != 0 || strstr( filename, "GEORAM") != 0 )
 			{
 				*launchKernel = 10;
@@ -521,7 +598,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			}
 
 			return;
-		case 6: // .PRG file
+		case ACT_LAUNCH_PRG: // .PRG file
 			if ( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
 				 ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) // no SID-wire, FM emulation off
 			{
@@ -534,7 +611,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				*launchKernel = 4;
 			}
 			return;
-		case 7: // Kernal
+		case ACT_LAUNCH_KERNAL: // Kernal
 			strcpy( FILENAME, filename );
 			*launchKernel = 2;
 			return;
@@ -543,7 +620,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 	if ( menuScreen == MENU_BROWSER )
 	{
 		// browser screen
-		if ( k == 136 /* F7 */ )
+		if ( k == VK_F7 )
 		{
 			menuScreen = MENU_MAIN;
 			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
@@ -551,15 +628,15 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 		}
 
 		int rep = 1;
-		if ( k == 134 ) { k = 17; rep = DISPLAY_LINES - 1; }
-		if ( k == 133 ) { k = 145; rep = DISPLAY_LINES - 1; }
+		if ( k == VK_F3 ) { k = VK_DOWN; rep = DISPLAY_LINES - 1; }
+		if ( k == VK_F1 ) { k = VK_UP; rep = DISPLAY_LINES - 1; }
 
 		lastLine = scanFileTree( cursorPos, scrollPos );
 
 		for ( int i = 0; i < rep; i++ )
 		{
 			// left
-			if ( k == 157 || 
+			if ( k == VK_LEFT || 
 				 ( ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE ) && k == 13 && (dir[ cursorPos ].f & DIR_UNROLLED ) ) )
 			{
 				if ( dir[ cursorPos ].parent != 0xffffffff )
@@ -574,13 +651,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 					lastScrolled = scrollPos;
 				}
 				if ( !( dir[ cursorPos ].f & DIR_UNROLLED ) )
-					k = 145;
+					k = VK_UP;
 				if ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE )
 					dir[ cursorPos ].f &= ~DIR_UNROLLED;
 				k = 0;
 			} else
 			// right 
-			if ( k == 29 || 
+			if ( k == VK_RIGHT || 
 				 ( ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE ) && k == 13 && !(dir[ cursorPos ].f & DIR_UNROLLED ) ) )
 			{
 				if ( (dir[ cursorPos ].f & DIR_DIRECTORY) && !(dir[ cursorPos ].f & DIR_SCANNED) )
@@ -629,7 +706,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				k = 0;
 			} else
 			// down
-			if ( k == 17 )
+			if ( k == VK_DOWN )
 			{
 					int oldPos = cursorPos;
 					if ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE )
@@ -643,7 +720,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 						cursorPos = oldPos;
 			} else
 			// up
-			if ( k == 145 )
+			if ( k == VK_UP )
 			{
 				cursorPos --;
 				if ( cursorPos < 0 ) cursorPos = 0;
@@ -690,7 +767,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			if ( cursorPos >= nDirEntries ) cursorPos = nDirEntries - 1;
 		}
 
-		if ( k == 13 || k == 141 )
+		if ( k == VK_RETURN || k == VK_SHIFT_RETURN )
 		{
 			if ( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
 				 ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) // no SID-wire, FM emulation off
@@ -702,7 +779,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			{
 				if ( startC128 && modeC128 )
 				{
-					if ( k == 141 )
+					if ( k == VK_SHIFT_RETURN )
 						*startC128 = 1; else
 						*startC128 = 0;
 				}
@@ -715,13 +792,11 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				u32 nodes[ 256 ];
 
 				nodes[ n ++ ] = c;
-				//logger->Write( "exec", LogNotice, "node %d: '%s'", c, dir[c].name );
 
 				s32 curC = c;
 
 				if ( (dir[ c ].f & DIR_FILE_IN_D64 && ((dir[ c ].f>>SHIFT_TYPE)&7) == 2) || dir[ c ].f & DIR_PRG_FILE || dir[ c ].f & DIR_CRT_FILE )
 				{
-					//logger->Write( "exec", LogNotice, "1" );
 					while ( dir[ c ].parent != 0xffffffff )
 					{
 						//logger->Write( "exec", LogNotice, "node %d: '%s'", dir[c].parent, dir[dir[c].parent].name );
@@ -814,7 +889,6 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 							menuScreen = MENU_ERROR;
 						} else
 						{
-						//logger->Write( "exec", LogNotice, "2" );
 							extern u8 d64buf[ 1024 * 1024 ];
 							extern int readD64File( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size );
 
@@ -825,7 +899,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 							if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
 								logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
 
-						//logger->Write( "exec", LogNotice, "path '%s'", path );
+							//logger->Write( "exec", LogNotice, "path '%s'", path );
 							if ( !readD64File( logger, "", path, d64buf, &imgsize ) )
 								return;
 
@@ -843,20 +917,85 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 						return;
 					}
 				}
+
+
+
+				if ( dir[ c ].f & DIR_SID_FILE  )
+				{
+					while ( dir[ c ].parent != 0xffffffff )
+					{
+						c = nodes[ n ++ ] = dir[ c ].parent;
+					}
+
+					int stopPath = 0;
+
+					strcat( path, "SD:" );
+					for ( s32 i = n - 1; i >= stopPath; i -- )
+					{
+						if ( i != n-1 )
+							strcat( path, "\\" );
+						strcat( path, (char*)dir[ nodes[i] ].name );
+					}
+					logger->Write( "exec", LogNotice, "sid file: '%s'", path );
+
+					if ( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
+						 ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) // no SID-wire, FM emulation off
+					{
+						errorMsg = errorMessages[ 6 ];
+						previousMenuScreen = menuScreen;
+						menuScreen = MENU_ERROR;
+					} else
+					{
+						unsigned char sidData[ 65536 ];
+						u32 sidSize = 0;
+
+						if ( readFile( logger, DRIVE, path, sidData, &sidSize ) )
+						{
+						}
+
+						logger->Write( "exec", LogNotice, "bytes: '%d'", sidSize );
+
+						Psid64 *psid64 = new Psid64();
+
+						psid64->setVerbose(false);
+						psid64->setUseGlobalComment(false);
+						psid64->setBlankScreen(false);
+						psid64->setNoDriver(false);
+
+						if ( !psid64->load( sidData, sidSize ) )
+						{
+							//return false;
+						}
+						//logger->Write( "exec", LogNotice, "psid loaded" );
+
+						// convert the PSID file
+						if ( !psid64->convert() ) 
+						{
+							//return false;
+						}
+						//logger->Write( "exec", LogNotice, "psid converted, prg size %d", psid64->m_programSize );
+
+						memcpy( &prgDataLaunch[0], psid64->m_programData, psid64->m_programSize );
+						prgSizeLaunch = psid64->m_programSize;
+
+						delete psid64;
+
+						*launchKernel = 41; 
+					}
+					return;
+				}
 			}
 		}
 	} else
 	if ( menuScreen == MENU_CONFIG )
 	{
-		//if ( k == 'z' || k == 'Z' )
-		if ( k == 136 /* F7 */ )
+		if ( k == VK_F7 )
 		{
 			menuScreen = MENU_BROWSER;
 			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
-		//if ( k == 'y' || k == 'Y' )
-		if ( k == 135 /* F5 */ )
+		if ( k == VK_F5 )
 		{
 			menuScreen = MENU_MAIN;
 			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
@@ -877,19 +1016,19 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				key = key + 'A' - 'a';
 			switch ( k )
 			{
-			case 13:
+			case VK_RETURN:
 				typeInName = 0; 
 				break;
-			case 157: 
+			case VK_LEFT: 
 				if ( typeCurPos > 0 ) 
 					typeCurPos --; 
 				break;
-			case 20: 
+			case VK_DEL: 
 				if ( typeCurPos > 0 ) 
 					typeCurPos --; 
 				geoRAM_SlotNames[ settings[ 1 ] ][ typeCurPos ] = 32; 
 				break;
-			case 29: 
+			case VK_RIGHT: 
 				if ( typeCurPos < 18 ) 
 					typeCurPos ++; 
 				break;
@@ -902,22 +1041,19 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			}
 		} else
 		// left
-		if ( k == 157 )
+		if ( k == VK_LEFT )
 		{
 			settings[ curSettingsLine ] --;
-				//+= rangeSettings[ curSettingsLine ] - 1;
 			if ( rangeSettings[ curSettingsLine ] < 15 )
 			{
 				if ( settings[ curSettingsLine ] < 0 )
 					settings[ curSettingsLine ] = rangeSettings[ curSettingsLine ] - 1;
-			}
-			else
-				//settings[ curSettingsLine ] %= rangeSettings[ curSettingsLine ]; else
+			} else
 				settings[ curSettingsLine ] = max( 0, settings[ curSettingsLine ] );
 
 		} else
 		// right 
-		if ( k == 29 )
+		if ( k == VK_RIGHT )
 		{
 			settings[ curSettingsLine ] ++;
 			if ( rangeSettings[ curSettingsLine ] < 15 )
@@ -925,7 +1061,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				settings[ curSettingsLine ] = min( settings[ curSettingsLine ], rangeSettings[ curSettingsLine ] - 1 );
 		} else
 		// down
-		if ( k == 17 )
+		if ( k == VK_DOWN )
 		{
 			curSettingsLine ++;
 			if ( settings[2] > 2 )
@@ -933,7 +1069,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				curSettingsLine %= MAX_SETTINGS;
 		} else
 		// up
-		if ( k == 145 )
+		if ( k == VK_UP )
 		{
 			if ( curSettingsLine == 0 )
 			{
@@ -1222,7 +1358,6 @@ void printSettingsScreen()
 		for ( int i = 12 * 40; i < 20 * 40; i++ )
 			c64color[ i ] = 12;
 	}
-
 
 	startInjectCode();
 	injectPOKE( 53280, skinValues.SKIN_MENU_BORDER_COLOR );

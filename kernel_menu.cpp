@@ -60,6 +60,7 @@ static u32	disableCart     = 0;
 static u32	resetCounter    = 0;
 static u32	transferStarted = 0;
 static u32	currentOfs      = 0;
+static u32  transferPart    = 0;
 
 // the menu .PRG and program to launch
 static u32 prgSize AAA;
@@ -76,7 +77,7 @@ static unsigned char *cartCBM80 AA;
 static unsigned char injectCode[ 256 ] AAA;
 
 // custom charset
-static unsigned char charset[ 4096 ] AAA;
+unsigned char charset[ 4096 ] AAA;
 
 u32 releaseDMA = 0;
 u32 doneWithHandling = 0;
@@ -222,17 +223,18 @@ __attribute__( ( always_inline ) ) inline void warmCache( void *fiqh )
 {
 	CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
 	CACHE_PRELOAD_DATA_CACHE( c64color, 1024, CACHE_PRELOADL2STRM );
-	CACHE_PRELOAD_DATA_CACHE( cartCBM80, 8192, CACHE_PRELOADL2KEEP );
+	CACHE_PRELOAD_DATA_CACHE( cartCBM80, 512, CACHE_PRELOADL1KEEP );
 	CACHE_PRELOAD_DATA_CACHE( prgData, 65536, CACHE_PRELOADL2STRM );
 	CACHE_PRELOAD_DATA_CACHE( injectCode, 256, CACHE_PRELOADL2KEEP );
 
 	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)fiqh, 2048*2 );
 
-	FORCE_READ_LINEARa( cartCBM80, 8192, 8192 * 10 )
+	FORCE_READ_LINEAR32a( cartCBM80, 512, 512 * 16 );
+
 	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 4 )
 	if ( fiqh )
 	{
-		FORCE_READ_LINEARa( (void*)fiqh, 2048*2, 65536 );
+		FORCE_READ_LINEARa( (void*)fiqh, 1024*3, 65536 );
 	}
 }
 
@@ -361,9 +363,10 @@ boolean CKernelMenu::Initialize( void )
 	if ( skinFontFilename[0] != 0 && readFile( logger, (char*)DRIVE, (char*)skinFontFilename, charset, &t ) )
 	{
 		skinFontLoaded = 1;
-		//memcpy( 1024 + charset+8*(91), skcharlogo_raw, 224 ); <- this is the upper case font used in the browser, skip logo to keep all PETSCII character
+		//memcpy( 1024 + charset+8*(91), skcharlogo_raw, 224 ); <- this is the upper case font used in the browser, skip logo to keep all PETSCII characters
 		memcpy( 2048 + charset+8*(91), skcharlogo_raw, 224 );
 		//memcpy( 0 + charset+8*(91), skcharlogo_raw, 224 );
+		//writeFile( logger, "SD:", "font.temp", &charset[2048], 2048 );
 	} 
 
 	readSettingsFile();
@@ -538,6 +541,7 @@ void CKernelMenu::Run( void )
 			refresh++;
 			//temperature = m_CPUThrottle.GetTemperature();
 			renderC64();
+//		DELAY(1<<28);
 			doneWithHandling = 1;
 			updateMenu = 0;
 		}
@@ -550,6 +554,9 @@ void CKernelMenu::Run( void )
 void CKernelMenu::FIQHandler (void *pParam)
 {
 	register u32 D;
+
+	if ( updateMenu && !doneWithHandling )
+		return;
 
 	START_AND_READ_ADDR0to7_RW_RESET_CS
 
@@ -604,22 +611,34 @@ void CKernelMenu::FIQHandler (void *pParam)
 		if ( A == 1 )	
 		{
 			// $DE01 -> get number of 256-byte pages
-			D = ( prgSize + 255 ) >> 8;
+			if ( transferPart == 1 ) // PRG part above $a000
+				D = 0; else
+				D = ( prgSize + 255 ) >> 8;
+			WRITE_D0to7_TO_BUS( D )
+			CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );
+			FINISH_BUS_HANDLING
+			forceRead = prgData[ currentOfs ];
 		} else
 		{
 			// $DE00 -> get next byte
-			D = prgData[ currentOfs++ ];
-			currentOfs %= ((prgSize+255)>>8)<<8;
+			//D = prgData[ currentOfs++ ];
+			//currentOfs %= ((prgSize+255)>>8)<<8;
+			D = forceRead;	currentOfs ++;
+			WRITE_D0to7_TO_BUS( D )
+			CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );
+			FINISH_BUS_HANDLING
+			forceRead = prgData[ currentOfs ];
 		}
 
-		WRITE_D0to7_TO_BUS( D )
-		forceRead = prgData[ currentOfs ]; // todo: necessary?
-		FINISH_BUS_HANDLING
 		return;
 	}
 
 	if ( CPU_WRITES_TO_BUS && IO1_ACCESS ) // write to IO1
 	{
+		u32 A = GET_IO12_ADDRESS;
+		if ( A == 2 )
+			transferPart = 1; else
+			transferPart = 0;
 		currentOfs = 0;
 		transferStarted = 1;
 		forceRead = prgData[ currentOfs ]; // todo: necessary?
@@ -749,11 +768,11 @@ int main( void )
 
 	extern void KernelKernalRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME );
 	extern void KernelGeoRAMRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu );
-	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
+	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 );
 	extern void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr );
 	extern void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
 	extern void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
-	extern void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
+	extern void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 );
 	extern void KernelSIDRun8( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
 	extern void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
 	extern void KernelCartRun128( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr );
@@ -787,6 +806,7 @@ int main( void )
 		}
 
 		u32 loadC128PRG = 0;
+		u32 playingPSID = 0;
 
 		switch ( launchKernel )
 		{
@@ -823,13 +843,15 @@ int main( void )
 				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG );
 			}
 			break;
-		case 40: // launch something from a disk image
+		case 41:
+			playingPSID = 1; // intentionally no break
+		case 40: // launch something from a disk image or PRG in memory (e.g. a converted .SID-file)
 			logger->Write( "RaspiMenu", LogNotice, "filename from d64: %s", FILENAME );
 			if ( subSID ) {
 				applySIDSettings();
 				if ( octaSIDMode )
 					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 ); else
-					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 );
+					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128, playingPSID );
 				break;
 			}
 			if ( subGeoRAM ) {
@@ -842,7 +864,7 @@ int main( void )
 					break;
 				}
 			} else {
-				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 );
+				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128, playingPSID );
 			}
 			break;
 		case 5:

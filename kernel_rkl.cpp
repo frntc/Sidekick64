@@ -58,11 +58,14 @@ static u32 allUsedLEDs = 0;
 #define ROM_LH		bROML
 
 static u32	configGAMEEXROMSet, configGAMEEXROMClr;
-static u32	disableCart, ultimaxDisabled, transferStarted, currentOfs;
+static u32	disableCart, ultimaxDisabled, transferStarted, currentOfs, transferPart;
+
+extern volatile u8 forceReadLaunch;
 
 static u32 launchPrg = 0, hasKernal = 0;
 static u32 prgSize;
 static unsigned char prgData[ 65536 ] AAA;
+static u32 startAddr, prgSizeAboveA000, prgSizeBelowA000;
 
 // in case the launch code starts with the loading address
 #define LAUNCH_BYTES_TO_SKIP	0
@@ -229,6 +232,15 @@ void CKernelRKL::Run( void )
 			prgSize = prgSizeExt;
 			memcpy( prgData, prgDataExt, prgSize );
 		}
+
+		startAddr = prgData[ 0 ] + prgData[ 1 ] * 256;
+		prgSizeBelowA000 = 0xa000 - startAddr;
+		if ( prgSizeBelowA000 > prgSize - 2 )
+		{
+			prgSizeBelowA000 = prgSize - 2;
+			prgSizeAboveA000 = 0;
+		} else
+			prgSizeAboveA000 = prgSize - prgSizeBelowA000;
 	}
 
 
@@ -281,6 +293,7 @@ void CKernelRKL::Run( void )
 	}
 
 	disableCart = transferStarted = currentOfs = 0;
+	transferPart = 1;
 	geo.c64CycleCount = geo.resetCounter = 0;
 
 	// setup FIQ
@@ -298,21 +311,25 @@ void CKernelRKL::Run( void )
 		if ( launchPrg )
 		{
 			// .PRG data
-			CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], 65536, CACHE_PRELOADL2KEEP )
+			CACHE_PRELOAD_DATA_CACHE( &prgData[ 0 ], prgSize, CACHE_PRELOADL2KEEP )
+			FORCE_READ_LINEAR32a( prgData, prgSize, prgSize * 8 );
 
 			// launch code / CBM80
-			CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 8192, CACHE_PRELOADL2KEEP )
+			CACHE_PRELOAD_DATA_CACHE( &launchCode[ 0 ], 512, CACHE_PRELOADL1KEEP )
+			FORCE_READ_LINEAR32a( launchCode, 512, 512 * 16 );
+
+			for ( u32 i = 0; i < prgSizeAboveA000; i++ )
+				forceReadLaunch = prgData[ prgSizeBelowA000 + i + 2 ];
+
+			for ( u32 i = 0; i < prgSizeBelowA000 + 2; i++ )
+				forceReadLaunch = prgData[ i ];
 		}
 
 		// FIQ handler
 		CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 3*1024 );
 
 		FORCE_READ_LINEAR32a( kernalROM, 8192, 8192 * 8 );
-		if ( launchPrg )
-		{
-			FORCE_READ_LINEAR32a( prgData, prgSize, 65536 * 8 );
-			FORCE_READ_LINEAR32a( launchCode, 8192, 65536 * 8 );
-		}
+
 		FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 3*1024, 3*1024*8 );
 	}
 
@@ -393,22 +410,48 @@ void CKernelRKL::FIQHandler( void *pParam )
 			{
 				if ( CPU_WRITES_TO_BUS ) 
 				{
-					// any write to IO1 will (re)start the PRG transfer
-					currentOfs = 0;
 					transferStarted = 1;
-					FINISH_BUS_HANDLING
+
+					// any write to IO1 will (re)start the PRG transfer
+					if ( GET_IO12_ADDRESS == 2 )
+					{
+						currentOfs = prgSizeBelowA000 + 2;
+						transferPart = 1; 
+						CACHE_PRELOADL2KEEP( &prgData[ prgSizeBelowA000 + 2 ] );
+						FINISH_BUS_HANDLING
+						forceReadLaunch = prgData[ prgSizeBelowA000 + 2 ];
+					} else
+					{
+						currentOfs = 0;
+						transferPart = 0;
+						CACHE_PRELOADL2KEEP( &prgData[ 0 ] );
+						FINISH_BUS_HANDLING
+						forceReadLaunch = prgData[ 0 ];
+					}
 					return;
 				} else
 				// if ( CPU_READS_FROM_BUS ) 
 				{
 					if ( GET_IO12_ADDRESS == 1 )	
+					{
 						// $DE01 -> get number of 256-byte pages
-						D = ( prgSize + 255 ) >> 8; else
+						if ( transferPart == 1 ) // PRG part above $a000
+							D = ( prgSizeAboveA000 + 255 ) >> 8;  else
+							D = ( prgSizeBelowA000 + 255 ) >> 8; 
+						WRITE_D0to7_TO_BUS( D )
+						CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );
+						FINISH_BUS_HANDLING
+						forceReadLaunch = prgData[ currentOfs ];
+					} else
+					{
 						// $DE00 -> get next byte
-						D = prgData[ currentOfs++ ];
+						D = forceReadLaunch;	currentOfs ++;
+						WRITE_D0to7_TO_BUS( D )
+						CACHE_PRELOADL2KEEP( &prgData[ currentOfs ] );
+						FINISH_BUS_HANDLING
+						forceReadLaunch = prgData[ currentOfs ];
+					}
 				
-					WRITE_D0to7_TO_BUS( D )
-					FINISH_BUS_HANDLING
 					return;
 				}
 			}
