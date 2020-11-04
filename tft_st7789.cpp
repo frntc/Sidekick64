@@ -524,7 +524,7 @@ int tftLoadTGA( const char *drive, const char *name, unsigned char *dst, int *im
 	return 0;
 }
 
-unsigned char charset[ 4096 ];
+static unsigned char charset[ 4096 ];
 unsigned char rgbChars[ 256 * 16 * 16 ];
 
 unsigned char tftBackground[ 240 * 240 * 2 ];
