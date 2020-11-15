@@ -24,10 +24,11 @@ The C16/+4 version comes with two fabolous games ported to run directly off the 
 ## Changelog
 
 recent changes (higher = newer):
-- integration of PSID64 enables .SID-file support (.SID are converted to .PRG on the fly and launched)
+- integration of Disk2EasyFlash (let's you convert .D64 to EF-CRTs on the fly)
+- integration of PSID64 enables .SID-file support (.SID are converted to .PRG on the fly and launched, C64 only)
 - PRG launcher now supports large files (>250 blocks)
-- scanning directories on the SD-card is faster, entries are sorted alphabetically
-- auto-detection of SID and kernal-replacement wires (and disabling menu entries if not present)
+- scanning directories on the SD-card is faster, entries are sorted alphabetically (currently only C64/C128)
+- auto-detection of SID and kernal-replacement wires (and disabling menu entries if not present, only C64/C128)
 - more accurate control of the reSID-emulation and thus improved quality (currently only C64/C128)
 - more robust (faking) behavior for SFX sound expander detection routines (currently only C64/C128)
 - browser scans directories on-demand (avoids long initial launch time on SD cards with many files), currently only for C64/C128 
@@ -177,7 +178,7 @@ The PCB is work licensed under a Creative Commons Attribution-NonCommercial-Shar
 
 Last but not least I would like to thank a few people and give proper credits:
 
-kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works. Kim Jørgensen for chats on weird bus timings and freezers, hints on how to get things right and last but not least for letting me adapt his C64-side code of KFF's EAPI for use with Sidekick64. The testers on F64 (bigby, emulaThor, kinzi).
+kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works. Kim Jørgensen for chats on weird bus timings and freezers, hints on how to get things right and last but not least for letting me adapt his C64-side code of KFF's EAPI for use with Sidekick64. Thanks also go to Roland Hermans for creating and sharing PSID64, and to ALeX for letting me use his Disk2EasyFlash. Also, thanks to the beta testers on F64 (in particular bigby, emulaThor, kinzi).
 Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in all recent releases, and for the Sidekick logo. And of course thanks a lot to Mad^BKN for porting Alpharay and Pet's Rescue in an amazingly short time! 
 The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic. The C16/+4 SID and FM examples are based on code by Mr.Mouse/Xentax and Antti Hannula's (flex) 2sid tune "Eternity" (original mod by Matt Simmonds); the FM songs are Koere and Like Galway by Jesper Olson (jo). The C16 cartridge startup code is based on CBMHARDWARE's example.
 
