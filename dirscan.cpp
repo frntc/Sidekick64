@@ -155,6 +155,7 @@ int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 pare
 
 				strcpy( (char*)&d->name[128], fln2 );
 				d->f = DIR_FILE_IN_D64 | ( nt << SHIFT_TYPE ) | fileIndex;
+				d->size = blk * 254;
 				d->parent = parent;
 				(*s) ++;
 			}

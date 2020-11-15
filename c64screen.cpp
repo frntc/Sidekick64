@@ -53,6 +53,9 @@ const int VK_ESC = 95;
 const int VK_DEL = 20;
 const int VK_RETURN = 13;
 const int VK_SHIFT_RETURN = 141;
+const int VK_MOUNT = 205; // SHIFT-M
+const int VK_MOUNT_START = 77; // M
+
 
 const int VK_LEFT  = 157;
 const int VK_RIGHT = 29;
@@ -81,7 +84,7 @@ u8 c64color[ 40 * 25 + 1024 * 4 ];
 
 char *errorMsg = NULL;
 
-char errorMessages[7][41] = {
+char errorMessages[8][41] = {
 //   1234567890123456789012345678901234567890
 	"                NO ERROR                ",
 	"  ERROR: UNKNOWN/UNSUPPORTED .CRT TYPE  ",
@@ -90,8 +93,16 @@ char errorMessages[7][41] = {
 	"            SETTINGS SAVED              ",
 	"         WRONG SYSTEM, NO C128!         ",
 	"         SID-WIRE NOT DETECTED!         ",
+	"         DISK2EASYFLASH FAILED!         ",
 };
 
+/*char *extraMsg = NULL;
+char extraMessages[2][41] = {
+//   1234567890123456789012345678901234567890
+	"                                        ",
+	" L mount&LOAD\"*\"   SHIFT-L mount only ",
+};*/
+int extraMsg = 0;
 
 #define MENU_MAIN	 0x00
 #define MENU_BROWSER 0x01
@@ -131,41 +142,6 @@ u8 PETSCII2ScreenCode( u8 c )
 	return c - 128;
 }
 
-static const u8 scrtab[256] = {
-	0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, // 0x00
-	0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, // 0x08
-	0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, // 0x10
-	0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f, // 0x18
-	0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, // 0x20  !"#$%&'
-	0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, // 0x28 ()*+,-./
-	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, // 0x30 01234567
-	0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, // 0x38 89:;<=>?
-	0x00, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, // 0x40 @ABCDEFG
-	0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, // 0x48 HIJKLMNO
-	0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, // 0x50 PQRSTUVW
-	0x58, 0x59, 0x5a, 0x1b, 0xbf, 0x1d, 0x1e, 0x64, // 0x58 XYZ[\]^_
-	0x27, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, // 0x60 `abcdefg
-	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, // 0x68 hijklmno
-	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, // 0x70 pqrstuvw
-	0x18, 0x19, 0x1a, 0x1b, 0x5d, 0x1d, 0x1f, 0x20, // 0x78 xyz{|}~ 
-	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x80
-	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x88
-	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x90
-	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 0x98
-	0x20, 0x21, 0x03, 0x1c, 0xbf, 0x59, 0x5d, 0xbf, // 0xa0 ��������
-	0x22, 0x43, 0x01, 0x3c, 0xbf, 0x2d, 0x52, 0x63, // 0xa8 ��������
-	0x0f, 0xbf, 0x32, 0x33, 0x27, 0x15, 0xbf, 0xbf, // 0xb0 ��������
-	0x2c, 0x31, 0x0f, 0x3e, 0xbf, 0xbf, 0xbf, 0x3f, // 0xb8 ��������
-	0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x43, // 0xc0 ��������
-	0x45, 0x45, 0x45, 0x45, 0x49, 0x49, 0x49, 0x49, // 0xc8 ��������
-	0xbf, 0x4e, 0x4f, 0x4f, 0x4f, 0x4f, 0x4f, 0x18, // 0xd0 ��������
-	0x4f, 0x55, 0x55, 0x55, 0x55, 0x59, 0xbf, 0xbf, // 0xd8 ��������
-	0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x03, // 0xe0 ��������
-	0x05, 0x05, 0x05, 0x05, 0x09, 0x09, 0x09, 0x09, // 0xe8 ��������
-	0xbf, 0x0e, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0xbf, // 0xf0 ��������
-	0x0f, 0x15, 0x15, 0x15, 0x15, 0x19, 0xbf, 0x19  // 0xf8 ��������
-};
-
 void printC64( u32 x, u32 y, const char *t, u8 color, u8 flag, u32 convert, u32 maxL )
 {
 	u32 l = min( strlen( t ), maxL );
@@ -198,12 +174,17 @@ void printC64( u32 x, u32 y, const char *t, u8 color, u8 flag, u32 convert, u32 
 
 int scanFileTree( u32 cursorPos, u32 scrollPos )
 {
+	extraMsg = 0;
+
 	u32 lines = 0;
 	s32 idx = scrollPos;
 	while ( lines < DISPLAY_LINES && idx < nDirEntries ) 
 	{
 		if ( idx >= nDirEntries ) 
 			break;
+
+		if ( (u32)idx == cursorPos && dir[ idx ].f & DIR_D64_FILE )
+			extraMsg = 1;
 
 		if ( dir[ idx ].f & DIR_DIRECTORY || dir[ idx ].f & DIR_D64_FILE )
 		{
@@ -284,9 +265,17 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 
 			if ( dir[ idx ].size > 0 )
 			{
-				if ( dir[ idx ].size / 1024 > 999 )
-					sprintf( temp, " %1.1fm", (float)dir[ idx ].size / (1024 * 1024) ); else
-					sprintf( temp, " %3dk", dir[ idx ].size / 1024 );
+				if ( convert == 1 )
+				{
+					// file in D64
+					sprintf( temp, " %3dK", dir[ idx ].size / 1024 );
+				} else
+				{
+					if ( dir[ idx ].size / 1024 > 999 )
+						sprintf( temp, " %1.1fm", (float)dir[ idx ].size / (1024 * 1024) ); else
+						sprintf( temp, " %3dk", dir[ idx ].size / 1024 );
+				} 
+
 				printC64( 32, lines + 3, temp, color, (idx == cursorPos) ? 0x80 : 0, convert );
 			}
 		}
@@ -311,25 +300,41 @@ void printBrowserScreen()
 {
 	clearC64();
 
+	scanFileTree( cursorPos, scrollPos );
+
 	//printC64(0,0,  "0123456789012345678901234567890123456789", 15, 0 );
 	printC64( 0,  1, "        .- sidekick64-browser -.        ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 	printC64( 0,  2, "           scanning directory           ", 0, 0 );
-	printC64( 0, 23, "  F1/F3 Page Up/Down  F7 Back to Menu  ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
-	printC64( 2, 23, "F1", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
-	printC64( 5, 23, "F3", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
-	printC64( 22, 23, "F7", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+
+	if ( extraMsg == 0 )
+	{
+		printC64( 0, 23, "  F1/F3 Page Up/Down  F7 Back to Menu  ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
+		printC64( 2, 23, "F1", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+		printC64( 5, 23, "F3", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+		printC64( 22, 23, "F7", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+	} else
+	if ( extraMsg == 1 )
+	{
+	    //printC64(0,0,  "01234567890123 45 678901234567890123456789", 15, 0 );
+//		printC64( 0, 23, " M mount&LOAD\"*\"   SHIFT-M mount only ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
+		printC64( 0, 23, " MOUNT&LOAD\"*\",8,1   SHIFT-M mount only ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
+	
+		printC64( 1, 23, "M", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+		printC64( 21, 23, "SHIFT-M", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+	} 
+
 	if ( modeC128 )
 		printC64( 0, 24, "SHIFT+RETURN to launch PRGs in C128-mode", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
 
 	if ( subGeoRAM )
 	{
-		printC64(  0, 24, "  choose CRT or PRG w/ NeoRAM to start  ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
-		printC64( 16, 24, "PRG w/ NeoRAM", skinValues.SKIN_BROWSER_TEXT_FOOTER_HIGHLIGHTED, 0, 3 );
-		printC64(  9, 24, "CRT", skinValues.SKIN_BROWSER_TEXT_FOOTER_HIGHLIGHTED, 0, 3 );
+		printC64(  0, 24, "choose CRT/Dxx or PRG w/ NeoRAM to start", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
+		printC64( 18, 24, "PRG w/ NeoRAM", skinValues.SKIN_BROWSER_TEXT_FOOTER_HIGHLIGHTED, 0, 3 );
+		printC64(  7, 24, "CRT/Dxx", skinValues.SKIN_BROWSER_TEXT_FOOTER_HIGHLIGHTED, 0, 3 );
 	} else
 	if ( subSID )
 	{
-		printC64(  0, 24, "  choose CRT or PRG w/ SID+FM to start  ", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
+		printC64(  0, 24, "choose CRT/Dxx or PRG w/ SID+FM to start", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
 		printC64( 16, 24, "PRG w/ SID+FM", skinValues.SKIN_BROWSER_TEXT_FOOTER_HIGHLIGHTED, 0, 3 );
 		printC64(  9, 24, "CRT", skinValues.SKIN_BROWSER_TEXT_FOOTER_HIGHLIGHTED, 0, 3 );
 	}
@@ -475,12 +480,16 @@ void applySIDSettings()
 						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12] );
 }
 
+int lastKeyDebug = 0;
+
 // ugly, hard-coded handling of UI
 void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, char *menuItemStr, u32 *startC128 = NULL )
 {
 	char *filename;
 
 	extern u32 wireSIDAvailable;
+
+	lastKeyDebug = k;
 
 	if ( menuScreen == MENU_MAIN )
 	{
@@ -765,6 +774,69 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			if ( scrollPos >= nDirEntries ) scrollPos = nDirEntries - 1;
 			if ( cursorPos < 0 ) cursorPos = 0;
 			if ( cursorPos >= nDirEntries ) cursorPos = nDirEntries - 1;
+		}
+
+		if ( ( k == VK_MOUNT || k == VK_MOUNT_START ) && dir[ cursorPos ].f & DIR_D64_FILE )
+		{
+			extern int createD2EF( unsigned char *diskimage, int imageSize, unsigned char *cart, int build, int mode, int autostart );
+
+			unsigned char *cart = new unsigned char[ 1024 * 1025 ];
+			unsigned char *diskimage = new unsigned char[ 1024 * 1024 ];
+			u32 diSize = 0, crtSize = 0;
+
+			int autostart = (k == VK_MOUNT_START) ? 1 : 0;
+
+			// build path
+			char path[ 8192 ] = {0};
+			s32 n = 0, c = cursorPos;
+			u32 nodes[ 256 ];
+			nodes[ n ++ ] = c;
+
+			while ( dir[ c ].parent != 0xffffffff )
+			{
+				c = nodes[ n ++ ] = dir[ c ].parent;
+			}
+
+			strcat( path, "SD:" );
+			for ( s32 i = n - 1; i >= 0; i -- )
+			{
+				if ( i != n-1 )
+					strcat( path, "\\" );
+				strcat( path, (char*)dir[ nodes[i] ].name );
+			}
+			
+			logger->Write( "d2ef", LogNotice, "'%s'", path );
+
+			if ( readFile( logger, DRIVE, path, diskimage, &diSize ) )
+			{
+				//logger->Write( "d2ef", LogNotice, "loaded %d bytes D64", diSize );
+
+				crtSize = createD2EF( diskimage, diSize, cart, 2, 0, autostart );
+
+				//logger->Write( "d2ef", LogNotice, "loaded %d bytes D64", diSize );
+
+				strcpy( FILENAME, "SD:C64/temp.crt" );
+				writeFile( logger, DRIVE, FILENAME, cart, crtSize );
+
+				u32 err = 0;
+				u32 tempKernel = checkCRTFile( logger, DRIVE, FILENAME, &err );
+				if ( err > 0 )
+				{
+					err = 8; // D2EF error
+					*launchKernel = 0;
+					errorMsg = errorMessages[ err ];
+					previousMenuScreen = menuScreen;
+					menuScreen = MENU_ERROR;
+				} else
+				{
+					*launchKernel = tempKernel;
+					errorMsg = NULL;
+				}
+			}
+
+			delete [] cart;
+			delete [] diskimage;
+			return;
 		}
 
 		if ( k == VK_RETURN || k == VK_SHIFT_RETURN )
@@ -1120,11 +1192,11 @@ void printMainMenu()
 	//               "012345678901234567890123456789012345XXXX"
 	printC64( 0,  1, "   .- Sidekick64 -- Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 
-	/*char b[20];
-	extern u32 temperature;
-	sprintf( b, "%d", temperature );
+	//char b[20];
+	//extern u32 temperature;
+	//sprintf( b, "%d", temperature );
 	//sprintf( b, "%d", lastKeyDebug );
-	printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );*/
+	//printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 
 	if ( subGeoRAM && subHasKernal )
 	{

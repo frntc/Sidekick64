@@ -15,6 +15,9 @@ OBJS += ./PSID/sidtune/PP20.o ./PSID/sidtune/PSID.o ./PSID/sidtune/SidTune.o ./P
 OBJS += ./PSID/libpsid64/psid64.o  ./PSID/libpsid64/reloc65.o  ./PSID/libpsid64/screen.o   ./PSID/libpsid64/theme.o  
 #OBJS += ./PSID/libpsid64/exomizer/chunkpool.o  ./PSID/libpsid64/exomizer/exomizer.o  ./PSID/libpsid64/exomizer/match.o  ./PSID/libpsid64/exomizer/optimal.o  ./PSID/libpsid64/exomizer/output.o  ./PSID/libpsid64/exomizer/radix.o  ./PSID/libpsid64/exomizer/search.o  ./PSID/libpsid64/exomizer/sfx64ne.o  
 
+OBJS += ./D2EF/bundle.o ./D2EF/d64.o ./D2EF/diskimage.o ./D2EF/binaries.o ./D2EF/disk2easyflash.o
+
+
 CFLAGS += -DCOMPILE_MENU_WITH_SOUND=1
 OBJS += kernel_sid.o kernel_sid8.o sound.o ./resid/dac.o ./resid/filter.o ./resid/envelope.o ./resid/extfilt.o ./resid/pot.o ./resid/sid.o ./resid/version.o ./resid/voice.o ./resid/wave.o fmopl.o 
 CFLAGS += -DUSE_VCHIQ_SOUND=$(USE_VCHIQ_SOUND) 
