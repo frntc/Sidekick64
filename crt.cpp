@@ -39,6 +39,8 @@ u16 swapBytesU16( u8 *buf )
 	return buf[ 1 ] | ( buf[ 0 ] << 8 );
 }
 
+#define min( a, b ) ((a)<(b)?(a):(b))
+
 #define readCRT( dst, bytes ) memcpy( (dst), crt, bytes ); crt += bytes; 
 
 // .CRT reading - header only!
@@ -202,6 +204,14 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 		*bankswitchType = BS_MAGICDESK;
 		*ROM_LH = bROML;
 		break;
+	case 7:
+		*bankswitchType = BS_FUNPLAY;
+		*ROM_LH = bROML;
+		break;
+	case 43:
+		*bankswitchType = BS_PROPHET;
+		*ROM_LH = bROML;
+		break;
 	case 3:
 		//logger->Write( "RaspiFlash", LogNotice, "Final Cartridge 3 CRT" );
 		*bankswitchType = BS_FC3;
@@ -213,8 +223,39 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 		*ROM_LH = bROML;
 		break;
 	case 9:
-		//logger->Write( "RaspiFlash", LogNotice, "Action Replay 4.2/5/6/7 CRT" );
 		*bankswitchType = BS_ATOMICPOW;
+		*ROM_LH = bROML;
+		break;
+	case 15:
+		*bankswitchType = BS_C64GS;
+		*ROM_LH = bROML;
+		break;
+	case 60:
+		*bankswitchType = BS_GMOD2;
+		*ROM_LH = bROML;
+		break;
+	case 18:
+		*bankswitchType = BS_ZAXXON;
+		*ROM_LH = bROML;
+		break;
+	case 5:
+		*bankswitchType = BS_OCEAN;
+		*ROM_LH = bROML;
+		break;
+	case 21:
+		*bankswitchType = BS_COMAL80;
+		*ROM_LH = bROML | bROMH;
+		break;
+	case 10:
+		*bankswitchType = BS_EPYXFL;
+		*ROM_LH = bROML;
+		break;
+	case 4:
+		*bankswitchType = BS_SIMONSBASIC;
+		*ROM_LH = bROML;
+		break;
+	case 17:
+		*bankswitchType = BS_DINAMIC;
 		*ROM_LH = bROML;
 		break;
 	case 0:
@@ -268,64 +309,77 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 		logger->Write( "RaspiFlash", LogNotice, "rom length=%d", chip.rom_length );
 		#endif
 
-		// MagicDesk only uses the low-bank
-		if ( (*bankswitchType) == BS_MAGICDESK )
+		// MagicDesk and some others only uses the low-bank
+		if ( (*bankswitchType) == BS_MAGICDESK || 
+			 (*bankswitchType) == BS_C64GS || 
+			 (*bankswitchType) == BS_FUNPLAY || 
+			 (*bankswitchType) == BS_PROPHET || 
+			 (*bankswitchType) == BS_OCEAN || 
+			 (*bankswitchType) == BS_GMOD2 || 
+			 header.type == 36 /* Retro Replay */ )
 		{
 			*ROM_LH = bROML;
 
+			u32 nBytes = min( 8192, chip.rom_length );
+
 			if ( getRAW )
 			{
-				for ( register u32 i = 0; i < 8192; i++ )
+				for ( register u32 i = 0; i < nBytes; i++ )
 					flash[ chip.bank * 8192 + i ] = crt[ i ];
 			} else
 			{
-				for ( register u32 i = 0; i < 8192; i++ )
+				for ( register u32 i = 0; i < nBytes; i++ )
 				{
 					u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
 					flash[ chip.bank * 8192 + realAdr ] = crt[ i ];
 				}
 			}
 
-			crt += 8192;
+			crt += nBytes;
 		} else
 		{
 			if ( chip.adr == 0x8000 )
 			{
 				*ROM_LH |= bROML;
 
+				u32 nBytes = min( 8192, chip.rom_length );
+
 				if ( getRAW )
 				{
-					for ( register u32 i = 0; i < 8192; i++ )
+					//logger->Write( "RaspiFlash", LogNotice, "bank=%d, bytes=%d", chip.bank, chip.rom_length );
+					for ( register u32 i = 0; i < nBytes; i++ )
 						flash[ ( chip.bank * 8192 + i ) * 2 + 0 ] = crt[ i ];
 				} else
 				{
-					for ( register u32 i = 0; i < 8192; i++ )
+					for ( register u32 i = 0; i < nBytes; i++ )
 					{
 						u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
 						flash[ ( chip.bank * 8192 + realAdr ) * 2 + 0 ] = crt[ i ];
 					}
 				}
 
-				crt += 8192;
+				crt += nBytes;
 
 				if ( chip.rom_length > 8192 )
 				{
 					*ROM_LH |= bROMH;
 
+					nBytes = min( 8192, chip.rom_length - 8192 );
+
 					if ( getRAW )
 					{
-						for ( register u32 i = 0; i < 8192; i++ )
+						for ( register u32 i = 0; i < nBytes; i++ )
 							flash[ ( chip.bank * 8192 + i ) * 2 + 1 ] = crt[ i ];
 					} else
 					{
-						for ( register u32 i = 0; i < 8192; i++ )
+						for ( register u32 i = 0; i < nBytes; i++ )
 						{
 							u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
 							flash[ ( chip.bank * 8192 + realAdr ) * 2 + 1 ] = crt[ i ];
 						}
 					}
 
-					crt += chip.rom_length - 8192;
+					crt += nBytes;
 				}
 			} else
 			{
@@ -553,16 +607,33 @@ int checkCRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 
 
 	if ( res == 0 )
 	{
+		logger->Write( "RaspiFlash", LogNotice, "CRT type %d", header.type );
 		switch ( header.type ) {
 		case 32: //	EasyFlash CRT
 		case 19: // MagicDesk CRT
 		case 0:  // normal cartridge
+		case 15: // C64 Game System
+		case 60: // C64 Game System
+		case 18: // Zaxxon
+		case 43: // Prophet
+		case 5: // Ocean
+		case 21: // Comal80
+		case 10: // Epyx Fastload
+		case 4: // Simon's Basic
+		case 17: // Dinamic
+		case 7: // Funplay
 			return 5;	
 		case 3:	 // Final Cartridge 3 CRT
 			return 60;
+		case 2:  // KCS Power Cartridge
+			return 61;
+		case 20:  // Super Snapshot V5
+			return 62;
 		case 9:
 		case 1:  // Action Replay 4.2/5/6/7 or AtomicPower/NordicPower CRT
 			return 70;
+		case 36:	// Retro Replay or Nordic Replay CRT
+			return 71;
 		default: //unknown CRT-type
 			*error = 1;
 			return 0;

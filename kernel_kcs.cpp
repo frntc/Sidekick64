@@ -6,10 +6,10 @@
 /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \      \___  /   |__|    \___  >\___  >_____ \\___  >     \___  /    \______  /______  /
         \/         \/    \/     \/       \/     \/          \/                \/     \/      \/    \/          \/            \/       \/ 
 
- kernel_fc3.cpp
+ kernel_kcs.cpp
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
-          - Sidekick Freeze: example how to implement a Final Cartridge 3(+) compatible cartridge
+          - Sidekick Freeze: example how to implement a KCS Power Cartridge compatible 
  Copyright (c) 2019 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
@@ -28,19 +28,23 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "kernel_fc3.h"
+#include "kernel_kcs.h"
 
 // we will read this .CRT file 
 static const char DRIVE[] = "SD:";
-static const char FILENAME[] = "SD:Freezer/fc3.crt";
+static const char FILENAME[] = "SD:Freezer/kcs.crt";
 
-static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_fc3.tga";
+static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_kcs.tga";
 
 #pragma pack(push)
 #pragma pack(1)
 typedef struct
 {
 	// FC3 active or disables, #banks (4 for FC3, 16 for FC3+), and currently selected bank
+	u8	kcsReg;
+	// extra RAM
+	u8  ram[ 128 ];
+
 	u32 active, nROMBanks, curBank;
 
 	// counts the #cycles when the C64-reset line is pulled down (to detect a reset), cycles since release and status
@@ -60,34 +64,50 @@ typedef struct
 	u32 releaseDMA;
 
 	u32 LONGBOARD;
-} __attribute__((packed)) FC3STATE;
+} __attribute__((packed)) KCSSTATE;
 #pragma pack(pop)
 
-static volatile FC3STATE fc3 AAA;
+static volatile KCSSTATE kcs AAA;
 
 // ... flash/ROM
 //static u8 flash_cacheoptimized_pool[ 16 * 8192 * 2 + 128 ] AAA;
 extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
 
-static void initFC3()
+static __attribute__( ( always_inline ) ) inline void kcsConfig( u8 c )
 {
-    fc3.active = 1;
-	fc3.curBank = 0;
+	if ( c == 3 )
+		latchSetClear( 0, LATCH_LED0 ); else
+		latchSetClear( LATCH_LED0, 0 ); 
 
-	fc3.resetCounter = fc3.resetPressed = 
-	fc3.resetReleased = fc3.cyclesSinceReset = 
-	fc3.freezeNMICycles = fc3.lastFreezeButton = 	
-	fc3.countWrites = fc3.c64CycleCount = 0;
+	switch ( c )
+	{
+		default:
+		case 0:	SETCLR_GPIO( bDMA | bNMI, bGAME | bEXROM );	break;
+		case 1:	SETCLR_GPIO( bGAME | bDMA | bNMI, bEXROM );	break;
+		case 2:	SETCLR_GPIO( bDMA | bNMI | bEXROM, bGAME );	break;
+		case 3:	SET_GPIO( bGAME | bEXROM | bDMA | bNMI );	break;
+	}
+}
 
-	fc3.releaseDMA = 0;
+static void initKCS()
+{
+	kcs.kcsReg = 0;
+	kcs.curBank = 0;
+    kcs.active = 1;
 
-	write32( ARM_GPIO_GPSET0, bDMA ); 
-	write32( ARM_GPIO_GPCLR0, bNMI | bGAME | bEXROM | bCTRL257 ); 
+	kcs.resetCounter = kcs.resetPressed = 
+	kcs.resetReleased = kcs.cyclesSinceReset = 
+	kcs.freezeNMICycles = kcs.lastFreezeButton = 	
+	kcs.countWrites = kcs.c64CycleCount = 0;
+
+	kcs.releaseDMA = 0;
+
+	SETCLR_GPIO( bDMA | bNMI, bGAME | bEXROM | bCTRL257 );
 }
 
 __attribute__( ( always_inline ) ) inline void callbackReset()
 {
-	initFC3();
+	initKCS();
 	latchSetClearImm( LATCH_LED0, 0 );
 }
 
@@ -111,9 +131,9 @@ static void initScreenAndLEDCodes()
 }
 
 #ifdef COMPILE_MENU
-void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME )
+void KernelKCSRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME )
 #else
-void CKernelFC3::Run( void )
+void CKernelKCS::Run( void )
 #endif
 {
 	// initialize latch and software I2C buffer
@@ -132,16 +152,16 @@ void CKernelFC3::Run( void )
 	m_EMMC.Initialize();
 	#endif
 
-	fc3.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[0] + 128 ) & ~127 );
+	kcs.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[0] + 128 ) & ~127 );
 
 	CRT_HEADER header;
 	u32 ROM_LH;
 	u8 bankswitchType;
 
-	readCRTFile( logger, &header, (char*)DRIVE, (char*)FILENAME, (u8*)fc3.flash_cacheoptimized, &bankswitchType, &ROM_LH, &fc3.nROMBanks, true );
+	readCRTFile( logger, &header, (char*)DRIVE, (char*)FILENAME, (u8*)kcs.flash_cacheoptimized, &bankswitchType, &ROM_LH, &kcs.nROMBanks, true );
 
 	// todo hack?
-	// fc3.nROMBanks = 16;
+	// kcs.nROMBanks = 16;
 
 	#ifdef COMPILE_MENU
 	if ( screenType == 0 )
@@ -171,28 +191,28 @@ void CKernelFC3::Run( void )
 	DisableIRQs();
 	m_InputPin.ConnectInterrupt( FIQ_HANDLER, FIQ_PARENT );
 
-	// reset the FC3 and warm caches
+	// reset the KCS and warm caches
 	callbackReset();
 
 	CleanDataCache();
 	InvalidateDataCache();
 	InvalidateInstructionCache();
 
-	CACHE_PRELOAD_DATA_CACHE( fc3.flash_cacheoptimized, 8192 * 2 * fc3.nROMBanks, CACHE_PRELOADL2KEEP )
-	FORCE_READ_LINEARa( fc3.flash_cacheoptimized, 8192 * 2 * fc3.nROMBanks, 8192 * 2 * fc3.nROMBanks * 1 )
+	CACHE_PRELOAD_DATA_CACHE( kcs.flash_cacheoptimized, 8192 * 2 * kcs.nROMBanks, CACHE_PRELOADL2KEEP )
+	FORCE_READ_LINEARa( kcs.flash_cacheoptimized, 8192 * 2 * kcs.nROMBanks, 8192 * 2 * kcs.nROMBanks * 1 )
 
-	CACHE_PRELOAD_DATA_CACHE( (u8*)&fc3, ( sizeof( FC3STATE ) + 63 ) / 64, CACHE_PRELOADL1KEEP )
+	CACHE_PRELOAD_DATA_CACHE( (u8*)&kcs, ( sizeof( KCSSTATE ) + 63 ) / 64, CACHE_PRELOADL1KEEP )
 	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 2048 )
 
-	FORCE_READ_LINEAR32a( &fc3, sizeof( FC3STATE ), 65536 );
+	FORCE_READ_LINEAR32a( &kcs, sizeof( KCSSTATE ), 65536 );
 	FORCE_READ_LINEAR32a( &FIQ_HANDLER, 2048, 65536 );
 
-	FORCE_READ_LINEARa( fc3.flash_cacheoptimized, 8192 * 2 * 4, 8192 * 2 * 4 * 32 )
+	FORCE_READ_LINEARa( kcs.flash_cacheoptimized, 8192 * 2 * 4, 8192 * 2 * 4 * 32 )
 
 	// different timing C64-longboards and C128 compared to 469-boards
-	fc3.LONGBOARD = 0;
+	kcs.LONGBOARD = 0;
 	if ( modeC128 || modeVIC == 0 )
-		fc3.LONGBOARD = 1; 
+		kcs.LONGBOARD = 1; 
 
 	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
 	m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
@@ -204,10 +224,10 @@ void CKernelFC3::Run( void )
 	// main loop
 	while ( true ) {
 		#ifdef COMPILE_MENU
-		TEST_FOR_JUMP_TO_MAINMENU2FIQs( (fc3.c64CycleCount*2), (fc3.resetCounter*2) )
+		TEST_FOR_JUMP_TO_MAINMENU2FIQs( (kcs.c64CycleCount*2), (kcs.resetCounter*2) )
 		#endif
 
-		if ( fc3.resetCounter > 30 && fc3.resetReleased )
+		if ( kcs.resetCounter > 30 && kcs.resetReleased )
 			callbackReset();
 
 		asm volatile ("wfi");
@@ -220,12 +240,12 @@ void CKernelFC3::Run( void )
 
 
 #ifdef COMPILE_MENU
-void KernelFC3FIQHandler( void *pParam )
+void KernelKCSFIQHandler( void *pParam )
 #else
-void CKernelFC3::FIQHandler (void *pParam)
+void CKernelKCS::FIQHandler (void *pParam)
 #endif
 {
-	register u8 *flashBank = &fc3.flash_cacheoptimized[ fc3.curBank * 8192 * 2 ];
+	register u8 *flashBank = &kcs.flash_cacheoptimized[ kcs.curBank * 8192 * 2 ];
 	register u32 D;
 
 	START_AND_READ_ADDR0to7_RW_RESET_CS_NO_MULTIPLEX
@@ -251,13 +271,13 @@ void CKernelFC3::FIQHandler (void *pParam)
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
 
 	// VIC2 read during badline?
-	if ( VIC_BADLINE )
+/*	if ( VIC_BADLINE )
 	{
 		// get ROMH data (not reading anything else here)
 		D = *(u8*)&flashBank[ GET_ADDRESS * 2 + 1 ];
 
 		// read again (some time passed, had to wait to signals)
-		if ( !fc3.LONGBOARD )
+		if ( !kcs.LONGBOARD )
 		{
 			// do not do this: WAIT_UP_TO_CYCLE( WAIT_CYCLE_MULTIPLEXER_VIC2 ); 
 			READ_ADDR8to12_ROMLH_IO12_BA 
@@ -268,9 +288,9 @@ void CKernelFC3::FIQHandler (void *pParam)
 
 		FINISH_BUS_HANDLING
 		return;
-	}
+	}*/
 
-	UPDATE_COUNTERS( fc3.c64CycleCount, fc3.resetCounter, fc3.resetPressed, fc3.resetReleased, fc3.cyclesSinceReset )
+	UPDATE_COUNTERS( kcs.c64CycleCount, kcs.resetCounter, kcs.resetPressed, kcs.resetReleased, kcs.cyclesSinceReset )
 
 	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
 	{
@@ -285,54 +305,65 @@ void CKernelFC3::FIQHandler (void *pParam)
 		return;
 	} 
 
-	// read from FC3's ROM visible in IO1/2 
-	if ( CPU_READS_FROM_BUS && IO1_OR_IO2_ACCESS )
+	// read from KCS's ROM visible in IO1
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
 	{
-		// an attempt to make the read more cache-friendly/aligned
-		if ( !( g3 & bIO1 ) )
-			D = *(u8*)&flashBank[ ( (30 << 8) | GET_ADDRESS0to7 ) * 2 ]; else
-			D = *(u8*)&flashBank[ ( (31 << 8) | GET_ADDRESS0to7 ) * 2 ]; 
-
+		D = *(u8*)&flashBank[ ( (30 << 8) | GET_IO12_ADDRESS ) * 2 ];
 		WRITE_D0to7_TO_BUS( D )
+
+		kcs.kcsReg = ( GET_IO12_ADDRESS & 2 ) | 1;
+		kcsConfig( kcs.kcsReg );
+
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	// read from KCS's ROM visible in IO2 
+	if ( CPU_READS_FROM_BUS && IO2_ACCESS )
+	{
+		if ( !( GET_IO12_ADDRESS & 0x80 ) )
+		{
+			WRITE_D0to7_TO_BUS( kcs.ram[ GET_IO12_ADDRESS & 0x7f ] );
+		} else
+		{
+			WRITE_D0to7_TO_BUS( kcs.kcsReg << 6 );
+		}
 
 		FINISH_BUS_HANDLING
 		return;
 	}
 
 	if ( CPU_WRITES_TO_BUS )
-		fc3.countWrites ++; else
-		fc3.countWrites = 0;
+		kcs.countWrites ++; else
+		kcs.countWrites = 0;
 
-	// write to FC3's IO2 which contains...
-	// ... the FC3 control register at $DFFF
-	// Bits
-	// 0-1	current bank at $8000 (0 = BASIC/Monitor, 1 = Notebad/Basic Bar, 2 = Desktop, 3 = Freezer)
-	// 2-3	unused for FC3, additional banks for FC3+
-	// 4-6	control EXROM, GAME and NMI
-	// 7	disable FC3 and hide register
-	if ( CPU_WRITES_TO_BUS && IO2_ACCESS && fc3.active && GET_IO12_ADDRESS == 0xff )
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS && kcs.active )
 	{
-		READ_D0to7_FROM_BUS( D )
+		kcs.kcsReg = GET_IO12_ADDRESS & 2;
+		kcsConfig( kcs.kcsReg );
+	}
 
-		SET_GPIO( ((D&(1<<4)) ? bEXROM : 0) | ((D&(1<<5)) ? bGAME : 0) | ((D&(1<<6)) ? bNMI : 0) );
-		CLR_GPIO( ((D&(1<<4)) ? 0 : bEXROM) | ((D&(1<<5)) ? 0 : bGAME) | ((D&(1<<6)) ? 0 : bNMI) );
+	if ( CPU_WRITES_TO_BUS && IO2_ACCESS && kcs.active )
+	{
+		if ( !( GET_IO12_ADDRESS & 0x80 ) )
+		{
+			READ_D0to7_FROM_BUS( D )
+				kcs.ram[ GET_IO12_ADDRESS & 0x7f ] = D;
+		}
 
-		fc3.curBank = D & ( fc3.nROMBanks - 1 );
-
-		fc3.active = ( (D >> 7) & 1 ) ^ 1;
-		if ( !fc3.active )
-			latchSetClearImm( 0, LATCH_LED0 );
-
-		RESET_CPU_CYCLE_COUNTER
-		return;
+		SET_GPIO( bNMI ); 
+        return;
 	}
 
 	// freeze
-	if ( BUTTON_PRESSED && ( fc3.lastFreezeButton == 0 ) )
+	if ( BUTTON_PRESSED && ( kcs.lastFreezeButton == 0 ) )
 	{
-		fc3.lastFreezeButton = 500000; // debouncing
-		fc3.freezeNMICycles  = 10;
-		fc3.countWrites      = 0;
+		kcs.lastFreezeButton = 500000; // debouncing
+		kcs.freezeNMICycles  = 10;
+		kcs.countWrites      = 0;
+
+        kcs.kcsReg = 2;
+		kcsConfig( 2 );
 
 		CLR_GPIO( bNMI | bCTRL257 ); 
 		RESET_CPU_CYCLE_COUNTER
@@ -340,14 +371,14 @@ void CKernelFC3::FIQHandler (void *pParam)
 	}
 
 	// debouncing
-	if ( fc3.lastFreezeButton > 0 )
-		fc3.lastFreezeButton --;
+	if ( kcs.lastFreezeButton > 0 )
+		kcs.lastFreezeButton --;
 
 	// and go to ultimax mode once the CPU is ready
-	if ( fc3.freezeNMICycles && fc3.countWrites == 3 )
+	if ( kcs.freezeNMICycles && kcs.countWrites == 3 )
 	{
 		SETCLR_GPIO( bEXROM, bGAME | bCTRL257 ); 
-		fc3.freezeNMICycles = 0;
+		kcs.freezeNMICycles = 0;
 		RESET_CPU_CYCLE_COUNTER
 		return;
 	} 

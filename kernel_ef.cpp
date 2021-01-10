@@ -100,13 +100,19 @@ typedef struct
 	u32 mainloopCount;
 	u32 eapiCRTModified;
 
+	s32 eeprom_cs, eeprom_data, eeprom_clock;
+	u32 eeprom_next_data;
+	s32 eeprom_delayed_write;
+	u32 triggerDMA, dmaCountWrites;
+
+
 	u32 LONGBOARD;
 
 	//u8 padding[ 384 - 345 ];
 } __attribute__((packed)) EFSTATE;
 
 // ... flash
-static u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
+u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
 
 static volatile EFSTATE ef AAA;
 
@@ -278,6 +284,7 @@ __attribute__( ( always_inline ) ) inline void easyflash_IO1_Write( u32 addr, u8
 	}
 }
 
+static u32 epyxDisable = 0;
 
 void initEF()
 {
@@ -313,6 +320,44 @@ void initEF()
 
 	setGAMEEXROM();
 	SET_GPIO( bDMA | bNMI ); 
+
+	if ( ef.bankswitchType == BS_OCEAN )
+	{
+		if ( ef.nBanks > 32 )
+			{SETCLR_GPIO( bDMA | bNMI | bGAME, bEXROM );} else
+			{SETCLR_GPIO( bDMA | bNMI, bEXROM | bGAME );} 
+	}
+	if ( ef.bankswitchType == BS_ZAXXON || ef.bankswitchType == BS_COMAL80 || ef.bankswitchType == BS_SIMONSBASIC )
+	{
+		SETCLR_GPIO( bDMA | bNMI, bEXROM | bGAME );
+	} else
+	if ( ef.bankswitchType == BS_DINAMIC || ef.bankswitchType == BS_C64GS || ef.bankswitchType == BS_PROPHET || ef.bankswitchType == BS_GMOD2 )
+	{
+		SETCLR_GPIO( bDMA | bNMI | bGAME, bEXROM );
+	} else
+	if ( ef.bankswitchType == BS_EPYXFL )
+	{
+		epyxDisable = 512 * 2 * 0;
+		SETCLR_GPIO( bDMA | bNMI | bGAME, bEXROM );
+	}
+
+	if ( ef.bankswitchType == BS_GMOD2 )
+	{
+		static int ff = 1;
+		if ( ff )
+		{
+			ff = 0;
+			ef.eeprom_cs = 0;
+			ef.eeprom_data = 0;
+			ef.eeprom_clock = 0;
+			ef.eeprom_next_data = 0;
+			ef.eeprom_delayed_write = -1;
+			m93c86_write_select((uint8_t)ef.eeprom_cs);
+		}
+	}
+
+	ef.triggerDMA = 0;
+	ef.dmaCountWrites = 0;
 }
 
 
@@ -327,9 +372,16 @@ __attribute__( ( always_inline ) ) inline void prefetchHeuristic()
 	FORCE_READ_LINEAR32( ef.ram, 256 )
 }
 
+__attribute__( ( always_inline ) ) inline void prefetchHeuristic8()
+{
+	CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+	FORCE_READ_LINEAR( ef.flashBank, 8192 )
+}
+
 
 __attribute__( ( always_inline ) ) inline void prefetchComplete()
 {
+	// todo: check if all carts covered correctly
 	CACHE_PRELOAD_DATA_CACHE( ef.flash_cacheoptimized, ef.nBanks * ( (ef.bankswitchType == BS_EASYFLASH || ef.bankswitchType == BS_NONE) ? 2 : 1 ) * 8192, CACHE_PRELOADL2KEEP )
 
 	if ( ef.bankswitchType == BS_EASYFLASH )
@@ -378,8 +430,21 @@ static void initScreenAndLEDCodes()
 	}
 }
 
+static bool irqFallingEdge = true;
+
 #ifdef COMPILE_MENU
+
 static void KernelEFFIQHandler_nobank( void *pParam );
+static void KernelEFFIQHandler_Zaxxon( void *pParam );
+static void KernelEFFIQHandler_Prophet( void *pParam );
+static void KernelEFFIQHandler_Ocean( void *pParam );
+static void KernelEFFIQHandler_GMOD2( void *pParam );
+static void KernelEFFIQHandler_C64GS( void *pParam );
+static void KernelEFFIQHandler_Dinamic( void *pParam );
+static void KernelEFFIQHandler_SimonsBasic( void *pParam );
+static void KernelEFFIQHandler_Comal80( void *pParam );
+static void KernelEFFIQHandler_EpyxFL( void *pParam );
+
 static void KernelEFFIQHandler( void *pParam );
 void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr )
 #else
@@ -397,9 +462,11 @@ void CKernelEF::Run( void )
 	m_EMMC.Initialize();
 	#endif
 
+	bool getRAW = false;
+
 	// read .CRT
 	ef.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[ 0 ] + 128 ) & ~127 );
-	readCRTFile( logger, &header, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, &ef.bankswitchType, &ef.ROM_LH, &ef.nBanks );
+	readCRTFile( logger, &header, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, &ef.bankswitchType, &ef.ROM_LH, &ef.nBanks, getRAW );
 
 	ef.eapiCRTModified = 0;
 
@@ -485,6 +552,26 @@ void CKernelEF::Run( void )
 				sprintf( b1, "%d BANKS (%d KB)", ef.nBanks, ef.nBanks * 16384 / 1024 );
 			if ( ef.bankswitchType == BS_NONE )
 				sprintf( b1, "cbm80 cARTRIDGE" );
+			if ( ef.bankswitchType == BS_ZAXXON )
+				sprintf( b1, "(Super) Zaxxon" );
+			if ( ef.bankswitchType == BS_PROPHET )
+				sprintf( b1, "pROPHET64" );
+			if ( ef.bankswitchType == BS_FUNPLAY )
+				sprintf( b1, "fUNPLAY/pOWERPLAY" );
+			if ( ef.bankswitchType == BS_OCEAN )
+				sprintf( b1, "oCEAN cARTRIDGE" );
+			if ( ef.bankswitchType == BS_GMOD2 )
+				sprintf( b1, "gmOD2 cARTRIDGE" );
+			if ( ef.bankswitchType == BS_C64GS )
+				sprintf( b1, "c64 gAME sYSTEM" );
+			if ( ef.bankswitchType == BS_DINAMIC )
+				sprintf( b1, "dINAMIC cARTRIDGE" );
+			if ( ef.bankswitchType == BS_COMAL80 )
+				sprintf( b1, "cOMAL80 cARTRIDGE" );
+			if ( ef.bankswitchType == BS_EPYXFL )
+				sprintf( b1, "ePYX fASTLOADER" );
+			if ( ef.bankswitchType == BS_SIMONSBASIC )
+				sprintf( b1, "sIMONS bASIC" );
 			charWidth = 16;
 			l = strlen( b1 );
 			if ( l * 16 >= 240 )
@@ -519,6 +606,26 @@ void CKernelEF::Run( void )
 	#ifdef COMPILE_MENU
 	if ( ef.bankswitchType == BS_NONE )
 		myHandler = KernelEFFIQHandler_nobank;
+	if ( ef.bankswitchType == BS_ZAXXON )
+		myHandler = KernelEFFIQHandler_Zaxxon;
+	if ( ef.bankswitchType == BS_PROPHET )
+		myHandler = KernelEFFIQHandler_Prophet;
+	if ( ef.bankswitchType == BS_FUNPLAY )
+		ef.bankswitchType = BS_MAGICDESK;
+	if ( ef.bankswitchType == BS_OCEAN )
+		myHandler = KernelEFFIQHandler_Ocean;
+	if ( ef.bankswitchType == BS_GMOD2 )
+		myHandler = KernelEFFIQHandler_GMOD2;
+	if ( ef.bankswitchType == BS_C64GS )
+		myHandler = KernelEFFIQHandler_C64GS;
+	if ( ef.bankswitchType == BS_DINAMIC )
+		myHandler = KernelEFFIQHandler_Dinamic;
+	if ( ef.bankswitchType == BS_COMAL80 )
+		myHandler = KernelEFFIQHandler_Comal80;
+	if ( ef.bankswitchType == BS_EPYXFL )
+		myHandler = KernelEFFIQHandler_EpyxFL;
+	if ( ef.bankswitchType == BS_SIMONSBASIC )
+		myHandler = KernelEFFIQHandler_SimonsBasic;
 	#endif
 	m_InputPin.ConnectInterrupt( myHandler, FIQ_PARENT );
 
@@ -528,17 +635,38 @@ void CKernelEF::Run( void )
 		ef.LONGBOARD = 1; 
 
 	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
-	m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
+
+	irqFallingEdge = true;
+
+	if ( ef.bankswitchType == BS_C64GS || ef.bankswitchType == BS_GMOD2 || ef.bankswitchType == BS_OCEAN || ef.bankswitchType == BS_COMAL80 || ef.bankswitchType == BS_FUNPLAY || ef.bankswitchType == BS_EPYXFL || ef.bankswitchType == BS_SIMONSBASIC || ef.bankswitchType == BS_DINAMIC )
+		irqFallingEdge = false;
+
+	if ( irqFallingEdge )
+		m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
 
 	// determine how to and preload caches
-	if ( ef.bankswitchType == BS_MAGICDESK )
+	if ( ef.bankswitchType == BS_MAGICDESK /*|| ef.bankswitchType == BS_GMOD2*/ )
 		ef.flashFitsInCache = ( ef.nBanks <= 64 ) ? 1 : 0; else // Magic Desk only uses ROML-banks -> different memory layout
 		ef.flashFitsInCache = ( ef.nBanks <= 32 ) ? 1 : 0;
 
 	// TODO
 	ef.flashFitsInCache = 0;
-	if ( ef.bankswitchType == BS_NONE )
+	if ( ef.bankswitchType == BS_NONE || ef.bankswitchType == BS_ZAXXON || ef.bankswitchType == BS_FUNPLAY || ef.bankswitchType == BS_COMAL80 || ef.bankswitchType == BS_EPYXFL || ef.bankswitchType == BS_SIMONSBASIC || ef.bankswitchType == BS_DINAMIC )
 		ef.flashFitsInCache = 1;
+
+
+	if ( ef.bankswitchType == BS_GMOD2 )
+	{
+		ef.flashFitsInCache = 0;
+		extern uint8_t m93c86_data[M93C86_SIZE];
+		char fn[ 4096 ];
+		sprintf( fn, "%s.eeprom", FILENAME );
+		u32 size;
+		extern CLogger *logger;
+		CACHE_PRELOAD_DATA_CACHE( m93c86_data, 2048, CACHE_PRELOADL1STRMW )
+		memset( m93c86_data, 0, 2048 );
+		readFile( logger, DRIVE, fn, m93c86_data, &size );
+	}
 
 	// wait forever
 	ef.mainloopCount = 0;
@@ -546,6 +674,7 @@ void CKernelEF::Run( void )
 	CleanDataCache();
 	InvalidateDataCache();
 	InvalidateInstructionCache();
+
 
 	if ( ef.flashFitsInCache )
 		prefetchComplete(); else
@@ -563,18 +692,31 @@ void CKernelEF::Run( void )
 		prefetchHeuristic();
 
 	// ready to go...
-	latchSetClearImm( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
+	latchSetClear( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
 
 	ef.c64CycleCount = ef.resetCounter2 = 0;
 
 	while ( true )
 	{
 		#ifdef COMPILE_MENU
-		TEST_FOR_JUMP_TO_MAINMENU2FIQs_CB( ef.c64CycleCount, ef.resetCounter2, {if ( ef.eapiCRTModified ) writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );} );
+		TEST_FOR_JUMP_TO_MAINMENU2FIQs_CB( ef.c64CycleCount, ef.resetCounter2, 
+		{ if ( ef.eapiCRTModified ) writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );} 
+		{ if ( ef.bankswitchType == BS_GMOD2 ) { extern uint8_t m93c86_data[M93C86_SIZE]; char fn[ 4096 ]; sprintf( fn, "%s.eeprom", FILENAME ); writeFile( logger, DRIVE, fn, m93c86_data, 2048 ); } } )
 		#endif
 
+
+	#if 1
 		// if the C64 is turned off and the CRT has been modified => write back to SD
 		// I omitted any notification as this is real quick
+
+		if ( ef.mainloopCount > 10000 && ef.bankswitchType == BS_GMOD2 ) 
+		{
+			extern uint8_t m93c86_data[M93C86_SIZE];
+			char fn[ 4096 ];
+			sprintf( fn, "%s.eeprom", FILENAME );
+			writeFile( logger, DRIVE, fn, m93c86_data, 2048 );
+		}
+
 		if ( ef.mainloopCount++ > 10000 && ef.eapiCRTModified ) 
 		{
 			writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );
@@ -591,13 +733,703 @@ void CKernelEF::Run( void )
 				tftSendFramebuffer16BitImm( tftFrameBuffer );
 			}*/
 		}
-
+	#endif
 		asm volatile ("wfi");
 	}
 
 	// and we'll never reach this...
 	m_InputPin.DisableInterrupt();
 }
+
+
+#define TRIGGER_CAN_ASSERT_DMA ( ef.dmaCountWrites == 3 ? true : false )
+#define TRIGGER_DMA_COUNT_WRITES { 	if ( CPU_WRITES_TO_BUS ) ef.dmaCountWrites ++; else ef.dmaCountWrites = 0; }
+#define TRIGGER_DMA( cycles ) { ef.triggerDMA = cycles; }
+#define	HANDLE_DMA_TRIGGER_RELEASE \
+	if ( ef.triggerDMA ) {							\
+		ef.releaseDMA = ef.triggerDMA;				\
+		ef.triggerDMA = 0;							\
+		WAIT_UP_TO_CYCLE( WAIT_TRIGGER_DMA );		\
+		CLR_GPIO( bDMA );							\
+		setLatchFIQ( LATCH_LED0 );					\
+	} else											\
+	if ( ef.releaseDMA > 0 && --ef.releaseDMA == 0 )\
+	{												\
+		WAIT_UP_TO_CYCLE( WAIT_RELEASE_DMA );		\
+		SET_GPIO( bDMA );							\
+		clrLatchFIQ( LATCH_LED0 );					\
+	}	
+
+
+//#ifdef COMPILE_MENU
+#if 1
+static void KernelEFFIQHandler_Prophet( void *pParam )
+{
+	register u32 D, addr;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	addr = GET_ADDRESS0to7 << 5;
+	CACHE_PRELOADL2STRM( &ef.flashBank[ addr ] );
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
+	{
+		D = ef.flashBank[ addr ];
+		WRITE_D0to7_TO_BUS( D )
+	} else
+	if ( CPU_WRITES_TO_BUS && IO2_ACCESS && GET_IO12_ADDRESS == 0 )
+	{
+		READ_D0to7_FROM_BUS( D )
+		setLatchFIQ( LATCH_LED0 );
+
+		if ( ( D >> 5 ) & 1 )
+		{ // cartridge off 
+			SET_GPIO( bGAME | bEXROM );
+		} else
+		{ // cartridge on
+			SETCLR_GPIO( bGAME, bEXROM );
+		}
+
+		ef.reg0 = D & 0x1f;
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
+		CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+	} 
+		
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		ef.releaseDMA = 0;
+		ef.reg0 = 0;
+		ef.flashBank = &ef.flash_cacheoptimized[ 0 ];
+		CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+		SETCLR_GPIO( bGAME | bDMA | bNMI, bEXROM );
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	//CLEAR_LEDS_EVERY_8K_CYCLES
+	static u32 cycleCount = 0;
+	if ( !((++cycleCount)&8191) )
+		clrLatchFIQ( LATCH_LED0 );
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+static void KernelEFFIQHandler_GMOD2_neu( void *pParam )
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+	static int firstByte = 0;
+
+	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
+	{
+		D = ef.flashBank[ addr ];
+		WRITE_D0to7_TO_BUS( D )
+		firstByte = 1;
+		goto cleanup;
+	} 
+
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
+	{
+		D = 0;
+		WRITE_D0to7_TO_BUS( D )
+		goto cleanup;
+	} 
+
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+	{
+		READ_D0to7_FROM_BUS( D )
+		ef.reg0 = D & 0x3f;
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
+
+		//wantDMA = 1;
+		//CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+		//prefetchHeuristic8();
+
+		if ( ( D & 0xc0 ) == 0xc0 ) {
+			SETCLR_GPIO( bEXROM, bGAME ); 
+		} else if ( ( D & 0x40 ) == 0x00 ) {
+			SETCLR_GPIO( bGAME, bEXROM ); 
+		} else if ( ( D & 0x40 ) == 0x40 ) {
+			SET_GPIO( bGAME | bEXROM ); 
+		}
+		goto cleanup;
+	}
+
+/*	TRIGGER_DMA_COUNT_WRITES
+
+	static int bremse = 0;
+	static int triggerDMA = 0;
+	if ( firstByte )
+	if ( ++bremse > 100000 && TRIGGER_CAN_ASSERT_DMA )
+	{
+		TRIGGER_DMA( 50000 )
+		bremse = 0;
+		goto cleanup;
+	}*/
+
+	// reset handling: when button #2 is pressed together with #1 then the EF ram is erased, DMA is released as well
+	if ( !( g2 & bRESET ) ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		SET_GPIO( bDMA | bNMI ); 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+cleanup:
+	//HANDLE_DMA_TRIGGER_RELEASE
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+#endif
+
+
+static volatile u32 forceRead; 
+
+static void KernelEFFIQHandler_GMOD2( void *pParam )
+{
+	register u32 D, addr;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	addr = GET_ADDRESS0to7 << 5;
+	CACHE_PRELOADL2STRM( &ef.flashBank[ addr ] );
+
+	extern int m93c86_addr;
+	extern uint8_t m93c86_data[M93C86_SIZE];
+	CACHE_PRELOADL2STRMW( &m93c86_data[ m93c86_addr * 2 ] );
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	ef.mainloopCount = 0;
+
+	TRIGGER_DMA_COUNT_WRITES
+
+	addr = GET_ADDRESS_CACHEOPT;
+	
+
+	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
+	{
+		D = ef.flashBank[ addr ];
+		WRITE_D0to7_TO_BUS( D )
+	} else
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
+	{
+		if (ef.eeprom_cs) {
+			D = m93c86_read_data() << 7;
+			WRITE_D0to7_TO_BUS( D )
+		} else
+			WRITE_D0to7_TO_BUS( 0 )
+	} else
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+	{
+		READ_D0to7_FROM_BUS( D )
+
+		if ( ( D & 0xc0 ) == 0xc0 ) {
+			SETCLR_GPIO( bEXROM, bGAME ); 
+		} else if ( ( D & 0x40 ) == 0x00 ) {
+			SETCLR_GPIO( bGAME, bEXROM ); 
+		} else if ( ( D & 0x40 ) == 0x40 ) {
+			SET_GPIO( bGAME | bEXROM ); 
+		}
+		ef.eeprom_cs = ( D >> 6 ) & 1;
+		ef.eeprom_data = ( D >> 4 ) & 1;
+		ef.eeprom_clock = ( D >> 5 ) & 1;
+		m93c86_write_select( (uint8_t)ef.eeprom_cs );
+		if ( ef.eeprom_cs ) {
+			m93c86_write_data( (uint8_t)( ef.eeprom_data ) );
+			m93c86_write_clock( (uint8_t)( ef.eeprom_clock ) );
+		}
+
+		if ( ef.reg0 != (D & 0x3f) )
+		{
+			ef.reg0 = D & 0x3f;
+			ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
+			CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+		}
+	} 
+
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		ef.releaseDMA = 0;
+		ef.reg0 = 0;
+		ef.flashBank = &ef.flash_cacheoptimized[ 0 ];
+		CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+		SETCLR_GPIO( bGAME | bDMA | bNMI, bEXROM );
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+cleanup:
+	HANDLE_DMA_TRIGGER_RELEASE
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+static void KernelEFFIQHandler_Ocean( void *pParam )
+{
+	register u32 D, addr;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	addr = GET_ADDRESS0to7 << 5;
+	CACHE_PRELOADL2STRM( &ef.flashBank[ addr ] );
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
+	{
+		D = ef.flashBank[ addr ];
+		WRITE_D0to7_TO_BUS( D )
+	} 
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+	{
+		READ_D0to7_FROM_BUS( D )
+		setLatchFIQ( LATCH_LED0 );
+		ef.reg0 = D & 0x3f;
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
+		CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+	} 
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		ef.releaseDMA = 0;
+		ef.reg0 = 0;
+		ef.flashBank = &ef.flash_cacheoptimized[ 0 ];
+		CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+		if ( ef.nBanks > 32 )
+			{SETCLR_GPIO( bDMA | bNMI | bGAME, bEXROM );} else
+			{SETCLR_GPIO( bDMA | bNMI, bEXROM | bGAME );} 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+cleanup:
+	//CLEAR_LEDS_EVERY_8K_CYCLES
+	static u32 cycleCount = 0;
+	if ( !((++cycleCount)&8191) )
+		clrLatchFIQ( LATCH_LED0 );
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+static void KernelEFFIQHandler_Zaxxon( void *pParam )
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+	register u8 *bank0 = &ef.flash_cacheoptimized[ 0 ];
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
+	{
+		D = *(u8*)&bank0[ (addr&0b1111111101111) * 2 + 0 ];
+		ef.reg0 = GET_ADDRESS & 0x1000 ? 1 : 0;
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 * 2 ];
+		WRITE_D0to7_TO_BUS( D )
+	} else
+	if ( CPU_READS_FROM_BUS && ROMH_ACCESS )
+	{
+		D = *(u8*)&flashBankR[ ( addr & 0x3fff ) * 2 + 1 ];
+		WRITE_D0to7_TO_BUS( D )
+	} 
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		SET_GPIO( bDMA | bNMI ); 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+static void KernelEFFIQHandler_C64GS( void *pParam )
+{
+	register u32 D, addr;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	addr = GET_ADDRESS0to7 << 5;
+	CACHE_PRELOADL2STRM( &ef.flashBank[ addr ] );
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
+	{
+		D = ef.flashBank[ addr ];
+		WRITE_D0to7_TO_BUS( D )
+	} else
+
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
+	{
+		setLatchFIQ( LATCH_LED0 | LATCH_LED1 );
+		ef.reg0 = 0;
+		ef.flashBank = &ef.flash_cacheoptimized[ 0 ];
+		CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+	} else
+
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+	{
+		READ_D0to7_FROM_BUS( D )
+		setLatchFIQ( LATCH_LED0 | LATCH_LED1 );
+		ef.reg0 = GET_IO12_ADDRESS & 0x3f;
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
+		CACHE_PRELOAD_DATA_CACHE( ef.flashBank, 8192, CACHE_PRELOADL2STRM )
+	} 
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		ef.releaseDMA = 0;
+		ef.reg0 = 0;
+		ef.flashBank = &ef.flash_cacheoptimized[ 0 ];
+		clrLatchFIQ( LATCH_LED1 );
+		SETCLR_GPIO( bGAME | bDMA | bNMI, bEXROM );
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+cleanup:
+	if ( ef.releaseDMA > 0 && --ef.releaseDMA == 0 )
+	{
+		WAIT_UP_TO_CYCLE( WAIT_RELEASE_DMA ); 
+		SET_GPIO( bDMA ); 
+		clrLatchFIQ( LATCH_LED1 );
+	}
+
+	//CLEAR_LEDS_EVERY_8K_CYCLES
+	static u32 cycleCount = 0;
+	if ( !((++cycleCount)&8191) )
+		clrLatchFIQ( LATCH_LED0 );
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+
+static void KernelEFFIQHandler_Dinamic( void *pParam )
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
+	{
+		D = *(u32*)&flashBankR[ addr * 2 ];
+
+		WRITE_D0to7_TO_BUS( D )
+	} else
+
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
+	{
+		addr = GET_IO12_ADDRESS;
+		if ( ( addr & 0x0f ) == addr )
+		{
+			ef.reg0 = addr & 0x0f;
+			ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 * 2 ];
+		}
+	} 
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		SET_GPIO( bDMA | bNMI ); 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+
+static void KernelEFFIQHandler_Comal80( void *pParam )
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
+	{
+		D = *(u32*)&flashBankR[ addr * 2 ];
+		if ( ROMH_ACCESS )
+			D >>= 8; 
+
+		WRITE_D0to7_TO_BUS( D )
+	} else
+
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
+	{
+		WRITE_D0to7_TO_BUS( ef.reg2 )
+	} else
+
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+	{
+		READ_D0to7_FROM_BUS( D )
+
+		ef.reg2 = D & 0xc7;
+		ef.reg0 = D & 3;
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 * 2 ];
+
+		if ( D & 0x40 )
+			{SET_GPIO( bEXROM | bGAME );} else
+			{CLR_GPIO( bEXROM | bGAME );}
+	}
+
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		SET_GPIO( bDMA | bNMI ); 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+static void KernelEFFIQHandler_SimonsBasic( void *pParam )
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
+	{
+		D = *(u32*)&flashBankR[ addr * 2 ];
+		if ( ROMH_ACCESS )
+			D >>= 8; 
+
+		WRITE_D0to7_TO_BUS( D )
+	} else
+
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
+	{
+		SETCLR_GPIO( bGAME, bEXROM );
+	} else
+
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+	{
+		CLR_GPIO( bGAME | bEXROM );
+	}
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		SETCLR_GPIO( bDMA | bNMI, bGAME | bEXROM );
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+
+static void KernelEFFIQHandler_EpyxFL( void *pParam )
+{
+	register u32 D, addr;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+
+	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
+	{
+		D = *(u32*)&ef.flash_cacheoptimized[ addr * 2 ];
+		epyxDisable = 512 * 2;
+		WRITE_D0to7_TO_BUS( D )
+	} else
+
+	if ( CPU_READS_FROM_BUS && IO2_ACCESS )
+	{
+		addr |= 0b0000000011111; // access 0x1f00 + IO_ADDRESS
+		D = *(u32*)&ef.flash_cacheoptimized[ addr * 2 ];
+		WRITE_D0to7_TO_BUS( D )
+	} else
+
+	if ( CPU_READS_FROM_BUS && IO1_ACCESS )
+	{
+		SETCLR_GPIO( bGAME, bEXROM );
+		epyxDisable = 512 * 2;
+		WRITE_D0to7_TO_BUS( 0 )
+	} 
+
+	if ( CPU_RESET )
+	{
+		epyxDisable = 512 * 2;
+		SETCLR_GPIO( bDMA | bNMI | bGAME, bEXROM );
+	} else
+	if ( epyxDisable && --epyxDisable == 0 )
+    {
+		SET_GPIO( bEXROM | bGAME );
+    }
+
+	if ( CPU_RESET ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+
+
+
+
+#if 0
+this is an example of how to slow down the C64 using DMA
+static void KernelEFFIQHandler_nobank( void *pParam )
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	addr = GET_ADDRESS_CACHEOPT;
+	static int firstByte = 0;
+	//
+	// starting from here: CPU communication
+	//
+	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
+	{
+		D = *(u32*)&flashBankR[ addr * 2 ];
+		if ( ROMH_ACCESS )
+			D >>= 8; 
+
+		WRITE_D0to7_TO_BUS( D )
+		firstByte = 1;
+
+		goto cleanup;
+	}
+
+	TRIGGER_DMA_COUNT_WRITES
+
+	static int bremse = 0;
+	static int triggerDMA = 0;
+	if ( firstByte )
+	if ( ++bremse > 100000 && TRIGGER_CAN_ASSERT_DMA )
+	{
+		TRIGGER_DMA( 50000 )
+		bremse = 0;
+		goto cleanup;
+	}
+
+	// reset handling: when button #2 is pressed together with #1 then the EF ram is erased, DMA is released as well
+	if ( !( g2 & bRESET ) ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+	
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		SET_GPIO( bDMA | bNMI ); 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+cleanup:
+	HANDLE_DMA_TRIGGER_RELEASE
+
+	//CLEAR_LEDS_EVERY_8K_CYCLES
+	/*static u32 cycleCount = 0;
+	if ( !((++cycleCount)&8191) )
+		clrLatchFIQ( LATCH_LED0 );*/
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+}
+#endif
+
+
 
 
 #ifdef COMPILE_MENU

@@ -771,7 +771,10 @@ int main( void )
 	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 );
 	extern void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr );
 	extern void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
+	extern void KernelKCSRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
+	extern void KernelSS5Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
 	extern void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
+	//extern void KernelRRRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
 	extern void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 );
 	extern void KernelSIDRun8( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
 	extern void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
@@ -807,6 +810,12 @@ int main( void )
 
 		u32 loadC128PRG = 0;
 		u32 playingPSID = 0;
+
+		/* for debugging purposes only*/
+		/*if ( launchKernel == 60 ) //fc3
+		{
+			reboot (); 	
+		} else*/
 
 		switch ( launchKernel )
 		{
@@ -876,12 +885,21 @@ int main( void )
 		case 60:
 			KernelFC3Run( kernel.m_InputPin, &kernel, FILENAME );
 			break;
+		case 61:
+			KernelKCSRun( kernel.m_InputPin, &kernel, FILENAME );
+			break;
+		case 62:
+			KernelSS5Run( kernel.m_InputPin, &kernel, FILENAME );
+			break;
 		case 7:
 			KernelAR6Run( kernel.m_InputPin, &kernel );
 			break;
 		case 70:
 			KernelAR6Run( kernel.m_InputPin, &kernel, FILENAME );
 			break;
+		/*case 71:
+			KernelRRRun( kernel.m_InputPin, &kernel, FILENAME );
+			break;*/
 		case 8:
 			applySIDSettings();
 			if ( octaSIDMode )

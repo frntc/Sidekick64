@@ -1,16 +1,16 @@
 /*
-  _________.__    .___      __   .__        __       ___________.__                .__     
- /   _____/|__| __| _/____ |  | _|__| ____ |  | __   \_   _____/|  | _____    _____|  |__  
- \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /    |    __)  |  | \__  \  /  ___/  |  \ 
- /        \|  / /_/ \  ___/|    <|  \  \___|    <     |     \   |  |__/ __ \_\___ \|   Y  \
-/_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \    \___  /   |____(____  /____  >___|  /
-        \/         \/    \/     \/       \/     \/        \/              \/     \/     \/ 
+  _________.__    .___      __   .__        __         ___________                                        ____________________ ________  
+ /   _____/|__| __| _/____ |  | _|__| ____ |  | __     \_   _____/______   ____   ____ ________ ____      \_   _____/\_   ___ \\_____  \ 
+ \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /      |    __) \_  __ \_/ __ \_/ __ \\___   // __ \      |    __)  /    \  \/  _(__  < 
+ /        \|  / /_/ \  ___/|    <|  \  \___|    <       |     \   |  | \/\  ___/\  ___/ /    /\  ___/      |     \   \     \____/       \
+/_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \      \___  /   |__|    \___  >\___  >_____ \\___  >     \___  /    \______  /______  /
+        \/         \/    \/     \/       \/     \/          \/                \/     \/      \/    \/          \/            \/       \/ 
 
- kernel_ef.cpp
+ kernel_ssnap5.cpp
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
-          - Sidekick Flash: example how to implement an generic/magicdesk/easyflash-compatible cartridge
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+          - Sidekick Freeze: example how to implement a Super Snapshot V5 Cartridge compatible 
+ Copyright (c) 2019 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -27,11 +27,8 @@
  You should have received a copy of the GNU General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef _kernel_ef_h
-#define _kernel_ef_h
-
-// support output signals via the latch (if not used, you'd have to set EXROM and GAME manually!)
-#define USE_LATCH_OUTPUT
+#ifndef _kernel_ss5_h
+#define _kernel_ss5_h
 
 // use the OLED connected to the latch
 #define USE_OLED
@@ -70,27 +67,29 @@
 
 #ifdef USE_OLED
 #include "oled.h"
-#include "splash_flash.h"
+#include "splash_freeze.h"
 #endif
 
 #include "crt.h"
-#include "Vice/m93c86.h"
+#ifdef COMPILE_MENU
+#include "kernel_menu.h"
+#endif
 
 #ifdef COMPILE_MENU
 #include "kernel_menu.h"
-#define FIQ_HANDLER	KernelEFFIQHandler
+void KernelSS5FIQHandler( void *pParam );
+#define FIQ_HANDLER	KernelSS5FIQHandler
 #define FIQ_PARENT	kernelMenu
 #else
 CLogger	*logger;
-//volatile u32 forceRead;
 #define FIQ_HANDLER	(this->FIQHandler)
 #define FIQ_PARENT	this
 #endif
 
-class CKernelEF
+class CKernelSS5
 {
 public:
-	CKernelEF( void )
+	CKernelSS5( void )
 		: m_CPUThrottle( CPUSpeedMaximum ),
 	#ifdef USE_HDMI_VIDEO
 		m_Screen( m_Options.GetWidth(), m_Options.GetHeight() ),
@@ -104,14 +103,16 @@ public:
 	{
 	}
 
-	~CKernelEF( void )
+	~CKernelSS5( void )
 	{
 	}
 
 	boolean Initialize( void )
 	{
 		STANDARD_SETUP_TIMER_INTERRUPT_CYCLECOUNTER_GPIO
+		#ifndef COMPILE_MENU
 		logger = &m_Logger;
+		#endif
 		return bOK;
 	}
 
@@ -133,16 +134,14 @@ private:
 #ifdef USE_HDMI_VIDEO
 	CLogger				m_Logger;
 #endif
-	CScheduler			m_Scheduler;
 	CGPIOPinFIQ			m_InputPin;
 	CEMMCDevice			m_EMMC;
-	FATFS				m_FileSystem;
 };
 
 #ifndef COMPILE_MENU
 int main( void )
 {
-	CKernelEF kernel;
+	CKernelSS5 kernel;
 	if ( kernel.Initialize() )
 		kernel.Run();
 

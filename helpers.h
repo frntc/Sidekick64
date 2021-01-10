@@ -164,7 +164,7 @@ extern int writeFile( CLogger *logger, const char *DRIVE, const char *FILENAME, 
 		if ( c64CycleCount > 2000000 && resetCounter > 500000 ) {		\
 			CB;															\
 			EnableIRQs();												\
-			m_InputPin.DisableInterrupt2();								\
+			if ( irqFallingEdge ) m_InputPin.DisableInterrupt2();		\
 			m_InputPin.DisableInterrupt();								\
 			m_InputPin.DisconnectInterrupt();							\
 			return;														\

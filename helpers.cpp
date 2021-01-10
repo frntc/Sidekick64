@@ -49,6 +49,10 @@ int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data
 	if ( result != FR_OK )
 	{
 		logger->Write( "RaspiMenu", LogNotice, "Cannot open file: %s", FILENAME );
+
+		if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
+			logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: %s", DRIVE );
+
 		return 0;
 	}
 

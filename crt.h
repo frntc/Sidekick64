@@ -45,6 +45,16 @@
 #define BS_FC3      	0x03
 #define BS_AR6      	0x04
 #define BS_ATOMICPOW   	0x05
+#define BS_ZAXXON       0x06
+#define BS_COMAL80      0x07
+#define BS_EPYXFL       0x08
+#define BS_SIMONSBASIC  0x09
+#define BS_DINAMIC      0x0A
+#define BS_C64GS        0x0B
+#define BS_OCEAN        0x0C
+#define BS_GMOD2        0x0D
+#define BS_FUNPLAY      0x0E
+#define BS_PROPHET      0x0F
 
 static const char CRT_HEADER_SIG[] = "C64 CARTRIDGE   ";
 static const char CHIP_HEADER_SIG[] = "CHIP";

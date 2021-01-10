@@ -482,6 +482,72 @@ void applySIDSettings()
 
 int lastKeyDebug = 0;
 
+static int joyItem[ 4 * 50 ];
+static int nJoyItems = 0;
+static int joyX = 0, joyY = 0, joyIdx = -1;
+#define ADD_JOY_ITEM( x, y, l, k ) { joyItem[nJoyItems*4+0]=x; joyItem[nJoyItems*4+1]=y; joyItem[nJoyItems*4+2]=l; joyItem[nJoyItems*4+3]=k; nJoyItems ++;  }
+//#define ADD_JOY_ITEM( x, y, l, k ) {   }
+
+int trySnap( int mx, int my )
+{
+	int tX = min( 39, max( 0, joyX + mx ) );
+	int tY = min( 39, max( 0, joyY + my ) );
+	int minD2 = 100000000;
+	int minIdx = -1;
+	for ( int i = 0; i < nJoyItems; i++ )
+	{
+		int dx = (tX - joyItem[ i * 4 + 0 ]) / 5;
+		int dy = (tY - joyItem[ i * 4 + 1 ]);
+		if ( dx * dx + dy * dy < minD2 )
+		{
+			minD2 = dx * dx + dy * dy;
+			minIdx = i;
+		}
+	}
+	return minIdx; 
+
+/*	if ( minIdx != -1 )
+	{
+		joyX = joyItem[ minIdx * 4 + 0 ];
+		joyY = joyItem[ minIdx * 4 + 1 ];
+	}
+	joyIdx = minIdx;*/
+}
+
+void snapJoy( int dir )
+{
+	// dir: 0 = left, 2 = right, 1 = up, 3 = down
+
+	int dx, dy;
+	if ( dir == 1 || dir == 3 )
+	{
+		dx = 0;
+		dy = dir == 1 ? -1 : 1;
+	}
+	if ( dir == 0 || dir == 2 )
+	{
+		dx = dir == 0 ? -1 : 1;
+		dy = 0;
+	}
+
+	int oldJoyIdx = joyIdx;
+	int newIdx = -1, attempts = 1;
+	while ( newIdx == -1 && attempts < 13 )
+	{
+		newIdx = trySnap( dx * attempts, dy * attempts );
+		if ( newIdx == joyIdx )
+			newIdx = -1;
+		attempts ++;
+	}
+	if ( newIdx != -1 )
+	{
+		joyX = joyItem[ newIdx * 4 + 0 ];
+		joyY = joyItem[ newIdx * 4 + 1 ];
+		joyIdx = newIdx;
+	} else
+		joyIdx = oldJoyIdx;
+}
+
 // ugly, hard-coded handling of UI
 void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, char *menuItemStr, u32 *startC128 = NULL )
 {
@@ -493,6 +559,29 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 
 	if ( menuScreen == MENU_MAIN )
 	{
+		// virtual key press
+		if ( k == 92 && joyIdx != -1 )
+		{
+			k = joyItem[ joyIdx * 4 + 3 ];
+		}
+
+		if ( k == VK_LEFT )
+		{
+			snapJoy( 0 );
+		}
+		if ( k == VK_RIGHT )
+		{
+			snapJoy( 2 );
+		}
+		if ( k == VK_UP )
+		{
+			snapJoy( 1 );
+		}
+		if ( k == VK_DOWN )
+		{
+			snapJoy( 3 );
+		}
+
 		if ( k == VK_F7 )
 		{
 			menuScreen = MENU_BROWSER;
@@ -592,6 +681,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 					return;
 				}
 			}
+			logger->Write( "RaspiFlash", LogNotice, "checking CRT type!" );
 			tempKernel = checkCRTFile( logger, DRIVE, filename, &err );
 			if ( err > 0 )
 			{
@@ -628,10 +718,17 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 	} else
 	if ( menuScreen == MENU_BROWSER )
 	{
+		// virtual key press
+		if ( k == 92 )
+		{
+			k = VK_RETURN;
+		}
+
 		// browser screen
 		if ( k == VK_F7 )
 		{
 			menuScreen = MENU_MAIN;
+			joyIdx = -1;
 			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
@@ -1070,6 +1167,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 		if ( k == VK_F5 )
 		{
 			menuScreen = MENU_MAIN;
+			joyIdx = -1;
 			handleC64( 0xffffffff, launchKernel, FILENAME, filenameKernal, menuItemStr );
 			return;
 		}
@@ -1162,7 +1260,8 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 		applySIDSettings();
 	} else
 	{
-		menuScreen = previousMenuScreen;
+		if ( k != 0 )
+			menuScreen = previousMenuScreen;
 	}
 
 }
@@ -1185,9 +1284,10 @@ void printSidekickLogo()
 	}
 }
 
-
 void printMainMenu()
 {
+	nJoyItems = 0;
+
 	clearC64();
 	//               "012345678901234567890123456789012345XXXX"
 	printC64( 0,  1, "   .- Sidekick64 -- Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
@@ -1204,10 +1304,14 @@ void printMainMenu()
 		printC64( 0, 23, "    choose KERNAL and/or PRG (w/ F7)    ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		printC64( 0, 24, "        ? back, RETURN/F1 launch        ", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		//               "012345678901234567890123456789012345XXXX"
-		printC64( 33, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		printC64( 8, 24, "\x9f", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
-		printC64( 23, 24, "F1", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		printC64( 33, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );					
+		printC64( 8, 24, "\x9f", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );				
+		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );				
+		printC64( 23, 24, "F1", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );					
+		ADD_JOY_ITEM( 33, 23, 2, VK_F7 );
+		ADD_JOY_ITEM( 8, 24, 1, VK_ESC );
+		ADD_JOY_ITEM( 16, 24, 6, VK_RETURN );
+		ADD_JOY_ITEM( 23, 24, 2, VK_F1 );
 	} else
 	if ( subGeoRAM && !subHasKernal )
 	{
@@ -1218,6 +1322,10 @@ void printMainMenu()
 		printC64( 8, 24, "\x9f", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 23, 24, "F1", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		ADD_JOY_ITEM( 29, 23, 2, VK_F7 );
+		ADD_JOY_ITEM( 8, 24, 1, VK_ESC );
+		ADD_JOY_ITEM( 16, 24, 6, VK_RETURN );
+		ADD_JOY_ITEM( 23, 24, 2, VK_F1 );
 	} else
 	if ( subSID )
 	{
@@ -1228,12 +1336,18 @@ void printMainMenu()
 		printC64( 8, 24, "\x9f", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 16, 24, "RETURN", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 23, 24, "F3", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		ADD_JOY_ITEM( 29, 23, 2, VK_F7 );
+		ADD_JOY_ITEM( 8, 24, 1, VK_ESC );
+		ADD_JOY_ITEM( 16, 24, 6, VK_RETURN );
+		ADD_JOY_ITEM( 23, 24, 2, VK_F3 );
 	} else
 	{
 		printC64( 0, 23, "     F7 Browser, F8 Exit to Basic", skinValues.SKIN_MENU_TEXT_FOOTER, 0 );
 		//               "012345678901234567890123456789012345XXXX"
 		printC64( 5, 23, "F7", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 		printC64( 17, 23, "F8", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
+		ADD_JOY_ITEM( 5, 23, 2, VK_F7 );
+		ADD_JOY_ITEM( 17, 23, 2, VK_F8 );
 	}
 
 	if ( modeC128 )
@@ -1281,6 +1395,7 @@ void printMainMenu()
 				printC64( menuItemPos[ i ][ j ][ 0 ] + 2, menuItemPos[ i ][ j ][ 1 ], menuText[ i ][ j ], 12, 0 );
 			} else
 			{
+				ADD_JOY_ITEM( menuItemPos[ i ][ j ][ 0 ], menuItemPos[ i ][ j ][ 1 ], 2 + strlen( menuText[ i ][ j ] ), key[ 0 ] );
 				printC64( menuItemPos[ i ][ j ][ 0 ], menuItemPos[ i ][ j ][ 1 ], key, skinValues.SKIN_MENU_TEXT_KEY, flag );
 				printC64( menuItemPos[ i ][ j ][ 0 ] + 2, menuItemPos[ i ][ j ][ 1 ], menuText[ i ][ j ], skinValues.SKIN_MENU_TEXT_ITEM, flag );
 			}
@@ -1289,6 +1404,7 @@ void printMainMenu()
 	// special menu
 	printC64( menuX[ 0 ], menuY[ 0 ]+1, "F1", skinValues.SKIN_MENU_TEXT_KEY, subGeoRAM ? 0x80 : 0 );
 	printC64( menuX[ 0 ]+3, menuY[ 0 ]+1, "GeoRAM", skinValues.SKIN_MENU_TEXT_ITEM, subGeoRAM ? 0x80 : 0 );
+	ADD_JOY_ITEM( menuX[ 0 ], menuY[ 0 ]+1, 2, VK_F1 );
 
 	extern u32 wireSIDAvailable;
 	if ( !wireSIDAvailable )
@@ -1301,9 +1417,14 @@ void printMainMenu()
 		printC64( menuX[ 0 ], menuY[ 0 ]+2, "F3", skinValues.SKIN_MENU_TEXT_KEY, subSID ? 0x80 : 0 );
 		printC64( menuX[ 0 ]+3, menuY[ 0 ]+2, "SID+FM Emulation", skinValues.SKIN_MENU_TEXT_ITEM, subSID ? 0x80 : 0 );
 	}
+	ADD_JOY_ITEM( menuX[ 0 ], menuY[ 0 ]+2, 2, VK_F3 );
 
 	printC64( menuX[ 0 ], menuY[ 0 ]+3, "F5", skinValues.SKIN_MENU_TEXT_KEY, 0 );
 	printC64( menuX[ 0 ]+3, menuY[ 0 ]+3, "Settings", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
+	ADD_JOY_ITEM( menuX[ 0 ], menuY[ 0 ]+3, 2, VK_F5 );
+
+	if ( joyIdx != - 1 )
+		printC64( (joyX-1+40)%40, (joyY%25), ">", 1, 0 );
 
 	printSidekickLogo();
 

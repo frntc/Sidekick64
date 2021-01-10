@@ -76,9 +76,15 @@ u32 ringWrite;
 
 // prepared GPIO output when SID-registers are read
 u32 outRegisters[ 32 ];
+u32 outRegisters_2[ 32 ];
 
 u32 fmFakeOutput = 0;
 u32 fmAutoDetectStep = 0;
+u32 sidFakeOutput = 0;
+u32 sidAutoDetectStep = 0;
+u32 sidAutoDetectStep_2 = 0;
+uint8_t sidAutoDetectRegs[ 32 ];
+uint8_t sidAutoDetectRegs_2[ 32 ];
 
 // counts the #cycles when the C64-reset line is pulled down (to detect a reset)
 u32 resetCounter,
@@ -201,6 +207,21 @@ void initSID()
 		fmFakeOutput = 0;
 	}
 #endif
+	fmFakeOutput =
+	fmAutoDetectStep = 0;
+
+	sidFakeOutput =
+	sidAutoDetectStep =
+	sidAutoDetectStep_2 = 0;
+
+	for ( int i = 0; i < 32; i++ )
+		outRegisters[ i ] = outRegisters_2[ i ] = 0;
+
+	for ( int i = 0; i < 20; i++ )
+	{
+		sidAutoDetectRegs[ i ] = 0;
+		sidAutoDetectRegs_2[ i ] = 0;
+	}
 
 	// ring buffer init
 	ringWrite = 0;
@@ -319,6 +340,19 @@ static u32 _playingPSID = 0;
 
 static void prepareOnReset( bool refresh = false )
 {
+	fmFakeOutput =
+	fmAutoDetectStep = 0;
+
+	sidFakeOutput =
+	sidAutoDetectStep =
+	sidAutoDetectStep_2 = 0;
+
+	for ( int i = 0; i < 20; i++ )
+	{
+		sidAutoDetectRegs[ i ] = 0;
+		sidAutoDetectRegs_2[ i ] = 0;
+	}
+
 	if ( launchPrg )
 		{disableCart = 0; SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );} else
 		{SETCLR_GPIO( bNMI | bDMA | bGAME | bEXROM, 0 );}
@@ -734,6 +768,11 @@ startHereAfterReset:
 
 					outRegisters[ 27 ] = sid[ 0 ]->read( 27 );
 					outRegisters[ 28 ] = sid[ 0 ]->read( 28 );
+					if ( !cfgSID2_Disabled )
+					{
+						outRegisters_2[ 27 ] = 0;
+						outRegisters_2[ 28 ] = 0;
+					}
 
 					nCyclesEmulated += cyclesToEmulate;
 					//  cyclesToNextSample -= cyclesToEmulate;
@@ -765,7 +804,7 @@ startHereAfterReset:
 					//#endif
 					{
 						sid[ 0 ]->write( A & 31, D );
-						outRegisters[ A & 31 ] = D;
+						//outRegisters[ A & 31 ] = D;
 						//#if !defined(SID2_DISABLED) && defined(SID2_PLAY_SAME_AS_SID1)
 						if ( !cfgSID2_Disabled && cfgSID2_PlaySameAsSID1 )
 							sid[ 1 ]->write( A & 31, D );
@@ -1011,16 +1050,43 @@ void CKernel::FIQHandler (void *pParam)
 	//
 	if ( cfgRegisterRead && CPU_READS_FROM_BUS && SID_ACCESS )
 	{
-		u32 A = ( g2 >> A0 ) & 31;
-		u32 D = outRegisters[ A ];
+		u32 A = ( g2 >> A0 );
+		u32 D;// = outRegisters[ A ];
 
-        if ( A >= 0x19 && A <= 0x1c )
+		A |= ( (GET_ADDRESS8to12) & 1 ) << 8;
+
+		if ( ( cfgSID2_Addr == 0 && (A & 0x20) ) ||
+			 ( cfgSID2_Addr == 1 && (A & 0x100) ) )
 		{
-			busValue = D = outRegisters[ A ]; 
-			busValueTTL = 0xa2000; // 8580
-			//busValueTTL = 0x1d00; // 6581
+			A &= 31;
+			if ( sidAutoDetectStep_2 == 1 && A == 0x1b )
+			{
+				sidAutoDetectStep_2 = 0;
+				if ( SID_MODEL[ 1 ] == 8580 )
+					D = 2; else
+					D = 3;
+			} else
+			{
+				if ( A >= 0x19 && A <= 0x1c )
+					D = 0; else //outRegisters_2[ A & 31 ]; else
+					D = busValue;
+			}
 		} else
-			D = busValue;
+		{
+			A &= 31;
+			if ( sidAutoDetectStep == 1 && A == 0x1b )
+			{
+				sidAutoDetectStep = 0;
+				if ( SID_MODEL[ 0 ] == 8580 )
+					D = 2; else
+					D = 3;
+			} else
+			{
+				if ( A >= 0x19 && A <= 0x1c )
+					D = outRegisters[ A ]; else
+					D = busValue;
+			}
+		}
 
 		WRITE_D0to7_TO_BUS( D )
 
@@ -1138,11 +1204,35 @@ void CKernel::FIQHandler (void *pParam)
 
 		if ( ( cfgSID2_Addr == 0 && (A & 0x20) ) ||
 			 ( cfgSID2_Addr == 1 && (A & 0x100) ) )
+		{
 			remapAddr |= SID2_MASK;
+			if ( sidAutoDetectStep_2 == 0 &&
+				 sidAutoDetectRegs_2[ 0x12 ] == 0xff &&
+				 sidAutoDetectRegs_2[ 0x0e ] == 0xff &&
+				 sidAutoDetectRegs_2[ 0x0f ] == 0xff &&
+				 (A&31) == 0x12 && D == 0x20 )
+			{
+				sidAutoDetectStep_2 = 1;
+			}
+			sidAutoDetectRegs_2[ A & 31 ] = D;
+		} else
+		{
+			if ( sidAutoDetectStep == 0 &&
+				 sidAutoDetectRegs[ 0x12 ] == 0xff &&
+				 sidAutoDetectRegs[ 0x0e ] == 0xff &&
+				 sidAutoDetectRegs[ 0x0f ] == 0xff &&
+				 (A&31) == 0x12 && D == 0x20 )
+			{
+				sidAutoDetectStep = 1;
+			}
+			sidAutoDetectRegs[ A & 31 ] = D;
+		}
+
 
 		busValue = D;
-		busValueTTL = 0xa2000; // 8580
-		//busValueTTL = 0x1d00; // 6581
+		if ( SID_MODEL[ 0 ] == 8580 )
+			busValueTTL = 0xa2000; else // 8580
+			busValueTTL = 0x1d00; // 6581
 
 		ringBufGPIO[ ringWrite ] = ( remapAddr | ( D << D0 ) ) & ~bIO2;
 		ringTime[ ringWrite ] = cycleCountC64;

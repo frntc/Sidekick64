@@ -66,7 +66,8 @@ typedef struct
 volatile ARSTATE ar AAA;
 
 // ... flash/ROM (32k) and RAM (8k)
-u8 flash_cacheoptimized_pool[ 5 * 8192 + 1024 ] AAA;
+//u8 flash_cacheoptimized_pool[ 5 * 8192 + 1024 ] AAA;
+extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
 
 __attribute__( ( always_inline ) ) inline void setGAMEEXROM( u32 f )
 {
