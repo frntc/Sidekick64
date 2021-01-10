@@ -3,8 +3,26 @@
 Sidekick64 is a versatile cartridge/expansion for the C64, C128, and the C16/+4. Its functionality is entirely defined by software running on a Raspberry Pi 3 (RPi). 
 The connecting circuitry is quite simple and does not include any programmable ICs. Currently implemented features include the emulation of
 - a GeoRAM/NeoRAM-compatible memory expansion, 
-- Action Replay 4.x-7.x, Final Cartridge 3(+) and Atomic/Nordic Power (experimental) freezer cartridges,
-- Easyflash (with simplified EAPI support), MagicDesk, CBM80, C16/+4 and C128 cartridges, 
+- freezer cartridges
+  * Action Replay 4.x-7.x
+  * Final Cartridge 3(+)
+  * Atomic/Nordic Power (experimental)
+  * KCS Power Cartridge
+  * Super Snapshot V5
+- numerous bank switching cartridges such as 
+  * CBM80, C16/+4 and C128 cartridges
+  * Easyflash (with simplified EAPI support)
+  * GMod2 (inclduing EEPROM for save games)
+  * Prophet64
+  * MagicDesk/Domark/HES Australia
+  * Dinamic
+  * Ocean Type A and B (up to 512k)
+  * C64 Game System
+  * Funplay/Powerplay
+  * (Super) Zaxxon
+  * Comal80
+  * Epyx Fastload
+  * Simons Basic
 - C64 kernal replacement,
 - Function ROMs on a C128, or 
 - multiple SIDs and Sound Expander/FM emulation (up to 8 SIDs, e.g. to play [The Tuneful 8](https://csdb.dk/release/?id=182735))
@@ -24,6 +42,9 @@ The C16/+4 version comes with two fabolous games ported to run directly off the 
 ## Changelog
 
 recent changes (higher = newer):
+- more cartridge formats and freezers are now supported
+- refinement in SID emulation (e.g. SID-autodetection now works)
+- joystick can be used in menu/browser
 - integration of Disk2EasyFlash (let's you convert .D64 to EF-CRTs on the fly)
 - integration of PSID64 enables .SID-file support (.SID are converted to .PRG on the fly and launched, C64 only)
 - PRG launcher now supports large files (>250 blocks)
