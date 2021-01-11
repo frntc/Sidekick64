@@ -29,6 +29,7 @@
 */
 
 #include <conio.h>
+#include <joystick.h>
 
 extern void detectC128();
 extern void detectVIC();
@@ -174,9 +175,16 @@ void wireDetection()
     __asm__ ("sta $d4ff");  // some access to the SID address range
 }
 
+#define VK_LEFT		157
+#define VK_RIGHT	29
+#define VK_UP		145
+#define VK_DOWN		17
+#define VK_RETURN	13
+
 int main (void)
 {
-    char key;
+    char key, x, firstHit;
+	unsigned char /*joy1, joy1prev, */joy2, joy2prev;
 
     *(unsigned char*)(0x01) = 15;
 
@@ -189,6 +197,8 @@ int main (void)
     copyCharset();
     updateScreen();
 
+	joy_install( joy_static_stddrv );
+
     wireDetection();
     *((char *)(0xdf01)) = 0; // dummy keypress
     //updateScreen();
@@ -197,10 +207,45 @@ int main (void)
     *((char *)(0xdf01)) = 0; // dummy keypress
     updateScreen();
 
+	joy2prev = 255;
     while ( 1 )
     {
+		key = 0;
+		firstHit = 0;
+		//joy1 = joy_read( JOY_1 );
+		joy2 = joy_read( JOY_2 );
+		if ( /*JOY_DOWN( joy1 )  || */JOY_DOWN( joy2 )  ) key = VK_DOWN; else
+		if ( /*JOY_UP( joy1 )    || */JOY_UP( joy2 )    ) key = VK_UP; else
+		if ( /*JOY_LEFT( joy1 )  || */JOY_LEFT( joy2 )  ) key = VK_LEFT; else
+		if ( /*JOY_RIGHT( joy1 ) || */JOY_RIGHT( joy2 ) ) key = VK_RIGHT; else
+		if ( /*JOY_BTN_1( joy1 ) || */JOY_BTN_1( joy2 ) ) key = 92;  // pound sign
+
+		if ( /*joy1 == joy1prev || */joy2 == joy2prev && joy2 != 0 )
+		{
+			for ( x = 0; x < 2; x++ )
+				waitvsync();
+		} else
+		if ( key )
+			firstHit = 1;
+
+		//joy1prev = joy1; 
+		joy2prev = joy2;
+
+		if ( key )
+		{
+			*(unsigned char*)0xc6 = 0;
+		} else
+		{
+			__asm__ ("jsr $ff9f");			// scan keyboard, store key in buffer
+			if ( *(unsigned char*)0xc6 )	// buffer contains key?
+			{
+				__asm__ ("jsr $e5b4");		// get it!
+				__asm__ ("sta %v", key ); 
+			}
+		}
+
         // sendKeypress
-        key = cgetc();
+        //key = cgetc();
         if ( key == 29 && *((char *)(0x0427)) != 0 )
         {
             __asm__ ("lda #$0a");
@@ -213,7 +258,12 @@ int main (void)
 
         wireDetection();
         *((char *)(0xdf01)) = key;
+		waitvsync();
         updateScreen();
+
+		if ( firstHit )
+			for ( x = 0; x < 15; x++ )
+				waitvsync();
     }
 
     return 0;
