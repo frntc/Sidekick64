@@ -32,7 +32,7 @@ But many more things are imaginable, e.g. 80 column cards with HDMI video output
 
 Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the framework enabling a RPi to bidirectionally communicate on the bus of a Commodore 64/128. 
 Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with various PAL-machines (C64 revisions, C128, C128D), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC).
-To the C64/+4 Sidekick64 is connected using a simple adapter.
+To the C16/+4 Sidekick64 is connected using a simple adapter.
 
 <img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
 
