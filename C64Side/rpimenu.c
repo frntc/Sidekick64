@@ -236,13 +236,15 @@ int main (void)
 			*(unsigned char*)0xc6 = 0;
 		} else
 		{
-			__asm__ ("jsr $ff9f");			// scan keyboard, store key in buffer
 			if ( *(unsigned char*)0xc6 )	// buffer contains key?
 			{
-				__asm__ ("jsr $e5b4");		// get it!
-				__asm__ ("sta %v", key ); 
-			}
+				 __asm__ ("jsr $e5b4");		// get it!
+				 __asm__ ("sta %v", key ); 
+			} else
+                continue;
 		}
+
+        //*(unsigned char*)0xc6 = 0;
 
         // sendKeypress
         //key = cgetc();
