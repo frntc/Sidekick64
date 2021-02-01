@@ -42,6 +42,7 @@ The C16/+4 version comes with two fabolous games ported to run directly off the 
 ## Changelog
 
 recent changes (higher = newer):
+- a model (2 variants, label) for 3D printing a case for the Sidekick and a Raspberry Pi 3B+ has been added
 - more cartridge formats and freezers are now supported
 - refinement in SID emulation (e.g. SID-autodetection now works)
 - joystick can be used in menu/browser
@@ -193,7 +194,7 @@ Be careful not to damage your RPi or C64, or anything attached to it. I am not r
 
 My portions of the source code are work licensed under GPLv3.
 
-The PCB is work licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+The PCB and 3D model/label is work licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
 
 ## Misc 
 
