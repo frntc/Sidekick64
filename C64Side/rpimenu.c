@@ -30,6 +30,10 @@
 
 #include <conio.h>
 #include <joystick.h>
+#include <string.h>
+
+char *SIDKICK_VERSION = (char *)0xc000;
+const char VERSION_STR[7] = {0x53, 0x49, 0x44, 0x4b, 0x09, 0x03, 0x0b };
 
 extern void detectC128();
 extern void detectVIC();
@@ -175,6 +179,29 @@ void wireDetection()
     __asm__ ("sta $d4ff");  // some access to the SID address range
 }
 
+void readSIDKick_Version()
+{
+    __asm__ ("sta $d41f");	// enter config mode
+
+	__asm__ ("ldx #0");
+	__asm__ ("ldy #224");
+
+  __asm__ ("nextchar:");
+	__asm__ ("tya");
+    __asm__ ("sta $d41e");	
+	__asm__ ("lda $d41d");
+	__asm__ ("sta $c000,x");
+
+	__asm__ ("iny");
+	__asm__ ("inx");
+	__asm__ ("cpx #$10");
+	__asm__ ("bne nextchar");
+
+	__asm__ ("lda #0");
+	__asm__ ("sta $c000,x");
+}
+
+
 #define VK_LEFT		157
 #define VK_RIGHT	29
 #define VK_UP		145
@@ -193,6 +220,17 @@ int main (void)
 
     detectVIC();
     __asm__ ("sta $df03");
+
+    readSIDKick_Version();
+    if ( memcmp( (char*)0xc000, (char*)VERSION_STR, 7 ) == 0 )
+    {
+        __asm__ ("lda #1");
+        __asm__ ("sta $df05");
+    } else
+    {
+        __asm__ ("lda #0");
+        __asm__ ("sta $df05");
+    }
 
     copyCharset();
     updateScreen();
