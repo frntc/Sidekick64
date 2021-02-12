@@ -30,7 +30,6 @@
 #include "kernel_sid.h"
 
 #define WRITE_CHANNELS		2		// 1: Mono, 2: Stereo
-#define QUEUE_SIZE_MSECS 	50		// size of the sound queue in milliseconds duration
 #define CHUNK_SIZE			2000	// number of samples, written to sound device at once
 
 #define FORMAT		SoundFormatSigned16
@@ -44,28 +43,51 @@ void initPWMOutput();
 void cbSound( void *d );
 void clearSoundBuffer();
 
-void initSoundOutput( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ )
+#ifdef USE_VCHIQ_SOUND
+short PCMBuffer[ PCMBufferSize ];
+#endif
+
+u32 nSamplesPrecompute; 
+static int FirstBufferUpdate = 1;
+u32 soundDebugCode;
+
+void initSoundOutput( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ, u32 outputPWM, u32 outputHDMI )
 {
 	clearSoundBuffer();
 
 #ifdef USE_PWM_DIRECT
-	initPWMOutput();
-#else
-	if ( m_pSound == NULL || m_VCHIQ == NULL )
+	if ( outputPWM )
+		initPWMOutput();
+#endif
+#ifdef USE_VCHIQ_SOUND
+//	if ( m_pSound == NULL || m_VCHIQ == NULL || outputHDMI == 0 )
+	if ( outputHDMI == 0 )
 		return;
 
 	//( *m_pSound ) = new CPWMSoundBaseDevice( &m_Interrupt, SAMPLERATE, CHUNK_SIZE );
-	( *m_pSound ) = new CVCHIQSoundBaseDevice( m_VCHIQ, SAMPLERATE, CHUNK_SIZE, VCHIQSoundDestinationHDMI );
-	( *m_pSound )->AllocateQueue( QUEUE_SIZE_MSECS );
-	( *m_pSound )->SetWriteFormat( FORMAT, WRITE_CHANNELS );
-	( *m_pSound )->RegisterNeedDataCallback( cbSound, (void*)( *m_pSound ) );
+	if ( (*m_pSound) == NULL )
+	{
+		( *m_pSound ) = new CVCHIQSoundBaseDevice( m_VCHIQ, SAMPLERATE, CHUNK_SIZE, VCHIQSoundDestinationHDMI );
+		( *m_pSound )->AllocateQueue( QUEUE_SIZE_MSECS );
+		( *m_pSound )->SetWriteFormat( FORMAT, WRITE_CHANNELS );
+		( *m_pSound )->RegisterNeedDataCallback( cbSound, (void*)( *m_pSound ) );
+	}
 
+	extern u32 SAMPLERATE_ADJUSTED;
+	SAMPLERATE_ADJUSTED = SAMPLERATE;
+	FirstBufferUpdate = 1;
+
+	clearSoundBuffer();
 	PCMCountLast = PCMCountCur = 0;
-	for ( u32 i = 0; i < QUEUE_SIZE_MSECS * SAMPLERATE / 1000 * 3 / 2; i++ )
+	nSamplesPrecompute = QUEUE_SIZE_MSECS * SAMPLERATE / 1000;
+	soundDebugCode = 0;
+
+/*	for ( u32 i = 0; i < QUEUE_SIZE_MSECS * SAMPLERATE / 1000 * 3 / 2; i++ )
 	{
 		putSample( 0 );
 		putSample( 0 );
-	}
+	}*/
+
 #endif
 }
 
@@ -153,7 +175,6 @@ void initPWMOutput()
 //  \___|_  /_______  /\____|__  /___|    /_______  /\____/|____/|___|  /\____ | 
 //        \/        \/         \/                 \/                  \/      \/ 
 #ifdef USE_VCHIQ_SOUND
-short PCMBuffer[ PCMBufferSize ];
 u32 PCMCountLast, PCMCountCur;
 
 u32 samplesInBuffer()
@@ -184,9 +205,7 @@ bool pcmBufferFull()
 // callback called when more samples are needed by the HDMI sound playback
 // this code is incredibly ugly and inefficient (more memory copies than necessary)
 //
-#ifndef USE_PWM_DIRECT
-
-short temp[ 65536 ];
+#ifdef USE_VCHIQ_SOUND
 
 //
 // don't look too close... 
@@ -196,63 +215,40 @@ short temp[ 65536 ];
 //
 void cbSound( void *d )
 {
+	extern u32 fillSoundBuffer;
+	fillSoundBuffer = 1;
+	return; 
+
 	CSoundBaseDevice *m_pSound = (CSoundBaseDevice*)d;
+	extern u32 trackSampleProgress;
 
-	u32 nWriteFrames = samplesInBuffer();
-	u32 nFramesNeeded = m_pSound->GetQueueSizeFrames() - m_pSound->GetQueueFramesAvail();
-	u32 padding = 0;
+	s32 nFramesComputed = samplesInBuffer();
+	s32 nFramesMax = m_pSound->GetQueueSizeFrames() - m_pSound->GetQueueFramesAvail();
+	trackSampleProgress = 1024 * 1024 + ( nFramesComputed - nFramesMax );
 
-	nWriteFrames = min( nWriteFrames, nFramesNeeded );
+	s32 nWriteFrames = min( nFramesComputed, nFramesMax );
 
-	if ( nFramesNeeded > nWriteFrames )
-		padding = nFramesNeeded - nWriteFrames;
-
-	// maybe we need to split writes
-	u32 nWriteSplit[ 2 ];
-	u32 nParts = 1;
-
-	if ( nWriteFrames + PCMCountLast > PCMBufferSize )
+	if ( nWriteFrames * 2 + PCMCountLast > PCMBufferSize )
 	{
-		nWriteSplit[ 0 ] = PCMBufferSize - PCMCountLast;
-		nWriteSplit[ 1 ] = nWriteFrames - nWriteSplit[ 0 ];
-		nParts = 2;
-	}
+		m_pSound->Write( &PCMBuffer[ PCMCountLast ], (PCMBufferSize - PCMCountLast) * TYPE_SIZE );
+		m_pSound->Write( &PCMBuffer[ 0 ], (2 * nWriteFrames - (PCMBufferSize - PCMCountLast)) * TYPE_SIZE );
+	} else
 	{
-		nWriteSplit[ 0 ] = nWriteFrames;
-		nWriteSplit[ 1 ] = 0;
+		m_pSound->Write( &PCMBuffer[ PCMCountLast ], 2 * nWriteFrames * TYPE_SIZE );
 	}
-
-	u32 p = 0;
-	short lastL = 0, lastR = 0;
-	for ( u32 i = 0; i < nParts; i++ )
-	{
-		for ( u32 j = 0; j < nWriteSplit[ i ]; j++ )
-		{
-			lastL = PCMBuffer[ PCMCountLast++ ];
-			temp[ p ++ ] = lastL;
-			PCMCountLast %= PCMBufferSize;
-
-			lastR = PCMBuffer[ PCMCountLast++ ];
-			temp[ p ++ ] = lastR;
-			PCMCountLast %= PCMBufferSize;
-		}
-	}
-	for ( u32 i = 0; i < padding; i++ )
-	{
-		temp[ p ++ ] = lastL;
-		temp[ p ++ ] = lastR;
-	}
-
-	unsigned nWriteBytes = p * TYPE_SIZE;
-	m_pSound->Write( &temp[ 0 ], nWriteBytes );
+	PCMCountLast += nWriteFrames * 2;
+	PCMCountLast %= PCMBufferSize;
+	return;
 }
+
 #endif
 
 void clearSoundBuffer()
 {
 #ifdef USE_PWM_DIRECT
 	memset( sampleBuffer, 0, sizeof( u32 ) * 128 );
-#else
+#endif
+#ifdef USE_VCHIQ_SOUND
 	memset( PCMBuffer, 0, sizeof( short ) * PCMBufferSize );
 #endif
 }

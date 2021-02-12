@@ -30,11 +30,13 @@
 #ifndef _sound_h_
 #define _sound_h_
 
-#define PCMBufferSize 48000
+#define PCMBufferSize (48000/4)
+#define QUEUE_SIZE_MSECS 	50		// size of the sound queue in milliseconds duration
+extern u32 nSamplesPrecompute; 
 
 extern u32 PWMRange;
 
-extern void initSoundOutput( CSoundBaseDevice **m_pSound = NULL, CVCHIQDevice *m_VCHIQ = NULL );
+extern void initSoundOutput( CSoundBaseDevice **m_pSound = NULL, CVCHIQDevice *m_VCHIQ = NULL, u32 outputPWM = 0, u32 outputHDMI = 0 );
 extern void clearSoundBuffer();
 
 extern u32 sampleBuffer[ 128 ];

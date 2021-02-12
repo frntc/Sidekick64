@@ -46,6 +46,7 @@ extern u32 WAIT_RELEASE_DMA;
 
 extern u32 modeC128;
 extern u32 modeVIC;
+extern u32 hasSIDKick;
 #endif
 
 extern u32 machine264;

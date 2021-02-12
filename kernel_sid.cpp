@@ -37,8 +37,6 @@
 static u32 launchPrg;
 #endif
 
-#undef USE_VCHIQ_SOUND
-
 static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_sid_bg2.tga";
 static const char FILENAME_SPLASH_RGB2[] = "SD:SPLASH/sk64_sid_bg.tga";
 static const char FILENAME_LED_RGB[] = "SD:SPLASH/sk64_sid_led.tga";
@@ -104,7 +102,9 @@ s32 cfgVolOPL_Left, cfgVolOPL_Right;
 
 extern u32 wireSIDAvailable;
 
-void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3 )
+u32 outputPWM = 1, outputHDMI = 0;
+
+void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 outputPWMHDMI )
 {
 	SID_MODEL[ 0 ] = ( sid1 == 0 ) ? 6581 : 8580;
 	SID_DigiBoost[ 0 ] = ( sid1 == 2 ) ? 1 : 0;
@@ -120,15 +120,18 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	cfgVolOPL_Left  = v3 * ( 14 - p3 );
 	cfgVolOPL_Right = v3 * ( p3 );
 
-	int maxVolFactor = max( cfgVolSID1_Left, max( cfgVolSID1_Right, max( cfgVolSID2_Left, max( cfgVolSID2_Right, max( cfgVolOPL_Left, cfgVolOPL_Right ) ) ) ) );
+	if ( outputPWMHDMI == 0 || outputPWMHDMI == 2 )
+	{
+		int maxVolFactor = max( cfgVolSID1_Left, max( cfgVolSID1_Right, max( cfgVolSID2_Left, max( cfgVolSID2_Right, max( cfgVolOPL_Left, cfgVolOPL_Right ) ) ) ) );
 
-	cfgVolSID1_Left  = cfgVolSID1_Left  * 256 / maxVolFactor;
-	cfgVolSID1_Right = cfgVolSID1_Right * 256 / maxVolFactor;
-	cfgVolSID2_Left  = cfgVolSID2_Left  * 256 / maxVolFactor;
-	cfgVolSID2_Right = cfgVolSID2_Right * 256 / maxVolFactor;
-	cfgVolOPL_Left   = cfgVolOPL_Left   * 256 / maxVolFactor;
-	cfgVolOPL_Right  = cfgVolOPL_Right  * 256 / maxVolFactor;
-	
+		cfgVolSID1_Left  = cfgVolSID1_Left  * 256 / maxVolFactor;
+		cfgVolSID1_Right = cfgVolSID1_Right * 256 / maxVolFactor;
+		cfgVolSID2_Left  = cfgVolSID2_Left  * 256 / maxVolFactor;
+		cfgVolSID2_Right = cfgVolSID2_Right * 256 / maxVolFactor;
+		cfgVolOPL_Left   = cfgVolOPL_Left   * 256 / maxVolFactor;
+		cfgVolOPL_Right  = cfgVolOPL_Right  * 256 / maxVolFactor;
+	}
+
 	if ( sid2 == 3 ) 
 	{ 
 		cfgSID2_Disabled = 1; cfgVolSID2_Left = cfgVolSID2_Right = 0;
@@ -157,6 +160,16 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	{
 		cfgVolOPL_Left = cfgVolOPL_Right = 0;
 	}
+
+	outputPWM = outputHDMI = 0;
+	#ifdef USE_PWM_DIRECT
+	if ( outputPWMHDMI == 0 || outputPWMHDMI == 2 )
+		outputPWM = 1;
+	#endif
+	#ifdef USE_VCHIQ_SOUND
+	if ( outputPWMHDMI == 1 || outputPWMHDMI == 2 )
+		outputHDMI = 1;
+	#endif
 }
 
 //  __     __                __      ___                   ___ 
@@ -229,11 +242,6 @@ void initSID()
 		ringTime[ i ] = 0;
 }
 
-void quitSID()
-{
-	for ( int i = 0; i < NUM_SIDS; i++ )
-		delete sid[ i ];
-}
 
 unsigned long long cycleCountC64;
 
@@ -245,7 +253,7 @@ extern CScheduler		*pScheduler;
 extern CInterruptSystem	*pInterrupt;
 extern CVCHIQDevice		*pVCHIQ;
 extern CScreenDevice	*screen;
-CSoundBaseDevice	*m_pSound;
+CSoundBaseDevice	*m_pSound = NULL;
 #else
 
 CLogger				*logger;
@@ -290,6 +298,22 @@ boolean CKernel::Initialize( void )
 	return bOK;
 }
 #endif
+
+void quitSID()
+{
+	if ( outputHDMI && m_pSound != NULL )
+	{
+		CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
+		if ( sd->IsActive() )
+			sd->SetControl( VCHIQ_SOUND_VOLUME_MIN, VCHIQSoundDestinationAuto );
+		while ( sd->IsActive() )
+			sd->Cancel();
+		delete sd;
+		m_pSound = NULL;
+	}
+	for ( int i = 0; i < NUM_SIDS; i++ )
+		delete sid[ i ];
+}
 
 static u32 renderDone = 0;
 
@@ -386,6 +410,19 @@ static void prepareOnReset( bool refresh = false )
 //static u32 haltC64 = 0, letgoC64 = 0;
 //static u32 SID_not_initialized = 1;
 
+static int startVCHIQ = 0;
+
+u32 SAMPLERATE_ADJUSTED = SAMPLERATE;
+extern u32 nSamplesPrecompute;
+u32 trackSampleProgress;
+
+static s32 avgSamplesAvail = 0;
+static s32 avgCounter = 0;
+static u32 adjustRateAllowed = 0;
+static u32 targetSamplesAvail = 0, targetCount = 0;
+
+u32 fillSoundBuffer;
+extern bool CVCHIQ_CB_Manual;
 
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler( void *pParam );
@@ -488,21 +525,14 @@ void CKernel::Run( void )
 	} 
 	#endif
 
-	//if ( SID_not_initialized )
-	{
-		//letgoC64 = 0; haltC64 = 1;
+	//logger->Write( "", LogNotice, "initialize SIDs..." );
+	initSID();
 
-		//	logger->Write( "", LogNotice, "initialize SIDs..." );
-		initSID();
-
-		//
-		// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
-		//
-		initSoundOutput( &m_pSound, pVCHIQ );
-
-		//haltC64 = 0; letgoC64 = 1;
-		//SID_not_initialized = 0;
-	}
+	//
+	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
+	//
+	startVCHIQ = 0;
+	initSoundOutput( &m_pSound, pVCHIQ, outputPWM, outputHDMI );
 
 	#ifdef COMPILE_MENU
 	disableCart = 0;
@@ -528,6 +558,8 @@ void CKernel::Run( void )
 	resetReleased = 0xff;
 	//haltC64 = letgoC64 = 0;
 	resetFromCodeState = 0;
+
+	//logger->Write( "", LogNotice, "setup fiq..." );
 
 	#ifdef COMPILE_MENU
 	prepareOnReset();
@@ -564,7 +596,7 @@ void CKernel::Run( void )
 	logger->Write( "", LogNotice, "Measured C64 clock frequency: %u Hz", (u32)CLOCKFREQ );
 #endif
 
-//	logger->Write( "", LogNotice, "start emulating..." );
+	//logger->Write( "", LogNotice, "start emulating..." );
 	cycleCountC64 = 0;
 	nCyclesEmulated = 0;
 	samplesElapsed = 0;
@@ -618,22 +650,60 @@ startHereAfterReset:
 
 	latchSetClear( 0, allUsedLEDs );
 
+	static u32 hdmiVol = 1;
+
+	#ifdef USE_VCHIQ_SOUND
+	static u32 nSamplesInThisRun = 0;
+	#endif
+
+	fillSoundBuffer = 0;
 	// new main loop mainloop
 	while ( true )
 	{
 		#ifdef COMPILE_MENU
 		//TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
-		if ( cycleCountC64 > 2000000 && resetCounter > 500000 ) {
-				EnableIRQs();
-				m_InputPin.DisableInterrupt();
-				m_InputPin.DisconnectInterrupt();
-				quitSID();
-				return;
+		if ( cycleCountC64 > 2000000 && resetCounter > 0 && outputHDMI && m_pSound && hdmiVol == 1 ) {
+			CVCHIQ_CB_Manual = false;
+			if ( outputHDMI )
+			{
+				CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
+				if ( sd->IsActive() )
+					sd->SetControl( VCHIQ_SOUND_VOLUME_MIN, VCHIQSoundDestinationAuto );
+				sd->Cancel();
 			}
+			hdmiVol = 0;
+		}
+		if ( cycleCountC64 > 2000000 && resetCounter > 500000 ) {
+			CVCHIQ_CB_Manual = false;
+			//logger->Write( "", LogNotice, "adjusted sample rate: %u Hz", (u32)SAMPLERATE_ADJUSTED );
+			quitSID();
+			EnableIRQs();
+			m_InputPin.DisableInterrupt();
+			m_InputPin.DisconnectInterrupt();
+			return;
+		}
 		#endif
 
 		if ( resetReleased == 1 )
 		{
+			if ( m_pSound )
+			{
+				if ( outputHDMI )
+				{
+					CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
+					while ( sd->IsActive() ) {}
+					//sd->SetControl( VCHIQ_SOUND_VOLUME_DEFAULT, VCHIQSoundDestinationAuto );
+					hdmiVol = 1;
+				}
+				nSamplesInThisRun = startVCHIQ = 0;
+				initSoundOutput( &m_pSound, pVCHIQ, outputPWM, outputHDMI );
+				avgSamplesAvail = 0;
+				avgCounter = 0;
+				adjustRateAllowed = 0;
+				targetSamplesAvail = 0;
+				targetCount = 0;
+			}
+
 			resetReleased = 0xff;
 			resetCounter = 0;
 		
@@ -682,32 +752,128 @@ startHereAfterReset:
 
 	#ifndef EMULATION_IN_FIQ
 
-		#ifndef USE_PWM_DIRECT
-		static u32 nSamplesInThisRun = 0;
-		#endif
-
 		s16 val1, val2;
 		s32 valOPL;
+
+		//u32 fadeVolume = 0;
 
 		unsigned long long cycleCount = cycleCountC64;
 		while ( cycleCount > nCyclesEmulated )
 		{
-		#ifndef USE_PWM_DIRECT
-			static int start = 0;
-			if ( nSamplesInThisRun > 2205 / 8 )
+			CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 6*1024 );
+
+		#ifdef USE_VCHIQ_SOUND
+			if ( outputHDMI )
 			{
-				if ( !start )
+				//extern u32 CVCHIQ_CB_Last,  CVCHIQ_CB_Cur;
+				extern CVCHIQSoundBaseDevice *CVCHIQ_CB_Device;
+				extern VCHI_CALLBACK_REASON_T CVCHIQ_CB_Reason;
+				extern void *CVCHIQ_CB_hMessage;
+				if ( CVCHIQ_CB_Device )
+				{
+					CVCHIQ_CB_Device->Callback (CVCHIQ_CB_Reason, CVCHIQ_CB_hMessage);
+					CVCHIQ_CB_Device = NULL;
+				}
+
+				if ( samplesElapsed > (8) * nSamplesPrecompute / 2 && !startVCHIQ )
 				{
 					m_pSound->Start();
-					start = 1;
-				} else
-				{
-					//pScheduler->MsSleep( 1 );
-					pScheduler->Yield();
+					fillSoundBuffer = 1;
+					startVCHIQ = 1;
 				}
-				nSamplesInThisRun = 0;
+				//s32 nFramesMax = m_pSound->GetQueueSizeFrames() - m_pSound->GetQueueFramesAvail();
+				//if ( startVCHIQ && nFramesMax > m_pSound->GetQueueSizeFrames() / 2 )
+				if ( fillSoundBuffer )
+				{
+					fillSoundBuffer = 0;
+
+					extern u32 samplesInBuffer();
+					#define TYPE		s16
+					#define TYPE_SIZE	sizeof (s16)
+
+					s32 nFramesComputed = samplesInBuffer();
+					s32 nFramesMax = m_pSound->GetQueueSizeFrames() - m_pSound->GetQueueFramesAvail();
+					trackSampleProgress = 1024 * 1024 + ( nFramesComputed - nFramesMax );
+
+					s32 nWriteFrames = min( nFramesComputed, nFramesMax );
+
+				#if 1
+					if ( nWriteFrames * 2 + PCMCountLast > PCMBufferSize )
+					{
+						m_pSound->Write( &PCMBuffer[ PCMCountLast ], (PCMBufferSize - PCMCountLast) * TYPE_SIZE );
+						m_pSound->Write( &PCMBuffer[ 0 ], (2 * nWriteFrames - (PCMBufferSize - PCMCountLast)) * TYPE_SIZE );
+					} else
+					{
+						m_pSound->Write( &PCMBuffer[ PCMCountLast ], 2 * nWriteFrames * TYPE_SIZE );
+					}
+					PCMCountLast += nWriteFrames * 2;
+					PCMCountLast %= PCMBufferSize;
+				#else
+					short temp[ 16384 ];
+					short *p = (short*)temp;
+					for ( u32 j = 0; j < nWriteFrames; j++ )
+					{
+						*(p++) = PCMBuffer[ PCMCountLast++ ];
+						*(p++) = PCMBuffer[ PCMCountLast++ ];
+						PCMCountLast %= PCMBufferSize;
+					}
+
+					unsigned nWriteBytes = 2 * nWriteFrames * TYPE_SIZE;
+					m_pSound->Write( &temp[ 0 ], nWriteBytes );
+				#endif
+				}
+				if ( nSamplesInThisRun > 2205 / 8 )
+				{
+					if ( trackSampleProgress )
+					{
+						avgSamplesAvail += (s32)trackSampleProgress - 1024 * 1024;
+						avgCounter ++;
+
+						if ( avgCounter > 50 )
+						{
+							s32 avail = (s32)avgSamplesAvail / avgCounter;
+							if ( targetSamplesAvail == 0 && ++ targetCount > 2 )
+								CVCHIQ_CB_Manual = true; 
+							if ( targetSamplesAvail == 0 && ++ targetCount > 10 )
+								targetSamplesAvail = max( avail, (s32)nSamplesPrecompute );
+
+							if ( targetSamplesAvail != 0 )
+							{
+								if ( avail < (s32)targetSamplesAvail )
+								{
+									if ( avail < 5 * (s32)targetSamplesAvail / 100 && SAMPLERATE_ADJUSTED < SAMPLERATE )
+										SAMPLERATE_ADJUSTED = SAMPLERATE; else
+										SAMPLERATE_ADJUSTED ++; 
+								} else
+								if ( avail > (s32)targetSamplesAvail )
+								{
+									if ( avail > 105 * (s32)targetSamplesAvail / 100 && SAMPLERATE_ADJUSTED > SAMPLERATE )
+										SAMPLERATE_ADJUSTED = SAMPLERATE; else
+										SAMPLERATE_ADJUSTED --; 
+								}
+								adjustRateAllowed = 0;
+							}
+							//logger->Write( "", LogNotice, "samples ahead: %d (target: %d), rate: %u Hz", avail, targetSamplesAvail, SAMPLERATE_ADJUSTED );
+							avgSamplesAvail = avgCounter = 0;
+						}
+						trackSampleProgress = 0;
+					}
+
+					{
+						if ( nCyclesEmulated < (4*256000) )
+						{
+							CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
+							if ( sd->IsActive() )
+								sd->SetControl( VCHIQ_SOUND_VOLUME_MIN + (VCHIQ_SOUND_VOLUME_DEFAULT - VCHIQ_SOUND_VOLUME_MIN) * nCyclesEmulated / (4*256000), VCHIQSoundDestinationAuto );
+							hdmiVol = 1;
+						}
+						//pScheduler->MsSleep( 1 );
+						pScheduler->Yield();
+					}
+					nSamplesInThisRun = 0;
+				}
+				nSamplesInThisRun++;
 			}
-			nSamplesInThisRun++;
 		#endif
 
 			CACHE_PRELOADL2STRMW( &smpCur );
@@ -731,24 +897,15 @@ startHereAfterReset:
 		#else
 			unsigned long long samplesElapsedBefore = samplesElapsed;
 
-			//long long cycleNextSampleReady = ( ( unsigned long long )(samplesElapsedBefore+1) * ( unsigned long long )CLOCKFREQ ) / ( unsigned long long )SAMPLERATE;
-			//int cyclesToNextSample = cycleNextSampleReady - nCyclesEmulated;
+			long long cycleNextSampleReady = ( ( unsigned long long )(samplesElapsedBefore+1) * ( unsigned long long )CLOCKFREQ ) / ( unsigned long long )SAMPLERATE_ADJUSTED;
+			u32 cyclesToNextSample = cycleNextSampleReady - nCyclesEmulated;
 
 			do { // do SID emulation until time passed to create an additional sample (i.e. there may be several cycles until a sample value is created)
-				#ifdef USE_PWM_DIRECT
-				u32 cyclesToEmulate = min( 8, cycleCount - nCyclesEmulated );
-				#else			
-				u32 cyclesToEmulate = 2;
-				#endif
+				u32 cyclesToEmulate = min( 256, cycleCount - nCyclesEmulated );
 		#endif
 
-				//problem: wegen dem innern do-while kann nCyclesEmulated tatsächlich größer als cycleCount werden -> dann ist cyclesToEmulate 0 oder negativ.
-				//frage: warum laufen wir zu lange innen und was macht das mit der emulation?
-
-/*				if ( cyclesToEmulate > cyclesToNextSample )
+				if ( cyclesToEmulate > cyclesToNextSample )
 					cyclesToEmulate = cyclesToNextSample;
-				if ( cyclesToEmulate == 0 )
-					cyclesToEmulate = 1;*/
 
 				if ( ringRead != ringWrite )
 				{
@@ -757,6 +914,8 @@ startHereAfterReset:
 					if ( (int)cyclesToEmulate > cyclesToNextWrite && cyclesToNextWrite > 0 )
 						cyclesToEmulate = cyclesToNextWrite;
 				}
+				if ( cyclesToEmulate == 0 )
+					cyclesToEmulate = 1;
 				
 				if ( cyclesToEmulate > 0 )
 				{
@@ -775,7 +934,7 @@ startHereAfterReset:
 					}
 
 					nCyclesEmulated += cyclesToEmulate;
-					//  cyclesToNextSample -= cyclesToEmulate;
+					cyclesToNextSample -= cyclesToEmulate;
 				}
 
 
@@ -819,7 +978,8 @@ startHereAfterReset:
 		#ifdef SMPCARRY
 			}
 		#else
-				samplesElapsed = ( ( unsigned long long )nCyclesEmulated * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
+//				samplesElapsed = ( ( unsigned long long )nCyclesEmulated * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
+				samplesElapsed = ( ( unsigned long long )nCyclesEmulated * ( unsigned long long )SAMPLERATE_ADJUSTED ) / ( unsigned long long )CLOCKFREQ;
 
 				if ( nCyclesEmulated >= cycleCount && samplesElapsed == samplesElapsedBefore )
 					goto NoSampleGeneratedYet;
@@ -854,14 +1014,19 @@ startHereAfterReset:
 			right = ( val1 * cfgVolSID1_Left  + val2 * cfgVolSID2_Left  + valOPL * cfgVolOPL_Left ) >> 8;
 			left  = ( val1 * cfgVolSID1_Right + val2 * cfgVolSID2_Right + valOPL * cfgVolOPL_Right ) >> 8;
 
-			right = max( -31767, min( 31767, right ) );
-			left  = max( -31767, min( 31767, left ) );
+			right = max( -31768, min( 31767, right ) );
+			left  = max( -31768, min( 31767, left ) );
 
 			#ifdef USE_PWM_DIRECT
-			putSample( left, right );
-			#else
-			putSample( left );
-			putSample( right );
+			if ( outputPWM )
+				putSample( left, right );
+			#endif
+			#ifdef USE_VCHIQ_SOUND
+			if ( outputHDMI )
+			{
+				putSample( left );
+				putSample( right );
+			}
 			#endif
 
 		#if 1
@@ -951,7 +1116,7 @@ void KernelSIDFIQHandler( void *pParam )
 void CKernel::FIQHandler (void *pParam)
 #endif
 {
-	register u32 D;
+	register u32 D = 0;
 
 	#ifdef COMPILE_MENU
 	if ( launchPrg && !disableCart )
@@ -1044,6 +1209,9 @@ void CKernel::FIQHandler (void *pParam)
 	} else
 		busValueTTL --;
 
+	if ( CPU_WRITES_TO_BUS )
+		READ_D0to7_FROM_BUS( D )
+
 	//  __   ___       __      __     __  
 	// |__) |__   /\  |  \    /__` | |  \ 
 	// |  \ |___ /~~\ |__/    .__/ | |__/ 
@@ -1115,7 +1283,7 @@ void CKernel::FIQHandler (void *pParam)
 			}
 			if ( resetFromCodeState == 0 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x11 )
 			{
-				READ_D0to7_FROM_BUS( D )
+				//READ_D0to7_FROM_BUS( D )
 				if ( D == 0x22 )
 					resetFromCodeState = 1;
 				OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
@@ -1123,7 +1291,7 @@ void CKernel::FIQHandler (void *pParam)
 			}
 			if ( resetFromCodeState == 1 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x33 )
 			{
-				READ_D0to7_FROM_BUS( D )
+				//READ_D0to7_FROM_BUS( D )
 				if ( D == 0x44 )
 				{
 					resetFromCodeState = 2;
@@ -1162,7 +1330,7 @@ void CKernel::FIQHandler (void *pParam)
 		//                                    
 		if ( CPU_WRITES_TO_BUS && IO2_ACCESS ) 
 		{
-			READ_D0to7_FROM_BUS( D )
+			//READ_D0to7_FROM_BUS( D )
 
 			// this is mimicing some behaviour of the YM let it be detected
 			u32 A = ( ( g2 & A_FLAG ) >> A0 ) & ( 1 << 4 ); // A == 0 -> address register, otherwise data register
@@ -1195,7 +1363,7 @@ void CKernel::FIQHandler (void *pParam)
 	//                                   
 	if ( CPU_WRITES_TO_BUS && SID_ACCESS ) 
 	{
-		READ_D0to7_FROM_BUS( D )
+		//READ_D0to7_FROM_BUS( D )
 
 		register u32 A = GET_ADDRESS0to7;
 		register u32 remapAddr = (A&31) << A0;
@@ -1244,7 +1412,7 @@ void CKernel::FIQHandler (void *pParam)
 	}
 	if ( CPU_WRITES_TO_BUS && IO1_ACCESS && cfgSID2_Addr == 2 ) 
 	{
-		READ_D0to7_FROM_BUS( D )
+		//READ_D0to7_FROM_BUS( D )
 
 		register u32 A = GET_ADDRESS0to7;
 		register u32 remapAddr = ( (A&31) << A0 ) | SID2_MASK;
@@ -1274,30 +1442,32 @@ void CKernel::FIQHandler (void *pParam)
 	// OPTIONAL
 	//											
 	#ifdef USE_PWM_DIRECT
-	static unsigned long long samplesElapsedBeforeFIQ = 0;
-
-	unsigned long long samplesElapsedFIQ = ( ( unsigned long long )cycleCountC64 * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
-
-	if ( samplesElapsedFIQ != samplesElapsedBeforeFIQ && !CPU_RESET )
+	if ( outputPWM )
 	{
-		write32( ARM_GPIO_GPCLR0, bCTRL257 ); 
-		samplesElapsedBeforeFIQ = samplesElapsedFIQ;
+		static unsigned long long samplesElapsedBeforeFIQ = 0;
 
-		u32 s = getSample();
-		u16 s1 = s & 65535;
-		u16 s2 = s >> 16;
+		unsigned long long samplesElapsedFIQ = ( ( unsigned long long )cycleCountC64 * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
+		if ( samplesElapsedFIQ != samplesElapsedBeforeFIQ && !CPU_RESET )
+		{
+			write32( ARM_GPIO_GPCLR0, bCTRL257 ); 
+			samplesElapsedBeforeFIQ = samplesElapsedFIQ;
 
-		s32 d1 = (s32)( ( *(s16*)&s1 + 32768 ) * PWMRange ) >> 17;
-		s32 d2 = (s32)( ( *(s16*)&s2 + 32768 ) * PWMRange ) >> 17;
-		/*if ( d1 < 0 ) d1 = 0;
-		if ( d1 >= (s32)PWMRange ) d1 = (s32)PWMRange - 1;
-		if ( d2 < 0 ) d2 = 0;
-		if ( d2 >= (s32)PWMRange ) d2 = (s32)PWMRange - 1;*/
-		write32( ARM_PWM_DAT1, d1 );
-		write32( ARM_PWM_DAT2, d2 );
-		RESET_CPU_CYCLE_COUNTER
-		return;
-	} 
+			u32 s = getSample();
+			u16 s1 = s & 65535;
+			u16 s2 = s >> 16;
+
+			s32 d1 = (s32)( ( *(s16*)&s1 + 32768 ) * PWMRange ) >> 17;
+			s32 d2 = (s32)( ( *(s16*)&s2 + 32768 ) * PWMRange ) >> 17;
+			/*if ( d1 < 0 ) d1 = 0;
+			if ( d1 >= (s32)PWMRange ) d1 = (s32)PWMRange - 1;
+			if ( d2 < 0 ) d2 = 0;
+			if ( d2 >= (s32)PWMRange ) d2 = (s32)PWMRange - 1;*/
+			write32( ARM_PWM_DAT1, d1 );
+			write32( ARM_PWM_DAT2, d2 );
+			RESET_CPU_CYCLE_COUNTER
+			return;
+		} 
+	}
 	#endif
 
 	//           ___  __       
@@ -1387,6 +1557,11 @@ void CKernel::FIQHandler (void *pParam)
 		outputLatch();
 	}
 	#endif
+
+	static u32 cycleCount = 0;
+	if ( !((++cycleCount)&8191) )
+		clrLatchFIQ( LATCH_LED0|LATCH_LED1 );
+
 	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 }
 

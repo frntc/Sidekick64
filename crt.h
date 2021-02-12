@@ -55,6 +55,8 @@
 #define BS_GMOD2        0x0D
 #define BS_FUNPLAY      0x0E
 #define BS_PROPHET      0x0F
+#define BS_RGCD	        0x10
+#define BS_HUCKY        0x11
 
 static const char CRT_HEADER_SIG[] = "C64 CARTRIDGE   ";
 static const char CHIP_HEADER_SIG[] = "CHIP";

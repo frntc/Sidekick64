@@ -39,7 +39,10 @@ static const char DRIVE[] = "SD:";
 static const char FILENAME_PRG[] = "SD:C64/rpimenu.prg";		// .PRG to start
 static const char FILENAME_CBM80[] = "SD:C64/launch.cbm80";		// launch code (CBM80 8k cart)
 static const char FILENAME_CONFIG[] = "SD:C64/sidekick64.cfg";		
+static const char FILENAME_SIDKICK_CONFIG[] = "SD:C64/SIDKick_CFG.prg";		
 
+
+static const char FILENAME_SPLASH_HDMI[] = "SD:SPLASH/Sidekick-Logo.raw";		
 static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_main.tga";		
 static const char FILENAME_SPLASH_RGB128[] = "SD:SPLASH/sk128_main.tga";		
 static const char FILENAME_TFT_FONT[] = "SD:SPLASH/PXLfont88665b-RF2.3-C64sys.bin";		
@@ -305,8 +308,8 @@ boolean CKernelMenu::Initialize( void )
 
 		screen = &m_Screen;
 
-		bOK = m_Logger.Initialize( pTarget );
-		logger = &m_Logger;
+		bOK = m_Logger->Initialize( pTarget );
+		logger = m_Logger;
 	}
 #endif
 
@@ -335,9 +338,24 @@ boolean CKernelMenu::Initialize( void )
 	initScreenAndLEDCodes();
 	latchSetClearImm( LED_INIT1_HIGH, LED_INIT1_LOW );
 
-	// read launch code
 	u32 size = 0;
 
+	u8 tempHDMI[ 640 * 480 * 3 ];
+	readFile( logger, (char*)DRIVE, (char*)FILENAME_SPLASH_HDMI, tempHDMI, &size );
+	u32 xOfs = ( screen->GetWidth() - 640 ) / 2;
+	u32 yOfs = ( screen->GetHeight() - 480 ) / 2;
+	u8 *p = tempHDMI;
+	for ( u32 j = 0; j < 480; j++ )
+		for ( u32 i = 0; i < 640; i++ )
+		{
+			#define _CONV_RGB(red, green, blue)	  (((red>>3) & 0x1F) << 11 \
+								| ((green>>3) & 0x1F) << 6 \
+								| ((blue>>3) & 0x1F))
+			
+			screen->SetPixel( i+xOfs, j+yOfs,  _CONV_RGB( p[ 0 ], p[ 1 ], p[ 2 ] )  ); 
+			p += 3;
+		}
+	// read launch code
 	cartCBM80 = (unsigned char *)( ((u64)&cart_pool+64) & ~63 );
 	readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, cartCBM80, &size );
 
@@ -677,6 +695,11 @@ void CKernelMenu::FIQHandler (void *pParam)
 			modeVIC = D;
 			updateMenu = 1;
 		} else
+		if ( A == 5 ) // SIDKick detection
+		{
+			hasSIDKick = D;
+			updateMenu = 1;
+		} else
 		if ( A == 4 )
 		{
 			charsetTransfer = &charset[ 0 ];
@@ -812,10 +835,10 @@ int main( void )
 		u32 playingPSID = 0;
 
 		/* for debugging purposes only*/
-		/*if ( launchKernel == 60 ) //fc3
+		if ( launchKernel == 60 ) //fc3
 		{
 			reboot (); 	
-		} else*/
+		} else
 
 		switch ( launchKernel )
 		{
@@ -855,7 +878,7 @@ int main( void )
 		case 41:
 			playingPSID = 1; // intentionally no break
 		case 40: // launch something from a disk image or PRG in memory (e.g. a converted .SID-file)
-			logger->Write( "RaspiMenu", LogNotice, "filename from d64: %s", FILENAME );
+			//logger->Write( "RaspiMenu", LogNotice, "filename from d64: %s", FILENAME );
 			if ( subSID ) {
 				applySIDSettings();
 				if ( octaSIDMode )
@@ -913,6 +936,10 @@ int main( void )
 			logger->Write( "RaspiMenu", LogNotice, "filename georam: %s", FILENAME );
 
 			KernelRKLRun( kernel.m_InputPin, &kernel, NULL, "SD:C64/georam_launch.prg", FILENAME, 4096, false, NULL, 0, 0 ); 
+			break;
+		case 11: // launch SIDKick Config
+			playingPSID = 1;
+			KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME_SIDKICK_CONFIG, false, NULL, 0, 0, playingPSID );
 			break;
 		default:
 			break;

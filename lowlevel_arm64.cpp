@@ -43,6 +43,7 @@ u32 WAIT_RELEASE_DMA = 600;
 
 u32 modeC128 = 0;
 u32 modeVIC = 0;		// 0 = old (6596), 1 = new (6572R0,8565R2)
+u32 hasSIDKick = 0;
 
 // for C16/+4
 u32 machine264 = 0;

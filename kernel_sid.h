@@ -38,6 +38,8 @@
 // choose whether to output sound via the headphone jack (PWM), otherwise HDMI audio will be used (higher delay)
 //
 #define USE_PWM_DIRECT
+#define USE_VCHIQ_SOUND
+
 
 //
 // sample rate

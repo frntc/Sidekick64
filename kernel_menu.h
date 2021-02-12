@@ -30,6 +30,10 @@
 #ifndef _kernel_h
 #define _kernel_h
 
+#ifndef COMPILE_MENU_WITH_SOUND
+#define COMPILE_MENU_WITH_SOUND
+#endif
+
 // use the OLED connected to the latch
 #define USE_OLED
 //#define USE_RGB_TFT
@@ -67,6 +71,10 @@ extern int screenType;
 
 #include <stdio.h>
 
+#ifdef COMPILE_MENU_WITH_SOUND
+#define USE_VCHIQ_SOUND
+#endif
+
 #ifdef USE_VCHIQ_SOUND
 #include <vc4/vchiq/vchiqdevice.h>
 #include <vc4/sound/vchiqsoundbasedevice.h>
@@ -101,7 +109,8 @@ public:
 		m_Screen( m_Options.GetWidth(), m_Options.GetHeight() ),
 	#endif
 		m_Timer( &m_Interrupt ),
-		m_Logger( m_Options.GetLogLevel(), &m_Timer ),
+		//m_Logger( m_Options.GetLogLevel(), &m_Timer ),
+		//m_Logger( 0, &m_Timer ),
 #ifdef COMPILE_MENU_WITH_SOUND
 	#ifdef USE_VCHIQ_SOUND
 		m_VCHIQ( &m_Memory, &m_Interrupt ),
@@ -110,6 +119,7 @@ public:
 		m_InputPin( PHI2, GPIOModeInput, &m_Interrupt ),
 		m_EMMC( &m_Interrupt, &m_Timer, 0 )
 	{
+		m_Logger = new CLogger( 0, &m_Timer );
 	}
 
 	~CKernelMenu( void )
@@ -134,7 +144,7 @@ public:
 #endif
 	CInterruptSystem	m_Interrupt;
 	CTimer				m_Timer;
-	CLogger				m_Logger;
+	CLogger				*m_Logger;
 	CScheduler			m_Scheduler;
 #ifdef COMPILE_MENU_WITH_SOUND
 	#ifdef USE_VCHIQ_SOUND

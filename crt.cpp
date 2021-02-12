@@ -212,6 +212,12 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 		*bankswitchType = BS_PROPHET;
 		*ROM_LH = bROML;
 		break;
+	case 57:
+		if ( header.reserved[ 0 ] == 0 )
+			*bankswitchType = BS_RGCD; else
+			*bankswitchType = BS_HUCKY; 
+		*ROM_LH = bROML;
+		break;
 	case 3:
 		//logger->Write( "RaspiFlash", LogNotice, "Final Cartridge 3 CRT" );
 		*bankswitchType = BS_FC3;
@@ -316,6 +322,8 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 			 (*bankswitchType) == BS_PROPHET || 
 			 (*bankswitchType) == BS_OCEAN || 
 			 (*bankswitchType) == BS_GMOD2 || 
+			 (*bankswitchType) == BS_HUCKY || 
+			 (*bankswitchType) == BS_RGCD || 
 			 header.type == 36 /* Retro Replay */ )
 		{
 			*ROM_LH = bROML;
@@ -621,6 +629,7 @@ int checkCRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 
 		case 10: // Epyx Fastload
 		case 4: // Simon's Basic
 		case 17: // Dinamic
+		case 57: // RGCD / Hucky
 		case 7: // Funplay
 			return 5;	
 		case 3:	 // Final Cartridge 3 CRT
