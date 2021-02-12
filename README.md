@@ -23,6 +23,7 @@ The connecting circuitry is quite simple and does not include any programmable I
   * Comal80
   * Epyx Fastload
   * Simons Basic
+  * RGCD and Hucky's cartridge
 - C64 kernal replacement,
 - Function ROMs on a C128, or 
 - multiple SIDs and Sound Expander/FM emulation (up to 8 SIDs, e.g. to play [The Tuneful 8](https://csdb.dk/release/?id=182735))
@@ -42,6 +43,8 @@ The C16/+4 version comes with two fabolous games ported to run directly off the 
 ## Changelog
 
 recent changes (higher = newer):
+- enabled HDMI-output for SID/FM-emulation on C64/C128 (v0.46)
+- added support for RGCD and Hucky's cartridge (v0.46)
 - a model (2 variants, label) for 3D printing a case for the Sidekick and a Raspberry Pi 3B+ has been added
 - more cartridge formats and freezers are now supported
 - refinement in SID emulation (e.g. SID-autodetection now works)
