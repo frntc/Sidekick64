@@ -835,10 +835,10 @@ int main( void )
 		u32 playingPSID = 0;
 
 		/* for debugging purposes only*/
-		if ( launchKernel == 60 ) //fc3
+		/*if ( launchKernel == 60 ) //fc3
 		{
 			reboot (); 	
-		} else
+		} else*/
 
 		switch ( launchKernel )
 		{
