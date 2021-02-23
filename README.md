@@ -35,7 +35,7 @@ Sidekick64 is a result, or cumulation, of the RasPIC64 project, which is the fra
 Currently, Sidekick64 is set up to work with a Raspberry Pi 3A+ or 3B+ and has only be tested with various PAL-machines (C64 revisions, C128, C128D), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC).
 To the C16/+4 Sidekick64 is connected using a simple adapter.
 
-<img src="Interface/sidekick64_rpi3a.jpg" height="150">  <img src="Interface/sidekick64_mainmenu.jpg" height="150">  <img src="Interface/sidekick64_config.jpg" height="150">  <img src="Interface/sidekick64_browser.jpg" height="150"> 
+<img src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Interface/sidekick64_rpi3a.jpg" height="150">  <img src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Interface/sidekick64_mainmenu.jpg" height="150">  <img src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Interface/sidekick64_config.jpg" height="150">  <img src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Interface/sidekick64_browser.jpg" height="150"> 
 
 Sidekick64 comes with a menu with a configurable main screen (for frequently used features, programs, cartridges), a configuration screen, and a file browser.
 The C16/+4 version comes with two fabolous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue! Here's a [video](Video/Sidekick64_ElectricCity_by_Flex.mp4) of Sidekick64 emulation SIDs and playing [Electric City](https://csdb.dk/release/?id=189742) by Flex.
