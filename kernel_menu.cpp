@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick Menu: ugly glue code to expose some functionality in one menu with browser
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -559,6 +559,7 @@ void CKernelMenu::Run( void )
 			refresh++;
 			//temperature = m_CPUThrottle.GetTemperature();
 			renderC64();
+			warmCache( pFIQ );
 //		DELAY(1<<28);
 			doneWithHandling = 1;
 			updateMenu = 0;
@@ -792,11 +793,11 @@ int main( void )
 	extern void KernelKernalRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME );
 	extern void KernelGeoRAMRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu );
 	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 );
-	extern void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr );
-	extern void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
-	extern void KernelKCSRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
-	extern void KernelSS5Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
-	extern void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
+	extern void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr, const char *FILENAME_KERNAL = NULL );
+	extern void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL, const char *FILENAME_KERNAL = NULL );
+	extern void KernelKCSRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL, const char *FILENAME_KERNAL = NULL );
+	extern void KernelSS5Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL, const char *FILENAME_KERNAL = NULL );
+	extern void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL, const char *FILENAME_KERNAL = NULL );
 	//extern void KernelRRRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL );
 	extern void KernelSIDRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 );
 	extern void KernelSIDRun8( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
@@ -825,7 +826,7 @@ int main( void )
 
 		char geoRAMFile[ 2048 ];
 		u32 geoRAMSize;
-
+		
 		if ( modeC128 )
 		{
 			strcpy( FILENAME_LOGO_RGBA, FILENAME_LOGO_RGBA128 );			
@@ -835,10 +836,10 @@ int main( void )
 		u32 playingPSID = 0;
 
 		/* for debugging purposes only*/
-		/*if ( launchKernel == 60 ) //fc3
+		if ( launchKernel == 255 ) 
 		{
 			reboot (); 	
-		} else*/
+		} else
 
 		switch ( launchKernel )
 		{
@@ -872,7 +873,12 @@ int main( void )
 					break;
 				}
 			} else {
-				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG );
+				if ( subHasKernal == -1 ) {
+					KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG );
+				} else {
+					KernelRKLRun( kernel.m_InputPin, &kernel, filenameKernal, FILENAME, NULL, 0, false, NULL, 0, loadC128PRG ); 
+				}
+				break;
 			}
 			break;
 		case 41:
@@ -900,25 +906,39 @@ int main( void )
 			}
 			break;
 		case 5:
-			KernelEFRun( kernel.m_InputPin, &kernel, FILENAME, menuItemStr );
+			if ( subHasKernal == -1 )
+				KernelEFRun( kernel.m_InputPin, &kernel, FILENAME, menuItemStr ); else
+				KernelEFRun( kernel.m_InputPin, &kernel, FILENAME, menuItemStr, filenameKernal ); 
 			break;
 		case 6:
-			KernelFC3Run( kernel.m_InputPin, &kernel );
+			if ( subHasKernal == -1 )
+				KernelFC3Run( kernel.m_InputPin, &kernel ); else
+				KernelFC3Run( kernel.m_InputPin, &kernel, filenameKernal );
 			break;
 		case 60:
-			KernelFC3Run( kernel.m_InputPin, &kernel, FILENAME );
+			if ( subHasKernal == -1 )
+				KernelFC3Run( kernel.m_InputPin, &kernel, FILENAME ); else
+				KernelFC3Run( kernel.m_InputPin, &kernel, FILENAME, filenameKernal );
 			break;
 		case 61:
-			KernelKCSRun( kernel.m_InputPin, &kernel, FILENAME );
+			if ( subHasKernal == -1 )
+				KernelKCSRun( kernel.m_InputPin, &kernel, FILENAME ); else
+				KernelKCSRun( kernel.m_InputPin, &kernel, FILENAME, filenameKernal );
 			break;
 		case 62:
-			KernelSS5Run( kernel.m_InputPin, &kernel, FILENAME );
+			if ( subHasKernal == -1 )
+				KernelSS5Run( kernel.m_InputPin, &kernel, FILENAME ); else
+				KernelSS5Run( kernel.m_InputPin, &kernel, FILENAME, filenameKernal );
 			break;
 		case 7:
-			KernelAR6Run( kernel.m_InputPin, &kernel );
+			if ( subHasKernal == -1 )
+				KernelAR6Run( kernel.m_InputPin, &kernel ); else
+				KernelAR6Run( kernel.m_InputPin, &kernel, filenameKernal );
 			break;
 		case 70:
-			KernelAR6Run( kernel.m_InputPin, &kernel, FILENAME );
+			if ( subHasKernal == -1 )
+				KernelAR6Run( kernel.m_InputPin, &kernel, FILENAME ); else
+				KernelAR6Run( kernel.m_InputPin, &kernel, FILENAME, filenameKernal );
 			break;
 		/*case 71:
 			KernelRRRun( kernel.m_InputPin, &kernel, FILENAME );
@@ -933,8 +953,7 @@ int main( void )
 			KernelCartRun128( kernel.m_InputPin, &kernel, FILENAME, menuItemStr );
 			break;
 		case 10:
-			logger->Write( "RaspiMenu", LogNotice, "filename georam: %s", FILENAME );
-
+			//logger->Write( "RaspiMenu", LogNotice, "filename georam: %s", FILENAME );
 			KernelRKLRun( kernel.m_InputPin, &kernel, NULL, "SD:C64/georam_launch.prg", FILENAME, 4096, false, NULL, 0, 0 ); 
 			break;
 		case 11: // launch SIDKick Config

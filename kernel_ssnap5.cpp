@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick Freeze: example how to implement a Super Snapshot V5 Cartridge compatible 
- Copyright (c) 2019 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -40,12 +40,11 @@ static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_ss5.tga";
 #pragma pack(1)
 typedef struct
 {
-	// FC3 active or disables, #banks (4 for FC3, 16 for FC3+), and currently selected bank
 	u8	reg;
 	// extra RAM
 	u8  ram[ 32768 ];
 
-	u32 exportRAM, active, nROMBanks, curBank, curRAMBank;
+	u32 exportRAM, active, nROMBanks, curBank, curRAMBank, ultimax;
 
 	// counts the #cycles when the C64-reset line is pulled down (to detect a reset), cycles since release and status
 	u32 resetCounter, cyclesSinceReset,  
@@ -64,10 +63,14 @@ typedef struct
 	u32 releaseDMA;
 
 	u32 LONGBOARD;
+
+	u32 hasKernal;
 } __attribute__((packed)) SS5STATE;
 #pragma pack(pop)
 
 static volatile SS5STATE ss5 AAA;
+
+static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash/ROM
 //static u8 flash_cacheoptimized_pool[ 16 * 8192 * 2 + 128 ] AAA;
@@ -81,8 +84,8 @@ static __attribute__( ( always_inline ) ) inline void ss5Config( u8 c )
 
 	switch ( c & 3 )
 	{
-		default:
 		case 0:	SETCLR_GPIO( bDMA | bNMI | bEXROM, bGAME );	break;
+		default:
 		case 1:	SET_GPIO( bGAME | bEXROM | bDMA | bNMI );	break;
 		case 2:	SETCLR_GPIO( bDMA | bNMI, bGAME | bEXROM );	break;
 		case 3:	SETCLR_GPIO( bGAME | bDMA | bNMI, bEXROM );	break;
@@ -96,6 +99,7 @@ static void initSS5()
 	ss5.exportRAM = 1;
 	ss5.curRAMBank = 0;
     ss5.active = 1;
+	ss5.ultimax = 1;
 
 	ss5.resetCounter = ss5.resetPressed = 
 	ss5.resetReleased = ss5.cyclesSinceReset = 
@@ -134,7 +138,7 @@ static void initScreenAndLEDCodes()
 }
 
 #ifdef COMPILE_MENU
-void KernelSS5Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME )
+void KernelSS5Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME, const char *FILENAME_KERNAL = NULL )
 #else
 void CKernelSS5::Run( void )
 #endif
@@ -154,6 +158,16 @@ void CKernelSS5::Run( void )
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
+
+	// load kernal is any
+	u32 kernalSize = 0; // should always be 8192
+	if ( FILENAME_KERNAL != NULL )
+	{
+		ss5.hasKernal = 1;
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_KERNAL, flash_cacheoptimized_pool, &kernalSize );
+		memcpy( kernalROM, flash_cacheoptimized_pool, 8192 );
+	} else
+		ss5.hasKernal = 0;
 
 	ss5.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[0] + 128 ) & ~127 );
 
@@ -209,22 +223,31 @@ void CKernelSS5::Run( void )
 
 	FORCE_READ_LINEARa( ss5.flash_cacheoptimized, 8192 * 2 * 4, 8192 * 2 * 4 * 32 )
 
+	if ( ss5.hasKernal )
+	{
+		CACHE_PRELOAD_DATA_CACHE( kernalROM, 8192, CACHE_PRELOADL2KEEP );
+		FORCE_READ_LINEAR32a( kernalROM, 8192, 65536 );
+	}
+
 	// different timing C64-longboards and C128 compared to 469-boards
 	ss5.LONGBOARD = 0;
 	if ( modeC128 || modeVIC == 0 )
 		ss5.LONGBOARD = 1; 
 
 	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
-	m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
+	//m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
 
 	// ready to go
 	DELAY(10);
-	latchSetClearImm( LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
+	
+	if ( ss5.hasKernal )
+		latchSetClearImm( LATCH_RESET | LATCH_ENABLE_KERNAL, LED_ALL_BUT_0 ); else
+		latchSetClearImm( LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
 
 	// main loop
 	while ( true ) {
 		#ifdef COMPILE_MENU
-		TEST_FOR_JUMP_TO_MAINMENU2FIQs( (ss5.c64CycleCount*2), (ss5.resetCounter*2) )
+		TEST_FOR_JUMP_TO_MAINMENU( ss5.c64CycleCount, ss5.resetCounter )
 		#endif
 
 		if ( ss5.resetCounter > 30 && ss5.resetReleased )
@@ -248,49 +271,19 @@ void CKernelSS5::FIQHandler (void *pParam)
 	register u8 *flashBank = &ss5.flash_cacheoptimized[ ss5.curBank * 8192 * 2 ];
 	register u32 D;
 
-	START_AND_READ_ADDR0to7_RW_RESET_CS_NO_MULTIPLEX
+	START_AND_READ_ADDR0to7_RW_RESET_CS
 
-/*	if ( VIC_HALF_CYCLE )
-	{
-		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
-
-		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
-
-		D = *(u8*)&flashBank[ GET_ADDRESS * 2 + 1 ];
-
-		if ( ROMH_ACCESS )
-			WRITE_D0to7_TO_BUS_VIC( D )
-
-		FINISH_BUS_HANDLING
-		return;
-	}  */
-
-	SET_GPIO( bCTRL257 );	
+	UPDATE_COUNTERS( ss5.c64CycleCount, ss5.resetCounter, ss5.resetPressed, ss5.resetReleased, ss5.cyclesSinceReset )
 
 	// starting from here we are in the CPU-half cycle
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
 
-	// VIC2 read during badline?
-/*	if ( VIC_BADLINE )
+	if ( ss5.hasKernal && ROMH_ACCESS && KERNAL_ACCESS && ( !ss5.ultimax || !ss5.active ) )
 	{
-		// get ROMH data (not reading anything else here)
-		D = *(u8*)&flashBank[ GET_ADDRESS * 2 + 1 ];
-
-		// read again (some time passed, had to wait to signals)
-		if ( !ss5.LONGBOARD )
-		{
-			// do not do this: WAIT_UP_TO_CYCLE( WAIT_CYCLE_MULTIPLEXER_VIC2 ); 
-			READ_ADDR8to12_ROMLH_IO12_BA 
-		}
-
-		if ( ROMH_ACCESS ) 
-			WRITE_D0to7_TO_BUS_BADLINE( D )
-
+		WRITE_D0to7_TO_BUS( kernalROM[ GET_ADDRESS ] );
 		FINISH_BUS_HANDLING
 		return;
-	}*/
-
-	UPDATE_COUNTERS( ss5.c64CycleCount, ss5.resetCounter, ss5.resetPressed, ss5.resetReleased, ss5.cyclesSinceReset )
+	}
 
 	if ( CPU_READS_FROM_BUS && ROML_ACCESS )
 	{
@@ -333,15 +326,11 @@ void CKernelSS5::FIQHandler (void *pParam)
 	{
 		READ_D0to7_FROM_BUS( D );
 
+		ss5.reg = D;
 		ss5.curBank = ( ( D >> 3 ) & 2 ) | ( ( D >> 2 ) & 1 );
 
 		// or 0 is 8k RAM?
 		ss5.curRAMBank = ss5.curBank;
-
-		//case 0:	SETCLR_GPIO( bDMA | bNMI | bEXROM, bGAME );	break;
-		//case 1:	SET_GPIO( bGAME | bEXROM | bDMA | bNMI );	break;
-		//case 2:	SETCLR_GPIO( bDMA | bNMI, bGAME | bEXROM );	break;
-		//case 3:	SETCLR_GPIO( bGAME | bDMA | bNMI, bEXROM );	break;
 
 		// 0: GAME = 0, EXROM = 1
 		// 1: GAME = 1, EXROM = 1
@@ -351,6 +340,11 @@ void CKernelSS5::FIQHandler (void *pParam)
 		ss5Config( m );
 
 		ss5.active = 1 - ( ( D >> 3 ) & 1 );
+		if ( m == 0 ) // ultimax mode
+			ss5.ultimax = 1; else
+			ss5.ultimax = 0;
+		if (!ss5.active)
+			ss5.ultimax = 0;
 
 		if ( ( ( D >> 1 ) & 1 ) == 0 )
         {
@@ -380,6 +374,7 @@ void CKernelSS5::FIQHandler (void *pParam)
 		ss5.countWrites      = 0;
 
 		ss5.active = 1;
+		ss5.ultimax = 1;
 		ss5.exportRAM = 1;
 		ss5.curBank = 0;
 		ss5.curRAMBank = 0;
@@ -398,6 +393,7 @@ void CKernelSS5::FIQHandler (void *pParam)
 	if ( ss5.freezeNMICycles && ss5.countWrites == 3 )
 	{
 		SETCLR_GPIO( bEXROM, bGAME | bCTRL257 ); 
+		ss5.ultimax = 1;
 		ss5.freezeNMICycles = 0;
 		RESET_CPU_CYCLE_COUNTER
 		return;

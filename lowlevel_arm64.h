@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - low-level ARM code 
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -52,7 +52,7 @@ extern u32 hasSIDKick;
 extern u32 machine264;
 
 // #cycles the C64 is delayed for prefetching data (a little bit less should be OK)
-#define NUM_DMA_CYCLES (10)		
+#define NUM_DMA_CYCLES (2)		
 
 
 #define PMCCFILTR_NSH_EN_BIT    27
@@ -94,6 +94,7 @@ extern u32 machine264;
 #define CACHE_PRELOADL1STRMW( ptr ) { asm volatile ("prfm PSTL1STRM, [%0]" :: "r" (ptr)); }
 
 #define CACHE_PRELOADL2KEEP( ptr )	{ asm volatile ("prfm PLDL2KEEP, [%0]" :: "r" (ptr)); }
+#define CACHE_PRELOADL2KEEPW( ptr )	{ asm volatile ("prfm PSTL2KEEP, [%0]" :: "r" (ptr)); }
 #define CACHE_PRELOADL2STRM( ptr )	{ asm volatile ("prfm PLDL2STRM, [%0]" :: "r" (ptr)); }
 #define CACHE_PRELOADL2STRMW( ptr )	{ asm volatile ("prfm PSTL2STRM, [%0]" :: "r" (ptr)); }
 #define CACHE_PRELOADI( ptr )		{ asm volatile ("prfm PLIL1STRM, [%0]" :: "r" (ptr)); }

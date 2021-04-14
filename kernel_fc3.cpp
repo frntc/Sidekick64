@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick Freeze: example how to implement a Final Cartridge 3(+) compatible cartridge
- Copyright (c) 2019 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -60,10 +60,14 @@ typedef struct
 	u32 releaseDMA;
 
 	u32 LONGBOARD;
+
+	u32 hasKernal;
 } __attribute__((packed)) FC3STATE;
 #pragma pack(pop)
 
 static volatile FC3STATE fc3 AAA;
+
+static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash/ROM
 //static u8 flash_cacheoptimized_pool[ 16 * 8192 * 2 + 128 ] AAA;
@@ -111,7 +115,7 @@ static void initScreenAndLEDCodes()
 }
 
 #ifdef COMPILE_MENU
-void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME )
+void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME, const char *FILENAME_KERNAL = NULL )
 #else
 void CKernelFC3::Run( void )
 #endif
@@ -131,6 +135,16 @@ void CKernelFC3::Run( void )
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
+
+	// load kernal is any
+	u32 kernalSize = 0; // should always be 8192
+	if ( FILENAME_KERNAL != NULL )
+	{
+		fc3.hasKernal = 1;
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_KERNAL, flash_cacheoptimized_pool, &kernalSize );
+		memcpy( kernalROM, flash_cacheoptimized_pool, 8192 );
+	} else
+		fc3.hasKernal = 0;
 
 	fc3.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[0] + 128 ) & ~127 );
 
@@ -189,6 +203,9 @@ void CKernelFC3::Run( void )
 
 	FORCE_READ_LINEARa( fc3.flash_cacheoptimized, 8192 * 2 * 4, 8192 * 2 * 4 * 32 )
 
+	if ( fc3.hasKernal )
+		CACHE_PRELOAD_DATA_CACHE( kernalROM, 8192, CACHE_PRELOADL2KEEP );
+
 	// different timing C64-longboards and C128 compared to 469-boards
 	fc3.LONGBOARD = 0;
 	if ( modeC128 || modeVIC == 0 )
@@ -199,7 +216,10 @@ void CKernelFC3::Run( void )
 
 	// ready to go
 	DELAY(10);
-	latchSetClearImm( LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
+
+	if ( fc3.hasKernal )
+		latchSetClearImm( LATCH_RESET | LATCH_ENABLE_KERNAL, LED_ALL_BUT_0 ); else
+		latchSetClearImm( LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
 
 	// main loop
 	while ( true ) {
@@ -272,6 +292,13 @@ void CKernelFC3::FIQHandler (void *pParam)
 
 	UPDATE_COUNTERS( fc3.c64CycleCount, fc3.resetCounter, fc3.resetPressed, fc3.resetReleased, fc3.cyclesSinceReset )
 
+	if ( fc3.hasKernal && ROMH_ACCESS && KERNAL_ACCESS && !(fc3.active & 256) )
+	{
+		WRITE_D0to7_TO_BUS( kernalROM[ GET_ADDRESS ] );
+		FINISH_BUS_HANDLING
+		return;
+	}
+
 	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
 	{
 		// get both ROML and ROMH with one read
@@ -323,6 +350,11 @@ void CKernelFC3::FIQHandler (void *pParam)
 		if ( !fc3.active )
 			latchSetClearImm( 0, LATCH_LED0 );
 
+		// Ultimax mode (EXROM high and GAME low)
+		if ( (D&(1<<4)) && !(D&(1<<5)) )
+			fc3.active |= 256; else
+			fc3.active &= ~256;
+
 		RESET_CPU_CYCLE_COUNTER
 		return;
 	}
@@ -347,6 +379,7 @@ void CKernelFC3::FIQHandler (void *pParam)
 	if ( fc3.freezeNMICycles && fc3.countWrites == 3 )
 	{
 		SETCLR_GPIO( bEXROM, bGAME | bCTRL257 ); 
+		fc3.active |= 256;
 		fc3.freezeNMICycles = 0;
 		RESET_CPU_CYCLE_COUNTER
 		return;

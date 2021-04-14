@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick Freeze: example how to implement an Action Replay compatible cartridge
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -59,11 +59,15 @@ typedef struct
 	u32 freezeNMICycles;
 	u32 lastFreezeButton;
 
+	u32 hasKernal;
+
 	u8 *flash_cacheoptimized;
 	u8 *ramAR;
 } __attribute__((packed)) ARSTATE;
 
 volatile ARSTATE ar AAA;
+
+static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash/ROM (32k) and RAM (8k)
 //u8 flash_cacheoptimized_pool[ 5 * 8192 + 1024 ] AAA;
@@ -73,6 +77,14 @@ __attribute__( ( always_inline ) ) inline void setGAMEEXROM( u32 f )
 {
 	SET_GPIO( ((f&2)?bEXROM:0) | ((f&1)?0:bGAME) );
 	CLR_GPIO( ((f&2)?0:bEXROM) | ((f&1)?bGAME:0) );
+
+	// Ultimax mode (EXROM high and GAME low)
+	if ( (f&2) && (f&1) )
+	{
+		if ( ar.active ) ar.active |= 256; 
+	} else
+		ar.active &= ~256;
+
 }
 
 
@@ -149,7 +161,7 @@ static void initScreenAndLEDCodes()
 
 
 #ifdef COMPILE_MENU
-void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL )
+void KernelAR6Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL, const char *FILENAME_KERNAL = NULL )
 #else
 void CKernel::Run( void )
 #endif
@@ -165,6 +177,16 @@ void CKernel::Run( void )
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
+
+	// load kernal is any
+	u32 kernalSize = 0; // should always be 8192
+	if ( FILENAME_KERNAL != NULL )
+	{
+		ar.hasKernal = 1;
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_KERNAL, flash_cacheoptimized_pool, &kernalSize );
+		memcpy( kernalROM, flash_cacheoptimized_pool, 8192 );
+	} else
+		ar.hasKernal = 0;
 
 	//
 	// load ROM and convert to cache-friendly format
@@ -230,7 +252,13 @@ void CKernel::Run( void )
 	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 2560, 65536 );
 
 	// ready to go
-	latchSetClearImm( LATCH_LED0 | LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
+
+	if ( ar.hasKernal )
+	{
+		CACHE_PRELOAD_DATA_CACHE( kernalROM, 8192, CACHE_PRELOADL2KEEP );
+		latchSetClearImm( LATCH_LED0 | LATCH_RESET | LATCH_ENABLE_KERNAL, LED_ALL_BUT_0 ); 
+	} else
+		latchSetClearImm( LATCH_LED0 | LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
 
 	// wait forever
 	while ( true )
@@ -280,6 +308,13 @@ void CKernel::FIQHandler (void *pParam)
 		ar.countWrites = 0;
 
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	if ( ar.hasKernal && ROMH_ACCESS && KERNAL_ACCESS && !( ar.active & 256 ) )
+	{
+		WRITE_D0to7_TO_BUS( kernalROM[ GET_ADDRESS ] );
+		FINISH_BUS_HANDLING
+		return;
+	}
 
 	// if AR is not active we might still freeze
 	if ( !ar.active )
@@ -376,7 +411,7 @@ freezer:
 		SET_GPIO( bEXROM | bNMI );
 		CLR_GPIO( bGAME | bCTRL257 ); 
 
-		ar.active = 1;
+		ar.active = 1 | 256;
 		ar.freezeNMICycles = ar.ofsROMBank = ar.exportRAM = ar.exportRAM_A000 = 0;
 		
 		if ( ar.bAtomicPower )

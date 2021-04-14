@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick Freeze: example how to implement a KCS Power Cartridge compatible 
- Copyright (c) 2019 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -40,12 +40,12 @@ static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_kcs.tga";
 #pragma pack(1)
 typedef struct
 {
-	// FC3 active or disables, #banks (4 for FC3, 16 for FC3+), and currently selected bank
+	// KCS register
 	u8	kcsReg;
 	// extra RAM
 	u8  ram[ 128 ];
 
-	u32 active, nROMBanks, curBank;
+	u32 active, nROMBanks, curBank, ultimax;
 
 	// counts the #cycles when the C64-reset line is pulled down (to detect a reset), cycles since release and status
 	u32 resetCounter, cyclesSinceReset,  
@@ -64,10 +64,14 @@ typedef struct
 	u32 releaseDMA;
 
 	u32 LONGBOARD;
+
+	u32 hasKernal;
 } __attribute__((packed)) KCSSTATE;
 #pragma pack(pop)
 
 static volatile KCSSTATE kcs AAA;
+
+static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash/ROM
 //static u8 flash_cacheoptimized_pool[ 16 * 8192 * 2 + 128 ] AAA;
@@ -79,12 +83,13 @@ static __attribute__( ( always_inline ) ) inline void kcsConfig( u8 c )
 		latchSetClear( 0, LATCH_LED0 ); else
 		latchSetClear( LATCH_LED0, 0 ); 
 
+	kcs.ultimax = 0;
 	switch ( c )
 	{
 		default:
 		case 0:	SETCLR_GPIO( bDMA | bNMI, bGAME | bEXROM );	break;
 		case 1:	SETCLR_GPIO( bGAME | bDMA | bNMI, bEXROM );	break;
-		case 2:	SETCLR_GPIO( bDMA | bNMI | bEXROM, bGAME );	break;
+		case 2:	SETCLR_GPIO( bDMA | bNMI | bEXROM, bGAME );	kcs.ultimax = 1; break;
 		case 3:	SET_GPIO( bGAME | bEXROM | bDMA | bNMI );	break;
 	}
 }
@@ -94,6 +99,7 @@ static void initKCS()
 	kcs.kcsReg = 0;
 	kcs.curBank = 0;
     kcs.active = 1;
+	kcs.ultimax = 0; 
 
 	kcs.resetCounter = kcs.resetPressed = 
 	kcs.resetReleased = kcs.cyclesSinceReset = 
@@ -131,7 +137,7 @@ static void initScreenAndLEDCodes()
 }
 
 #ifdef COMPILE_MENU
-void KernelKCSRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME )
+void KernelKCSRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME, const char *FILENAME_KERNAL = NULL )
 #else
 void CKernelKCS::Run( void )
 #endif
@@ -151,6 +157,16 @@ void CKernelKCS::Run( void )
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
+
+	// load kernal is any
+	u32 kernalSize = 0; // should always be 8192
+	if ( FILENAME_KERNAL != NULL )
+	{
+		kcs.hasKernal = 1;
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_KERNAL, flash_cacheoptimized_pool, &kernalSize );
+		memcpy( kernalROM, flash_cacheoptimized_pool, 8192 );
+	} else
+		kcs.hasKernal = 0;
 
 	kcs.flash_cacheoptimized = (u8 *)( ( (u64)&flash_cacheoptimized_pool[0] + 128 ) & ~127 );
 
@@ -209,6 +225,9 @@ void CKernelKCS::Run( void )
 
 	FORCE_READ_LINEARa( kcs.flash_cacheoptimized, 8192 * 2 * 4, 8192 * 2 * 4 * 32 )
 
+	if ( kcs.hasKernal )
+		CACHE_PRELOAD_DATA_CACHE( kernalROM, 8192, CACHE_PRELOADL2KEEP );
+
 	// different timing C64-longboards and C128 compared to 469-boards
 	kcs.LONGBOARD = 0;
 	if ( modeC128 || modeVIC == 0 )
@@ -219,7 +238,10 @@ void CKernelKCS::Run( void )
 
 	// ready to go
 	DELAY(10);
-	latchSetClearImm( LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
+
+	if ( kcs.hasKernal )
+		latchSetClearImm( LATCH_RESET | LATCH_ENABLE_KERNAL, LED_ALL_BUT_0 ); else
+		latchSetClearImm( LATCH_RESET, LED_ALL_BUT_0 | LATCH_ENABLE_KERNAL );
 
 	// main loop
 	while ( true ) {
@@ -270,27 +292,14 @@ void CKernelKCS::FIQHandler (void *pParam)
 	// starting from here we are in the CPU-half cycle
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
 
-	// VIC2 read during badline?
-/*	if ( VIC_BADLINE )
+	UPDATE_COUNTERS( kcs.c64CycleCount, kcs.resetCounter, kcs.resetPressed, kcs.resetReleased, kcs.cyclesSinceReset )
+
+	if ( kcs.hasKernal && ROMH_ACCESS && KERNAL_ACCESS && !kcs.ultimax )
 	{
-		// get ROMH data (not reading anything else here)
-		D = *(u8*)&flashBank[ GET_ADDRESS * 2 + 1 ];
-
-		// read again (some time passed, had to wait to signals)
-		if ( !kcs.LONGBOARD )
-		{
-			// do not do this: WAIT_UP_TO_CYCLE( WAIT_CYCLE_MULTIPLEXER_VIC2 ); 
-			READ_ADDR8to12_ROMLH_IO12_BA 
-		}
-
-		if ( ROMH_ACCESS ) 
-			WRITE_D0to7_TO_BUS_BADLINE( D )
-
+		WRITE_D0to7_TO_BUS( kernalROM[ GET_ADDRESS ] );
 		FINISH_BUS_HANDLING
 		return;
-	}*/
-
-	UPDATE_COUNTERS( kcs.c64CycleCount, kcs.resetCounter, kcs.resetPressed, kcs.resetReleased, kcs.cyclesSinceReset )
+	}
 
 	if ( CPU_READS_FROM_BUS && ROML_OR_ROMH_ACCESS )
 	{
@@ -337,13 +346,13 @@ void CKernelKCS::FIQHandler (void *pParam)
 		kcs.countWrites ++; else
 		kcs.countWrites = 0;
 
-	if ( CPU_WRITES_TO_BUS && IO1_ACCESS && kcs.active )
+	if ( CPU_WRITES_TO_BUS && IO1_ACCESS /*&& kcs.active*/ )
 	{
 		kcs.kcsReg = GET_IO12_ADDRESS & 2;
 		kcsConfig( kcs.kcsReg );
 	}
 
-	if ( CPU_WRITES_TO_BUS && IO2_ACCESS && kcs.active )
+	if ( CPU_WRITES_TO_BUS && IO2_ACCESS /*&& kcs.active*/ )
 	{
 		if ( !( GET_IO12_ADDRESS & 0x80 ) )
 		{
@@ -351,7 +360,7 @@ void CKernelKCS::FIQHandler (void *pParam)
 				kcs.ram[ GET_IO12_ADDRESS & 0x7f ] = D;
 		}
 
-		SET_GPIO( bNMI ); 
+		//SET_GPIO( bNMI ); 
         return;
 	}
 
@@ -378,6 +387,7 @@ void CKernelKCS::FIQHandler (void *pParam)
 	if ( kcs.freezeNMICycles && kcs.countWrites == 3 )
 	{
 		SETCLR_GPIO( bEXROM, bGAME | bCTRL257 ); 
+		kcs.ultimax = 1;
 		kcs.freezeNMICycles = 0;
 		RESET_CPU_CYCLE_COUNTER
 		return;

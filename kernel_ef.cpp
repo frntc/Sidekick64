@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick Flash: example how to implement an generic/magicdesk/easyflash-compatible cartridge
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -107,8 +107,11 @@ typedef struct
 
 	u32 LONGBOARD;
 
+	u32 hasKernal;
 	//u8 padding[ 384 - 345 ];
 } __attribute__((packed)) EFSTATE;
+
+static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash
 u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
@@ -369,6 +372,9 @@ __attribute__( ( always_inline ) ) inline void prefetchHeuristic()
 	// the RPi is not really convinced enough to preload data into caches when calling "prfm PLD*", so we access the data (and a bit more than our current bank)
 	FORCE_READ_LINEAR( ef.flashBank, 16384 * 2 )
 	FORCE_READ_LINEAR32( ef.ram, 256 )
+
+	if ( ef.hasKernal )
+		CACHE_PRELOAD_DATA_CACHE( kernalROM, 8192, CACHE_PRELOADL2KEEP );
 }
 
 __attribute__( ( always_inline ) ) inline void prefetchHeuristic8()
@@ -390,6 +396,9 @@ __attribute__( ( always_inline ) ) inline void prefetchComplete()
 	FORCE_READ_LINEARa( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 16384 * 16 )
 	FORCE_READ_RANDOM( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 8192 * 2 * ef.nBanks * 16 )
 	FORCE_READ_LINEARa( ef.flash_cacheoptimized, 8192 * 2 * ef.nBanks, 16384 * 16 )
+
+	if ( ef.hasKernal )
+		CACHE_PRELOAD_DATA_CACHE( kernalROM, 8192, CACHE_PRELOADL2KEEP );
 }
 
 static u32 LED_INIT1_HIGH;	
@@ -446,7 +455,7 @@ static void KernelEFFIQHandler_Comal80( void *pParam );
 static void KernelEFFIQHandler_EpyxFL( void *pParam );
 
 static void KernelEFFIQHandler( void *pParam );
-void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr )
+void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr, const char *FILENAME_KERNAL = NULL )
 #else
 void CKernelEF::Run( void )
 #endif
@@ -461,6 +470,16 @@ void CKernelEF::Run( void )
 	#ifndef COMPILE_MENU
 	m_EMMC.Initialize();
 	#endif
+
+	// load kernal is any
+	u32 kernalSize = 0; // should always be 8192
+	if ( FILENAME_KERNAL != NULL )
+	{
+		ef.hasKernal = 1;
+		readFile( logger, (char*)DRIVE, (char*)FILENAME_KERNAL, flash_cacheoptimized_pool, &kernalSize );
+		memcpy( kernalROM, flash_cacheoptimized_pool, 8192 );
+	} else
+		ef.hasKernal = 0;
 
 	bool getRAW = false;
 
@@ -700,7 +719,10 @@ void CKernelEF::Run( void )
 		prefetchHeuristic();
 
 	// ready to go...
-	latchSetClear( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
+
+	if ( ef.hasKernal )
+		latchSetClear( LATCH_RESET | LED_INIT2_HIGH | LATCH_ENABLE_KERNAL, LED_INIT2_LOW ); else
+		latchSetClear( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
 
 	ef.c64CycleCount = ef.resetCounter2 = 0;
 
@@ -767,6 +789,14 @@ void CKernelEF::Run( void )
 		SET_GPIO( bDMA );							\
 		clrLatchFIQ( LATCH_LED0 );					\
 	}	
+
+
+#define HANDLE_KERNAL_IF_REQUIRED \
+	if ( ef.hasKernal && ROMH_ACCESS && KERNAL_ACCESS ) {	\
+		WRITE_D0to7_TO_BUS( kernalROM[ GET_ADDRESS ] );		\
+		FINISH_BUS_HANDLING									\
+		return;												\
+	}
 
 
 //#ifdef COMPILE_MENU
@@ -1687,7 +1717,9 @@ void CKernelEF::FIQHandler (void *pParam)
 		} else
 		{
 			// Magic Desk
-			ef.reg0 = (u8)( D & 63 );
+			if ( ef.nBanks <= 64 )
+				ef.reg0 = (u8)( D & 63 ); else
+				ef.reg0 = (u8)( D & 127 ); 
 			ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
 
 			// if the EF-ROM does not fit into the RPi's cache: stall the CPU with a DMA and prefetch the data

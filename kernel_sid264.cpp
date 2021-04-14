@@ -11,7 +11,7 @@
  RasPiC64 - A framework for interfacing the C64 (and C16/+4) and a Raspberry Pi 3B/3B+
           - Sidekick SID: a SID and SFX Sound Expander Emulation for the C16/+4
 		    (using reSID by Dag Lem and FMOPL by Jarek Burczynski, Tatsuyuki Satoh, Marco van den Heuvel, and Acho A. Tang)
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -220,6 +220,10 @@ void quitSID()
 
 unsigned long long cycleCountC64;
 
+// to do: integrate HDMI audio out
+#define SAMPLERATE 44100
+u32 SAMPLERATE_ADJUSTED = SAMPLERATE;
+u32 trackSampleProgress;
 
 #ifdef COMPILE_MENU
 extern CLogger			*logger;
