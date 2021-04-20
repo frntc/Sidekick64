@@ -150,12 +150,12 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 	if ( result != FR_OK )
 		logger->Write( "RaspiFlash", LogPanic, "Cannot open file: %s", FILENAME );
 
-	if ( filesize > 1025 * 1024 )
-		filesize = 1025 * 1024;
+	if ( filesize > 1032 * 1024 )
+		filesize = 1032 * 1024;
 
 	// read data in one big chunk
 	u32 nBytesRead;
-	u8 rawCRT[ 1025 * 1024 ];
+	u8 rawCRT[ 1032 * 1024 ];
 	result = f_read( &file, rawCRT, filesize, &nBytesRead );
 
 	if ( result != FR_OK )

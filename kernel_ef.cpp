@@ -114,7 +114,7 @@ typedef struct
 static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash
-u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
+u8 flash_cacheoptimized_pool[ 1024 * 1024 + 8 * 1024 ] AAA;
 
 static volatile EFSTATE ef AAA;
 
@@ -315,7 +315,7 @@ void initEF()
 	}
 	if ( ef.bankswitchType == BS_MAGICDESK )
 	{
-		ef.reg2 = 4 + 2;
+		ef.reg2 = 128 + 4 + 2;
 	}
 
 	ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 * 2 ];
@@ -1717,9 +1717,18 @@ void CKernelEF::FIQHandler (void *pParam)
 		} else
 		{
 			// Magic Desk
-			if ( ef.nBanks <= 64 )
-				ef.reg0 = (u8)( D & 63 ); else
-				ef.reg0 = (u8)( D & 127 ); 
+			if( GET_IO12_ADDRESS == 0 )
+			{
+				if ( !( D & 128 ) )
+				{
+					if ( ef.nBanks <= 64 )
+						ef.reg0 = (u8)( D & 63 ); else
+						ef.reg0 = (u8)( D & 127 ); 
+					ef.reg2 = 128 + 4 + 2; 
+				} else
+					ef.reg2 = 4 + 0;
+			}		
+
 			ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
 
 			// if the EF-ROM does not fit into the RPi's cache: stall the CPU with a DMA and prefetch the data
@@ -1731,10 +1740,6 @@ void CKernelEF::FIQHandler (void *pParam)
 				prefetchHeuristic();
 			}
 
-			if ( !(D & 128) )
-				ef.reg2 = 128 + 4 + 2; else
-				ef.reg2 = 4 + 0;
-					
 			setGAMEEXROM();
 		}
 
@@ -1742,7 +1747,7 @@ void CKernelEF::FIQHandler (void *pParam)
 		goto cleanup;
 	}
 
-	if ( CPU_WRITES_TO_BUS && IO2_ACCESS )
+	if ( CPU_WRITES_TO_BUS && IO2_ACCESS && ef.bankswitchType == BS_EASYFLASH )
 	{
 		READ_D0to7_FROM_BUS( D )
 		ef.ram[ GET_IO12_ADDRESS ] = D;

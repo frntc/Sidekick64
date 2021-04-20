@@ -52,7 +52,7 @@ extern u32 hasSIDKick;
 extern u32 machine264;
 
 // #cycles the C64 is delayed for prefetching data (a little bit less should be OK)
-#define NUM_DMA_CYCLES (2)		
+#define NUM_DMA_CYCLES (10)		
 
 
 #define PMCCFILTR_NSH_EN_BIT    27
