@@ -488,10 +488,11 @@ int getMainMenuSelection( int key, char **FILE, int *addIdx, char *menuItemStr )
 
 extern void deactivateCart();
 
-#define MAX_SETTINGS 14
+#define MAX_SETTINGS 17
+#define MAX_SETTINGS_SAVED 64
 u32 curSettingsLine = 0;
-s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 6, 2, 16, 15, 4, 4, 16, 15, 2, 16, 15, 2 };
-s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 15, 7, 0 };
+s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 6, 2, 16, 15, 4, 4, 16, 15, 2, 16, 15, 2, 4, 16, 2 };
+s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 15, 7, 0, 7, 0 };
 u8  geoRAM_SlotNames[ 10 ][ 21 ];
 
 void writeSettingsFile()
@@ -499,7 +500,7 @@ void writeSettingsFile()
 	char cfg[ 16384 ];
 	u32 cfgBytes = 0;
     memset( cfg, 0, 16384 );
-	cfgBytes = sizeof( s32 ) * MAX_SETTINGS;
+	cfgBytes = sizeof( s32 ) * MAX_SETTINGS_SAVED;
 	memcpy( cfg, settings, cfgBytes );
 	memcpy( &cfg[ cfgBytes ], geoRAM_SlotNames, sizeof( u8 ) * 10 * 21 );
 	cfgBytes += sizeof( u8 ) * 10 * 21;
@@ -513,14 +514,14 @@ void readSettingsFile()
 	u32 cfgBytes;
     memset( cfg, 0, 16384 );
 
-	memset( settings, 0, sizeof( s32 ) * MAX_SETTINGS );
+	memset( settings, 0, sizeof( s32 ) * MAX_SETTINGS_SAVED );
 	memset( geoRAM_SlotNames, 32, sizeof( u8 ) * 10 * 21 );
 
 	if ( !readFile( logger, DRIVE, SETTINGS_FILE, (u8*)cfg, &cfgBytes ) )
 		writeSettingsFile();
 
-	memcpy( settings, cfg, sizeof( s32 ) * MAX_SETTINGS );
-	memcpy( geoRAM_SlotNames, &cfg[ sizeof( s32 ) * MAX_SETTINGS ], sizeof( u8 ) * 10 * 21 );
+	memcpy( settings, cfg, sizeof( s32 ) * MAX_SETTINGS_SAVED );
+	memcpy( geoRAM_SlotNames, &cfg[ sizeof( s32 ) * MAX_SETTINGS_SAVED ], sizeof( u8 ) * 10 * 21 );
 }
 
 u32 octaSIDMode = 0;
@@ -529,9 +530,9 @@ void applySIDSettings()
 {
 	octaSIDMode = ( settings[ 2 ] > 2 ) ? 1 : 0;
 	// how elegant...
-	extern void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 outputPWMHDMI );
+	extern void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 outputPWMHDMI, s32 midi, s32 soundfont, s32 midiVol );
 	setSIDConfiguration( 0, settings[2], settings[6], settings[7]-1, settings[3], settings[7], settings[10],
-						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12], settings[ 13 ] );
+						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12], settings[ 16 ], settings[13], settings[14], settings[15] );
 }
 
 int lastKeyDebug = 0;
@@ -1706,15 +1707,15 @@ void printSettingsScreen()
 	printC64( 4, 23, "F5", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 	printC64( 21, 23, "S", skinValues.SKIN_MENU_TEXT_FOOTER, 128, 0 );
 
-	u32 x = 1, x2 = 7,y1 = 1, y2 = 1;
-	u32 l = curSettingsLine;
+	s32 x = 1, x2 = 7,y1 = 1-1, y2 = 1-2;
+	s32 l = curSettingsLine;
 
 	extern u32 wireSIDAvailable;
 
 	if ( !wireSIDAvailable ) { y1 --; y2 --; }
 
 	// special menu
-	printC64( x+1, y1+3, "GeoRAM", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+	printC64( x+1, y1+3+1, "GeoRAM", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
 
 	printC64( x+1, y1+5, "Memory", skinValues.SKIN_MENU_TEXT_ITEM, (l==0)?0x80:0 );
 
@@ -1730,16 +1731,21 @@ void printSettingsScreen()
 	printC64( x2+11, y1+7, (const char*)geoRAM_SlotNames[ settings[ 1 ] ], skinValues.SKIN_MENU_TEXT_ITEM, (typeInName==1)?0x80:0 );
 	if ( typeInName )
 		c64color[ x2+11+typeCurPos + (y1+7)*40 ] = skinValues.SKIN_MENU_TEXT_CATEGORY;
-
-	printC64( x+1,  y2+9, "SID+FM (using reSID and fmopl)", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
+	printC64( x+1,  y2+10, "SID+FM (reSID/fmopl/TinySoundFont)", skinValues.SKIN_MENU_TEXT_CATEGORY, 0 );
 	if ( !wireSIDAvailable )
-		printC64( x+1,  y2+10, "No SID-wire, only SFX will work!", skinValues.SKIN_ERROR_BAR, 0 );
+		printC64( x+1,  y2+11, "No SID-wire, only SFX will work!", skinValues.SKIN_ERROR_BAR, 0 );
 
 	if ( !wireSIDAvailable ) { y2 ++; }
 
 	char sidStrS[ 6 ][ 21 ] = { "6581", "8580", "8580 w/ Digiboost", "8x 6581", "8x 8580", "8x 8580 w/ Digiboost" };
 	char sidStrO[ 3 ][ 8 ] = { "off", "on" };
 	char sidStrS2[ 4 ][ 20 ] = { "6581", "8580", "8580 w/ Digiboost", "none" };
+		// MIDI 
+		// 0 = off
+		// 1 = Datel
+		// 2 = SEQUENTIAL CIRCUITS INC.
+		// 3 = PASSPORT & SENTECH
+	char sidStrM[ 3 ][ 24 ]  = { "off", "Datel/Sequential" };
 	char sidStrA[ 4 ][ 8 ] = { "$D400", "$D420", "$D500", "$DE00" };
 	char sidStrOutput[ 3 ][ 9 ] = { "PWM", "HDMI", "PWM+HDMI" };
 	
@@ -1787,8 +1793,24 @@ void printSettingsScreen()
 		sprintf( t, "%2d", settings[ 12 ] - 7 );
 		printC64( x2+15, y2+18, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==12)?0x80:0 );
 
-		printC64( x+1,  y2+20, "Output", skinValues.SKIN_MENU_TEXT_ITEM, (l==13)?0x80:0 );
-		printC64( x2+10, y2+20, sidStrOutput[ settings[13] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==13)?0x80:0 );
+		// MIDI 
+		// 0 = off
+		// 1 = Datel
+		// 2 = PASSPORT & SENTECH
+		// 3 = SEQUENTIAL CIRCUITS INC.
+
+		printC64( x+1,  y2+19, "MIDI", skinValues.SKIN_MENU_TEXT_KEY, (l==13)?0x80:0 );
+		printC64( x2+10, y2+19, sidStrM[ settings[13] ], skinValues.SKIN_MENU_TEXT_KEY, (l==13)?0x80:0 );
+		printC64( x+1,  y2+20, "Sound Font", skinValues.SKIN_MENU_TEXT_KEY, (l==14)?0x80:0 );
+		sprintf( t, "instrument%02d.sf2", settings[ 14 ] );
+		printC64( x2+10, y2+20, t, skinValues.SKIN_MENU_TEXT_KEY, (l==14)?0x80:0 );
+		printC64( x+1,  y2+21, "Volume", skinValues.SKIN_MENU_TEXT_KEY, (l==15)?0x80:0 );
+		sprintf( t, "%2d", settings[ 15 ] );
+		printC64( x2+10, y2+21, t, skinValues.SKIN_MENU_TEXT_KEY, (l==15)?0x80:0 );
+
+
+		printC64( x+1,  y2+22, "Output", skinValues.SKIN_MENU_TEXT_ITEM, (l==16)?0x80:0 );
+		printC64( x2+10, y2+22, sidStrOutput[ settings[16] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==16)?0x80:0 );
 
 	} else 
 	{

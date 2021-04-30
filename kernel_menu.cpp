@@ -226,15 +226,14 @@ __attribute__( ( always_inline ) ) inline void warmCache( void *fiqh )
 {
 	CACHE_PRELOAD_DATA_CACHE( c64screen, 1024, CACHE_PRELOADL2STRM );
 	CACHE_PRELOAD_DATA_CACHE( c64color, 1024, CACHE_PRELOADL2STRM );
-	CACHE_PRELOAD_DATA_CACHE( cartCBM80, 512, CACHE_PRELOADL1KEEP );
-	CACHE_PRELOAD_DATA_CACHE( prgData, 65536, CACHE_PRELOADL2STRM );
+	CACHE_PRELOAD_DATA_CACHE( cartCBM80, 512, CACHE_PRELOADL2KEEP );
+	CACHE_PRELOAD_DATA_CACHE( prgData, prgSize, CACHE_PRELOADL2STRM );
 	CACHE_PRELOAD_DATA_CACHE( injectCode, 256, CACHE_PRELOADL2KEEP );
 
 	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)fiqh, 2048*2 );
 
+	FORCE_READ_LINEARa( prgData, prgSize, prgSize * 16 )
 	FORCE_READ_LINEAR32a( cartCBM80, 512, 512 * 16 );
-
-	FORCE_READ_LINEARa( prgData, prgSize, 65536 * 4 )
 	if ( fiqh )
 	{
 		FORCE_READ_LINEARa( (void*)fiqh, 1024*3, 65536 );
@@ -491,9 +490,9 @@ void CKernelMenu::Run( void )
 
 		pFIQ = (void*)this->FIQHandler;
 		warmCache( pFIQ );
-		DELAY(1<<18);
+		//DELAY(1<<18);
 		warmCache( pFIQ );
-		DELAY(1<<18);
+		DELAY(1<<20);
 
 		// start c64 
 		SET_GPIO( bNMI | bDMA );
@@ -507,7 +506,7 @@ void CKernelMenu::Run( void )
 		{
 			first = 0;
 			latchSetClearImm( LATCH_LED0, LATCH_RESET );
-			DELAY(1<<27);
+			DELAY(1<<20);
 			latchSetClearImm( LATCH_RESET | LATCH_LED0, 0 );
 		}
 
@@ -560,7 +559,6 @@ void CKernelMenu::Run( void )
 			//temperature = m_CPUThrottle.GetTemperature();
 			renderC64();
 			warmCache( pFIQ );
-//		DELAY(1<<28);
 			doneWithHandling = 1;
 			updateMenu = 0;
 		}
@@ -821,7 +819,7 @@ int main( void )
 		SET_GPIO( bNMI | bDMA ); 
 
 		BEGIN_CYCLE_COUNTER
-		WAIT_UP_TO_CYCLE( 5000*1000 )
+		//WAIT_UP_TO_CYCLE( 5000*1000 )
 
 
 		char geoRAMFile[ 2048 ];
@@ -834,6 +832,10 @@ int main( void )
 
 		u32 loadC128PRG = 0;
 		u32 playingPSID = 0;
+
+		CleanDataCache();
+		InvalidateDataCache();
+		InvalidateInstructionCache();
 
 		/* for debugging purposes only*/
 		if ( launchKernel == 255 ) 

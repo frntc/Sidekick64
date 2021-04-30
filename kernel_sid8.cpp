@@ -11,7 +11,7 @@
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick SID: a SID and SFX Sound Expander Emulation / SID-8 is a lazy modification to emulate 8 SIDs at once
 		    (using reSID by Dag Lem)
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -442,6 +442,9 @@ void CKernel::Run( void )
 
 	#ifdef COMPILE_MENU
 	prepareOnReset( true );
+	DELAY(1<<22);
+	prepareOnReset( true );
+	DELAY(1<<22);
 
 	latchSetClear( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 	resetCounter = 0;
@@ -455,13 +458,13 @@ startHereAfterReset:
 			TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
 			#endif
 			asm volatile ("wfi");
-			if ( cycleCountC64 > 2000000 )
+			/*if ( cycleCountC64 > 2000000 )
 			{
 				cycleCountC64 = 0;
 				latchSetClear( 0, LATCH_RESET );
 				DELAY(1<<20);
 				latchSetClear( LATCH_RESET, 0 );
-			}
+			}*/
 		}
 	} 
 	#endif
@@ -500,7 +503,7 @@ startHereAfterReset:
 		}
 		if ( cycleCountC64 > 2000000 && resetCounter > 500000 ) {
 			CVCHIQ_CB_Manual = false;
-			logger->Write( "", LogNotice, "adjusted sample rate: %u Hz", (u32)SAMPLERATE_ADJUSTED );
+			//logger->Write( "", LogNotice, "adjusted sample rate: %u Hz", (u32)SAMPLERATE_ADJUSTED );
 			quitSID8();
 			EnableIRQs();
 			m_InputPin.DisableInterrupt();

@@ -11,7 +11,7 @@
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - Sidekick SID: a SID and SFX Sound Expander Emulation 
 		    (using reSID by Dag Lem and FMOPL by Jarek Burczynski, Tatsuyuki Satoh, Marco van den Heuvel, and Acho A. Tang)
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -36,6 +36,10 @@
 
 static u32 launchPrg;
 #endif
+
+//static const char FILENAME_MIDI_SOUNDFONT[] = "SD:MIDI/TimGM6mb.sf2";	// 6 mb
+//static const char FILENAME_MIDI_SOUNDFONT[] = "SD:MIDI/Ct4mgm.sf2";	// 4 mb
+//static const char FILENAME_MIDI_SOUNDFONT[] = "SD:MIDI/FluidR3_GM.sf2";
 
 static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_sid_bg2.tga";
 static const char FILENAME_SPLASH_RGB2[] = "SD:SPLASH/sk64_sid_bg.tga";
@@ -89,6 +93,38 @@ u32 resetCounter,
 	cyclesSinceReset,  
 	resetPressed, resetReleased;
 
+// Datel MIDI-interface
+/*const uint8_t MIDI_CONTROL_REG  = 0x04;
+const uint8_t MIDI_STATUS_REG   = 0x06;
+const uint8_t MIDI_TRANSMIT_REG = 0x05;
+const uint8_t MIDI_RECEIVE_REG  = 0x07;*/
+
+// Sequential MIDI-interface
+const uint8_t MIDI_CONTROL_REG  = 0x00;
+const uint8_t MIDI_STATUS_REG   = 0x02;
+const uint8_t MIDI_TRANSMIT_REG = 0x01;
+const uint8_t MIDI_RECEIVE_REG  = 0x03;
+
+// Passport/Sentech MIDI-interface
+/*const uint8_t MIDI_CONTROL_REG  = 0x08;
+const uint8_t MIDI_STATUS_REG   = 0x08;
+const uint8_t MIDI_TRANSMIT_REG = 0x09;
+const uint8_t MIDI_RECEIVE_REG  = 0x09;*/
+
+// Daten + Sequential simultaneously
+// => address < 8 and (address&3)==sequential
+
+#define SUPPORT_MIDI
+
+#ifdef SUPPORT_MIDI
+
+#define TSF_IMPLEMENTATION
+#define TSF_NO_STDIO
+#include "tsf.h"
+
+tsf *TinySoundFont = NULL;
+#endif
+
 // this is the actual configuration of the emulation
 u32 cfgRegisterRead = 0;			// don't use this when you have a SID(-replacement) in the C64
 u32 cfgEmulateOPL2 = 1;
@@ -99,12 +135,13 @@ u32 cfgSID2_Addr = 0;
 s32 cfgVolSID1_Left, cfgVolSID1_Right;
 s32 cfgVolSID2_Left, cfgVolSID2_Right;
 s32 cfgVolOPL_Left, cfgVolOPL_Right;
+s32 cfgMIDI = 0, cfgSoundFont = 0, cfgMIDIVolume = 0;
 
 extern u32 wireSIDAvailable;
 
 u32 outputPWM = 1, outputHDMI = 0;
 
-void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 outputPWMHDMI )
+void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 outputPWMHDMI, s32 MIDI, s32 soundfont, s32 midiVol )
 {
 	SID_MODEL[ 0 ] = ( sid1 == 0 ) ? 6581 : 8580;
 	SID_DigiBoost[ 0 ] = ( sid1 == 2 ) ? 1 : 0;
@@ -170,6 +207,10 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	if ( outputPWMHDMI == 1 || outputPWMHDMI == 2 )
 		outputHDMI = 1;
 	#endif
+
+	cfgMIDI = MIDI;
+	cfgSoundFont = soundfont;
+	cfgMIDIVolume = midiVol;
 }
 
 //  __     __                __      ___                   ___ 
@@ -313,6 +354,11 @@ void quitSID()
 	}
 	for ( int i = 0; i < NUM_SIDS; i++ )
 		delete sid[ i ];
+
+#ifdef SUPPORT_MIDI
+	if ( TinySoundFont )
+		tsf_close( TinySoundFont );
+#endif
 }
 
 static u32 renderDone = 0;
@@ -364,6 +410,11 @@ static u32 _playingPSID = 0;
 
 static void prepareOnReset( bool refresh = false )
 {
+#ifdef SUPPORT_MIDI
+	if ( TinySoundFont )
+		tsf_reset( TinySoundFont );
+#endif
+
 	fmFakeOutput =
 	fmAutoDetectStep = 0;
 
@@ -388,21 +439,24 @@ static void prepareOnReset( bool refresh = false )
 		InvalidateInstructionCache();
 	}
 
-	if ( _playingPSID )
+	for ( u32 i = 0; i < 4; i++ )
 	{
-		extern unsigned char charset[ 4096 ];
-		CACHE_PRELOADL2STRM( &charset[ 2048 ] );
-		FORCE_READ_LINEAR32( (void*)&charset[ 2048 ], 1024 );
-	}
+		if ( _playingPSID )
+		{
+			extern unsigned char charset[ 4096 ];
+			CACHE_PRELOAD_DATA_CACHE( &charset[ 2048 ], 1024, CACHE_PRELOADL2KEEP );
+			FORCE_READ_LINEAR32a( (void*)&charset[ 2048 ], 1024, 8192 );
+		}
 
-	if ( launchPrg )
-	{
-		launchPrepareAndWarmCache();
-	}
+		if ( launchPrg )
+		{
+			launchPrepareAndWarmCache();
+		}
 
-	// FIQ handler
-	CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 6*1024 );
-	FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 6*1024, 32768 );
+		// FIQ handler
+		CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 6*1024 );
+		FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 6*1024, 32768 );
+	}
 
 	resetCounter = cycleCountC64 = nCyclesEmulated = samplesElapsed = 0;
 }
@@ -411,6 +465,8 @@ static void prepareOnReset( bool refresh = false )
 //static u32 SID_not_initialized = 1;
 
 static int startVCHIQ = 0;
+
+#define SAMPLERATE 44100
 
 u32 SAMPLERATE_ADJUSTED = SAMPLERATE;
 extern u32 nSamplesPrecompute;
@@ -423,6 +479,17 @@ static u32 targetSamplesAvail = 0, targetCount = 0;
 
 u32 fillSoundBuffer;
 extern bool CVCHIQ_CB_Manual;
+
+#ifdef SUPPORT_MIDI
+
+#define MIDI_BUF_SIZE_BITS	5
+const int midiBufferSize = 1 << MIDI_BUF_SIZE_BITS;
+static float midiSampleBuffer[ 1 << (MIDI_BUF_SIZE_BITS) ] AAA;
+static u32 midiBufferOfs = midiBufferSize;
+
+#endif
+
+
 
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler( void *pParam );
@@ -506,6 +573,16 @@ void CKernel::Run( void )
 		tftPrint( b2, sx, 224, c2, charWidth == 16 ? 0 : -3 );	sx += strlen( b2 ) * charWidth;
 		tftPrint( b3, sx, 224, c3, charWidth == 16 ? 0 : -3 );
 
+#ifdef SUPPORT_MIDI
+		if ( cfgMIDI )
+		{
+						//01234567890123456789
+			sprintf( b1, "midi/$de0X" );
+			sx = max( 0, ( 240 - charWidth * 10 ) / 2 - 2 );
+			tftPrint( b1, sx, 224-16, c1, charWidth == 16 ? 0 : -3 );	
+		}
+#endif
+
 		tftInit();
 		tftSendFramebuffer16BitImm( tftFrameBuffer );
 		tftConvertFrameBuffer12Bit();
@@ -527,6 +604,40 @@ void CKernel::Run( void )
 
 	//logger->Write( "", LogNotice, "initialize SIDs..." );
 	initSID();
+
+	//
+	// MIDI
+	//
+#ifdef SUPPORT_MIDI
+	if ( cfgMIDI )
+	{
+		u32 size;
+		cfgMIDI = 0;
+		char filename[256];
+		sprintf( filename, "SD:MIDI/instrument%02d.sf2", cfgSoundFont );
+		if ( getFileSize( logger, DRIVE, filename, &size ) )
+		{
+			if ( size < 256 * 1024 * 1024 )
+			{
+				u8 *soundfont = new u8[ size ];
+
+				if ( readFile( logger, DRIVE, filename, soundfont, &size ) )
+				{
+					TinySoundFont = tsf_load_memory( soundfont, size );
+					tsf_set_output( TinySoundFont, TSF_MONO, SAMPLERATE, 0.0f );
+					//tsf_set_output( TinySoundFont, TSF_STEREO_INTERLEAVED, SAMPLERATE, 0.0f );
+					tsf_set_volume( TinySoundFont, 0.5f * (float)cfgMIDIVolume / 15.0f );
+					tsf_set_max_voices( TinySoundFont, 64 );
+					tsf_channel_set_bank_preset( TinySoundFont, 9, 128, 0 );
+					cfgMIDI = 1;
+				}
+				delete [] soundfont;
+
+				memset( midiSampleBuffer, 0, midiBufferSize * sizeof( float ) );
+			}
+		}
+	}
+#endif
 
 	//
 	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
@@ -556,7 +667,6 @@ void CKernel::Run( void )
 	// setup FIQ
 	//
 	resetReleased = 0xff;
-	//haltC64 = letgoC64 = 0;
 	resetFromCodeState = 0;
 
 	//logger->Write( "", LogNotice, "setup fiq..." );
@@ -607,6 +717,10 @@ void CKernel::Run( void )
 	#ifdef COMPILE_MENU
 	prepareOnReset( true );
 
+	DELAY(1<<22);
+	prepareOnReset( true );
+	DELAY(1<<22);
+	cycleCountC64 = 0;
 	resetCounter = 0;
 	latchSetClear( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
 
@@ -630,15 +744,21 @@ startHereAfterReset:
 				return;		
 			}
 			
-			if ( cycleCountC64 > 2000000 )
+/*			if ( cycleCountC64 > 2000000 )
 			{
 				cycleCountC64 = 0;
 				latchSetClear( 0, LATCH_RESET );
 				DELAY(1<<20);
 				latchSetClear( LATCH_RESET, 0 );
-			}
+			}*/
 		}
 		//latchSetClearImm( LATCH_LED0, 0 );
+		if ( _playingPSID )
+		{
+			extern unsigned char charset[ 4096 ];
+			CACHE_PRELOAD_DATA_CACHE( &charset[ 2048 ], 1024, CACHE_PRELOADL2KEEP );
+		}
+		DELAY(1<<22);
 	} 
 	#endif
 
@@ -721,6 +841,8 @@ startHereAfterReset:
 			}
 			#endif
 		
+			//tsf_reset( TinySoundFont );
+
 			ringRead = ringWrite;
 
 			prepareOnReset( true );
@@ -775,7 +897,7 @@ startHereAfterReset:
 					CVCHIQ_CB_Device = NULL;
 				}
 
-				if ( samplesElapsed > (8) * nSamplesPrecompute / 2 && !startVCHIQ )
+				if ( samplesElapsed > (8+1) * nSamplesPrecompute / 2 && !startVCHIQ )
 				{
 					m_pSound->Start();
 					fillSoundBuffer = 1;
@@ -860,11 +982,11 @@ startHereAfterReset:
 					}
 
 					{
-						if ( nCyclesEmulated < (4*256000) )
+						if ( nCyclesEmulated < (2*64000) )
 						{
 							CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
 							if ( sd->IsActive() )
-								sd->SetControl( VCHIQ_SOUND_VOLUME_MIN + (VCHIQ_SOUND_VOLUME_DEFAULT - VCHIQ_SOUND_VOLUME_MIN) * nCyclesEmulated / (4*256000), VCHIQSoundDestinationAuto );
+								sd->SetControl( VCHIQ_SOUND_VOLUME_MIN + (VCHIQ_SOUND_VOLUME_DEFAULT - VCHIQ_SOUND_VOLUME_MIN) * nCyclesEmulated / (2*64000), VCHIQSoundDestinationAuto );
 							hdmiVol = 1;
 						}
 						//pScheduler->MsSleep( 1 );
@@ -943,33 +1065,71 @@ startHereAfterReset:
 
 				if ( ringRead != readUpTo && nCyclesEmulated >= ringTime[ ringRead ] )
 				{
-					unsigned char A, D;
-					decodeGPIO( ringBufGPIO[ ringRead ], &A, &D );
+#ifdef SUPPORT_MIDI
+					if ( cfgMIDI && (ringBufGPIO[ ringRead ] & (1<<31)) ) // MIDI
+					{
+						register u8 MC = ringBufGPIO[ ringRead ] & 255;
+						register u8 MD1 = ( ringBufGPIO[ ringRead ] >> 8 ) & 255;
+						register u8 MD2 = ( ringBufGPIO[ ringRead ] >> 16 ) & 255;
+						register u16 pitch;
 
-					#ifdef EMULATE_OPL2
-					if ( cfgEmulateOPL2 && (ringBufGPIO[ ringRead ] & bIO2) )
-					{
-						if ( ( ( A & ( 1 << 4 ) ) == 0 ) )
-							ym3812_write( pOPL, 0, D ); else
-							ym3812_write( pOPL, 1, D );
+						register u8 channel = MC & 0x0f;
+						MC &= 0xf0;
+
+						switch ( MC )
+						{
+						default:
+							break;
+						case 0x90: // note on
+							tsf_channel_note_on( TinySoundFont, channel, MD1, (float)MD2 / 127.0f ); 
+							break;
+						case 0x80: // note off
+							tsf_channel_note_off( TinySoundFont, channel, MD1 ); 
+							break;
+						case 0xc0: // program change
+							tsf_channel_set_presetnumber( TinySoundFont, channel, MD1, ( channel == 9 ) );
+							break;
+						/*case 0xd0: // pressure change
+							break;*/
+						case 0xe0: // pitch bend
+							pitch = MD1 | ( MD2 << 7 );
+							tsf_channel_set_pitchwheel( TinySoundFont, channel, pitch );
+							break;
+						case 0xb0: // control change
+							tsf_channel_midi_control( TinySoundFont, channel, MD1, MD2 );
+							break;
+						}		
 					} else
-					#endif
-					//#if !defined(SID2_DISABLED) && !defined(SID2_PLAY_SAME_AS_SID1)
-					// TODO: generic masks
-					if ( !cfgSID2_Disabled && !cfgSID2_PlaySameAsSID1 && (ringBufGPIO[ ringRead ] & SID2_MASK) )
+#endif
 					{
-						sid[ 1 ]->write( A & 31, D );
-					} else
-					//#endif
-					{
-						sid[ 0 ]->write( A & 31, D );
-						//outRegisters[ A & 31 ] = D;
-						//#if !defined(SID2_DISABLED) && defined(SID2_PLAY_SAME_AS_SID1)
-						if ( !cfgSID2_Disabled && cfgSID2_PlaySameAsSID1 )
+
+						unsigned char A, D;
+						decodeGPIO( ringBufGPIO[ ringRead ], &A, &D );
+
+						#ifdef EMULATE_OPL2
+						if ( cfgEmulateOPL2 && (ringBufGPIO[ ringRead ] & bIO2) )
+						{
+							if ( ( ( A & ( 1 << 4 ) ) == 0 ) )
+								ym3812_write( pOPL, 0, D ); else
+								ym3812_write( pOPL, 1, D );
+						} else
+						#endif
+						//#if !defined(SID2_DISABLED) && !defined(SID2_PLAY_SAME_AS_SID1)
+						// TODO: generic masks
+						if ( !cfgSID2_Disabled && !cfgSID2_PlaySameAsSID1 && (ringBufGPIO[ ringRead ] & SID2_MASK) )
+						{
 							sid[ 1 ]->write( A & 31, D );
+						} else
 						//#endif
+						{
+							sid[ 0 ]->write( A & 31, D );
+							//outRegisters[ A & 31 ] = D;
+							//#if !defined(SID2_DISABLED) && defined(SID2_PLAY_SAME_AS_SID1)
+							if ( !cfgSID2_Disabled && cfgSID2_PlaySameAsSID1 )
+								sid[ 1 ]->write( A & 31, D );
+							//#endif
+						}
 					}
-
 					ringRead++;
 					ringRead &= ( RING_SIZE - 1 );
 				}
@@ -1008,14 +1168,37 @@ startHereAfterReset:
 			//
 			// mixer
 			//
-			s32 left, right;
-			
+			register s32 left, right;
+
+#ifdef SUPPORT_MIDI
+			register s32 midiSampleLeft;
+
+			midiSampleLeft = 0;
+			if ( cfgMIDI )
+			{
+				if ( midiBufferOfs >= midiBufferSize )
+				{
+					tsf_render_float( TinySoundFont, &midiSampleBuffer[0], midiBufferSize, 0 );
+					midiBufferOfs = 0;
+				} 
+
+				midiSampleLeft = midiSampleBuffer[ midiBufferOfs ] * 32767.0f;
+				midiSampleBuffer[ midiBufferOfs ] = 0.0f;
+				midiBufferOfs ++;
+				midiSampleLeft = max( -31768+2, min( 31767-2, midiSampleLeft ) );
+			}
+#endif
 			// yes, it's 1 byte shifted in the buffer, need to fix
 			right = ( val1 * cfgVolSID1_Left  + val2 * cfgVolSID2_Left  + valOPL * cfgVolOPL_Left ) >> 8;
 			left  = ( val1 * cfgVolSID1_Right + val2 * cfgVolSID2_Right + valOPL * cfgVolOPL_Right ) >> 8;
 
-			right = max( -31768, min( 31767, right ) );
-			left  = max( -31768, min( 31767, left ) );
+#ifdef SUPPORT_MIDI
+			right += midiSampleLeft;
+			left  += midiSampleLeft;
+#endif
+
+			right = max( -31768+2, min( 31767-2, right ) );
+			left  = max( -31768+2, min( 31767-2, left ) );
 
 			#ifdef USE_PWM_DIRECT
 			if ( outputPWM )
@@ -1155,30 +1338,11 @@ void CKernel::FIQHandler (void *pParam)
 		resetPressed = 0;
 	}
 
-	static u32 fCount = 0;
+/*	static u32 fCount = 0;
 	fCount ++;
-	fCount &= 255;
+	fCount &= 255;*/
 
 	cycleCountC64 ++;
-
-/*	if ( haltC64 )
-	{
-		haltC64 = 0;
-		WAIT_UP_TO_CYCLE( WAIT_TRIGGER_DMA ); 
-		CLR_GPIO( bDMA ); 
-	} 
-	if ( letgoC64 )
-	{
-		letgoC64 = 0;
-		WAIT_UP_TO_CYCLE( WAIT_RELEASE_DMA ); 
-		SET_GPIO( bDMA ); 
-	}
-
-	if ( SID_not_initialized )
-	{
-		OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
-		return;
-	}*/
 
 	#ifdef COMPILE_MENU
 	// preload cache
@@ -1186,22 +1350,11 @@ void CKernel::FIQHandler (void *pParam)
 	{
 		CACHE_PRELOADL1STRMW( &ringWrite );
 		CACHE_PRELOADL1STRM( &sampleBuffer[ smpLast ] );
-		//CACHE_PRELOADL1STRM( &outRegisters[ 0 ] );
 		CACHE_PRELOADL1STRM( &outRegisters[ 16 ] );
 	}
 	#endif
 
 	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
-
-	#ifdef COMPILE_MENU
-/*	if ( resetCounter > 3  )
-	{
-		disableCart = transferStarted = 0;
-		SETCLR_GPIO( configGAMEEXROMSet | bNMI, configGAMEEXROMClr );
-		FINISH_BUS_HANDLING
-		return;
-	}*/
-	#endif
 
 	if ( busValueTTL < 0 )
 	{
@@ -1260,48 +1413,47 @@ void CKernel::FIQHandler (void *pParam)
 
 		FINISH_BUS_HANDLING
 		return;
-	} else
+	} 
+	if ( _playingPSID && IO2_ACCESS )
+	{
+		if ( CPU_READS_FROM_BUS && GET_IO12_ADDRESS == 0x55 )
+		{
+			static u32 oc = 0;
+			static u8 nextCharByte = 0;
+			WRITE_D0to7_TO_BUS( nextCharByte )
+			extern unsigned char charset[ 4096 ];
+			oc ++; oc &= 1023;
+			nextCharByte = charset[ 2048 + oc ];
+			FINISH_BUS_HANDLING
+			return;
+		}
+		if ( resetFromCodeState == 0 && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x11 )
+		{
+			//READ_D0to7_FROM_BUS( D )
+			if ( D == 0x22 )
+				resetFromCodeState = 1;
+			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+			return;
+		}
+		if ( resetFromCodeState == 1 && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x33 )
+		{
+			//READ_D0to7_FROM_BUS( D )
+			if ( D == 0x44 )
+			{
+				resetFromCodeState = 2;
+				latchSetClear( 0, LATCH_RESET );
+			}
+			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+			return;
+		}
+	} 
 	//  __   ___       __      ___       
 	// |__) |__   /\  |  \    |__   |\/| 
 	// |  \ |___ /~~\ |__/    |     |  | 
 	//                                   
 	#ifdef EMULATE_OPL2
-	if ( cfgEmulateOPL2 || _playingPSID )
+	if ( cfgEmulateOPL2 )
 	{
-		if ( _playingPSID )
-		{
-			if ( IO2_ACCESS && CPU_READS_FROM_BUS && GET_IO12_ADDRESS == 0x55 )
-			{
-				static u32 oc = 0;
-				extern unsigned char charset[ 4096 ];
-				u32 D = charset[ 2048 + oc ];
-				oc ++; oc &= 1023;
-				WRITE_D0to7_TO_BUS( D )
-				CACHE_PRELOADL2STRM( &charset[ 2048 + oc ] );
-				OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
-				return;
-			}
-			if ( resetFromCodeState == 0 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x11 )
-			{
-				//READ_D0to7_FROM_BUS( D )
-				if ( D == 0x22 )
-					resetFromCodeState = 1;
-				OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
-				return;
-			}
-			if ( resetFromCodeState == 1 && IO2_ACCESS && CPU_WRITES_TO_BUS && GET_IO12_ADDRESS == 0x33 )
-			{
-				//READ_D0to7_FROM_BUS( D )
-				if ( D == 0x44 )
-				{
-					resetFromCodeState = 2;
-					latchSetClear( 0, LATCH_RESET );
-				}
-				OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
-				return;
-			}
-		}
-
 		if ( ( CPU_READS_FROM_BUS && IO2_ACCESS ) && ( GET_IO12_ADDRESS == 0x60 ) )
 		{
 			//
@@ -1426,6 +1578,79 @@ void CKernel::FIQHandler (void *pParam)
 		return;
 	}
 
+	// MIDI experimental support
+#ifdef SUPPORT_MIDI
+	static uint8_t midiFIFO[ 4 ], midiFIFOIdx = 0;
+	if ( cfgMIDI && IO1_ACCESS ) 
+	{
+		register u32 A = GET_ADDRESS0to7;
+		register u8 MC, MD1, MD2;
+
+		if ( A < 8 )
+		{
+			if ( CPU_WRITES_TO_BUS && (A&3) == MIDI_TRANSMIT_REG )
+			{
+				midiFIFO[ midiFIFOIdx++ ] = D;
+				midiFIFOIdx &= 3;
+				MC = midiFIFO[ ( 4 + midiFIFOIdx - 2 ) & 3 ] & 0xf0;
+				if ( MC == 0xc0 /*|| MD == 0xd0*/) // program and channel pressure
+				{
+					MC = midiFIFO[ ( 4 + midiFIFOIdx - 2 ) & 3 ];
+					MD1 = midiFIFO[ ( midiFIFOIdx + 4 - 1 ) & 3 ] & 127;
+					MD2 = 0;
+					ringBufGPIO[ ringWrite ] = (1<<31) | MC | ( MD1 << 8 ) | ( MD2 << 16 );
+					ringTime[ ringWrite ] = cycleCountC64;
+					ringWrite ++;
+					ringWrite &= ( RING_SIZE - 1 );
+
+					*(u32*)&midiFIFO[0] = 0;
+				} else
+				if ( MC == 0xd0 ) // channel pressure
+				{
+					*(u32*)&midiFIFO[0] = 0;
+				} else
+				{
+					MC = midiFIFO[ ( 4 + midiFIFOIdx - 3 ) & 3 ] & 0xf0;
+					if ( MC == 0x90 || MC == 0x80 || MC == 0xe0 || MC == 0xb0 ) // commands with two parameters
+					{
+						MC = midiFIFO[ ( 4 + midiFIFOIdx - 3 ) & 3 ];
+						MD1 = midiFIFO[ ( midiFIFOIdx + 4 - 2 ) & 3 ] & 127;
+						MD2 = midiFIFO[ ( midiFIFOIdx + 4 - 1 ) & 3 ] & 127;
+						ringBufGPIO[ ringWrite ] = (1<<31) | MC | ( MD1 << 8 ) | ( MD2 << 16 );
+						ringTime[ ringWrite ] = cycleCountC64;
+						ringWrite ++;
+						ringWrite &= ( RING_SIZE - 1 );
+						*(u32*)&midiFIFO[0] = 0;
+					}
+				}
+			} else
+			{
+				register u8 D = 0;
+				// read from IO1
+				if ( A == MIDI_STATUS_REG )
+				{
+					// available for write? always :-)
+					D |= 1 << 1;
+
+					// data ready for read? no
+					//D |= 1 << 0;
+					WRITE_D0to7_TO_BUS( D )
+					FINISH_BUS_HANDLING
+					return;
+				} else 
+				if ( A == MIDI_RECEIVE_REG )
+				{
+					D = 0;
+					WRITE_D0to7_TO_BUS( D )
+					FINISH_BUS_HANDLING
+					return;
+				}
+			}
+		}
+	}
+#endif
+
+
 	//  ___                      ___    __                     ___    __  
 	// |__   |\/| |  | |     /\   |  | /  \ |\ |    | |\ |    |__  | /  \ 
 	// |___  |  | \__/ |___ /~~\  |  | \__/ | \|    | | \|    |    | \__X 
@@ -1458,10 +1683,6 @@ void CKernel::FIQHandler (void *pParam)
 
 			s32 d1 = (s32)( ( *(s16*)&s1 + 32768 ) * PWMRange ) >> 17;
 			s32 d2 = (s32)( ( *(s16*)&s2 + 32768 ) * PWMRange ) >> 17;
-			/*if ( d1 < 0 ) d1 = 0;
-			if ( d1 >= (s32)PWMRange ) d1 = (s32)PWMRange - 1;
-			if ( d2 < 0 ) d2 = 0;
-			if ( d2 >= (s32)PWMRange ) d2 = (s32)PWMRange - 1;*/
 			write32( ARM_PWM_DAT1, d1 );
 			write32( ARM_PWM_DAT2, d2 );
 			RESET_CPU_CYCLE_COUNTER
@@ -1494,7 +1715,7 @@ void CKernel::FIQHandler (void *pParam)
 	}
 	#endif
 
-	u32 swizzle = 
+	/*u32 swizzle = 
 		( (fCount & 128) >> 7 ) |
 		( (fCount & 64) >> 5 ) |
 		( (fCount & 32) >> 3 ) |
@@ -1502,7 +1723,7 @@ void CKernel::FIQHandler (void *pParam)
 		( (fCount & 8) << 1 ) |
 		( (fCount & 4) << 3 ) |
 		( (fCount & 2) << 5 ) |
-		( (fCount & 1) << 7 );
+		( (fCount & 1) << 7 );*/
 	#endif
 
 	static u32 lastButtonPressed = 0;
@@ -1526,7 +1747,7 @@ void CKernel::FIQHandler (void *pParam)
 	#ifdef COMPILE_MENU
 	if ( screenType == 0 )
 	{
-		if ( vu_nLEDs != 0xffff )
+		/*if ( vu_nLEDs != 0xffff )
 		{
 			if ( vu_Mode == 0 )
 			{
@@ -1550,7 +1771,7 @@ void CKernel::FIQHandler (void *pParam)
 				clrLatchFIQ( ( (~led) & LATCH_LED_ALL ) | LATCH_LED0 );		
 			} else
 				clrLatchFIQ( LATCH_LED_ALL );		
-		}
+		}*/
 	} else
 	{
 		prepareOutputLatch4Bit();
