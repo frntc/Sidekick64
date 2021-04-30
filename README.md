@@ -27,6 +27,7 @@ The connecting circuitry is quite simple and does not include any programmable I
 - C64 kernal replacement,
 - Function ROMs on a C128, or 
 - multiple SIDs and Sound Expander/FM emulation (up to 8 SIDs, e.g. to play [The Tuneful 8](https://csdb.dk/release/?id=182735))
+- simplified Datel and Sequential MIDI interface with built-in SoundFont-synthesizer (slightly modified version of [TinySoundFont](https://github.com/schellingb/TinySoundFont))
 - TED-sound and Digiblaster emulation for C16/+4 (to have all sound devices on one output)
 
 But many more things are imaginable, e.g. 80 column cards with HDMI video output, custom accelerators/coprocessors etc. 
@@ -43,6 +44,7 @@ The C16/+4 version comes with two fabolous games ported to run directly off the 
 ## Changelog
 
 recent changes (higher = newer):
+- simplified Datel and Sequential MIDI interface and built-in SoundFont-synthesizer (v0.48)
 - enabled HDMI-output for SID/FM-emulation on C64/C128 (v0.46)
 - added support for RGCD and Hucky's cartridge (v0.46)
 - a model (2 variants, label) for 3D printing a case for the Sidekick and a Raspberry Pi 3B+ has been added
