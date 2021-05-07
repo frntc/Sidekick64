@@ -34,6 +34,7 @@
 #include <fatfs/ff.h>
 
 extern int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size );
+extern int getFileSize( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 *size );
 extern int writeFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 size );
 
 #define START_AND_READ_ADDR0to7_RW_RESET_CS	\

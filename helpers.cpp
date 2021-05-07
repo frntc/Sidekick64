@@ -75,6 +75,31 @@ int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data
 	return 1;
 }
 
+int getFileSize( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 *size )
+{
+	FATFS m_FileSystem;
+
+	// mount file system
+	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
+
+	// get filesize
+	FILINFO info;
+	u32 result = f_stat( FILENAME, &info );
+
+	if ( result != FR_OK )
+		return 0;
+
+	*size = (u32)info.fsize;
+
+	// unmount file system
+	if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: %s", DRIVE );
+	
+	return 1;
+}
+
+
 // file writing
 int writeFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 size )
 {
