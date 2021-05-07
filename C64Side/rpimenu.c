@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
           - simple menu code running on the C64 (C128 and VIC detection, sending keypress, downloading screen)
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -286,7 +286,7 @@ int main (void)
 
         // sendKeypress
         //key = cgetc();
-        if ( key == 29 && *((char *)(0x0427)) != 0 )
+        if ( ( key == 29 || key == 's' || key == 'S' ) && *((char *)(0x0427)) != 0 )
         {
             __asm__ ("lda #$0a");
             __asm__ ("ldx #$20");
