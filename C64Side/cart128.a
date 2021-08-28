@@ -1,0 +1,108 @@
+;      _________.__    .___      __   .__        __        
+;     /   _____/|__| __| _/____ |  | _|__| ____ |  | __    
+;     \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /    
+;     /        \|  / /_/ \  ___/|    <|  \  \___|    <     
+;    /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \    
+;            \/         \/    \/     \/       \/     \/    
+;    
+;     cart128.a
+;    
+;     RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
+;              - code of a cart to download and launch a .PRG from the RPi to a C128
+;     Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;    
+;     Logo created with http://patorjk.com/software/taag/
+;     
+;     This program is free software: you can redistribute it and/or modify
+;     it under the terms of the GNU General Public License as published by
+;     the Free Software Foundation, either version 3 of the License, or
+;     (at your option) any later version.
+;    
+;     This program is distributed in the hope that it will be useful,
+;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;     GNU General Public License for more details.
+;     
+;     You should have received a copy of the GNU General Public License
+;     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+* = $8000
+    jmp coldstart
+    jmp warmstart
+    .byte 2
+    .byte $43,$42,$4D
+ 
+coldstart
+    sei
+    ldx #$ff
+    txs 
+    cld 
+    lda #$e3
+    sta $01
+    lda #$37
+    sta $00
+ 
+    lda #%00001000
+    sta $ff00         ; MMU
+    jsr $ff8a         ; restore vectors
+    jsr $ff84         ; init I/O devices, ports, timers
+    jsr $ff81         ; init editor & video chips
+
+    cli
+    jmp warmstart 
+
+warmstart
+
+		; copy RAM loader to datasette buffer
+		ldx #0
+copy:		
+    lda loaderStart,x
+		sta $0b00,x
+		inx
+		cpx #loaderEnd-loaderStart
+		bne copy
+
+    jmp $0b00
+
+
+loaderStart
+
+    sta $de00
+
+    ; number of 256-byte pages to copy
+    ldy $de01
+
+    ; lo-byte of destination address
+    lda $de00
+    sta $fb
+    
+    ; hi-byte of destination address
+    lda $de00
+    sta $fc
+ 
+LOOPs0
+    ldy #$00
+LOOPs1
+    lda $de00
+    sta ($fb),y
+    iny
+    bne LOOPs1
+
+    inc $fc
+
+    dex
+    bne LOOPs0
+
+    lda #123                ; disable Sidekick64 loader
+    sta $df00
+
+    lda #0
+    sta $ff00
+    
+    jmp $5aa6	    ;  basic run
+
+loaderEnd
+
+* = $9fff
+         .byte 0
