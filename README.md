@@ -1,19 +1,13 @@
 
-<p  align="center"  font-size:  30px;>
+<img align="right"  width="280" src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_logo.jpg">
 
-<b> .- Sidekick64 -. </b><br><br>
-
-</p>
-
-<img align="right"  width="320" src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_logo.jpg">
-
-Sidekick64 is a versatile cartridge/expansion for the C64, C128, and the C16/+4. It uses a Raspberry Pi 3A+, 3B+ or Zero 2 (only for C64/C128) to emulate memory expansions, sound devices (up to 8 SIDs, SFX Sound Expander, MIDI), freezer cartridges, cartridges such as Easyflash/GMOD, kernal replacements, C128 function ROMs and many more. Some functionalities can be combined with others, e.g. kernal replacement plus freezers or GeoRAM expansion. The Sidekick64 handles among others PRGs, D64, SID files and also integrates tools such as Disk2EasyFlash, PSID64.
+**Sidekick64** is a versatile cartridge/expansion for the C64, C128, and the C16/+4. It uses a Raspberry Pi 3A+, 3B+ or Zero 2 (only for C64/C128) to emulate memory expansions, sound devices (up to 8 SIDs, SFX Sound Expander, MIDI), freezer cartridges, cartridges such as Easyflash/GMOD, kernal replacements, C128 function ROMs and many more. Some functionalities can be combined with others, e.g. kernal replacement plus freezers or GeoRAM expansion. The Sidekick64 handles among others PRGs, D64, SID files and also integrates tools such as Disk2EasyFlash, PSID64.
 
 <p align="center" font-size: 30px;>
 
-<img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_menu.gif"  height="150">  
-<img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_rpi3a.jpg"  height="150">  
- <img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_sb.jpg"  height="150">
+<img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_menu.gif"  height="200">  
+<img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_rpi3a.jpg"  height="200">  
+ <img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_sb.jpg"  height="200">
 
 </p>
 
