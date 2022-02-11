@@ -129,7 +129,7 @@ Sometimes 'button #2' has extra function (e.g. freezing, reactivating Sidekick64
 
   
 
-When using the RPi Zero 2 you need to overclock the SoC to 1.2 GHz or 1.3 GHz (see SD:config.txt). The RPi 3A+/3B+ can run at the same frequencies when being used with a C64/C128 (i.e. without overclocking). For the C16/+4 the software is curretnly testet with the 3A+/3B+ only and also requires a little bit of overclocking. Although I never experienced any problems with it, please be aware that overclocking may void warranty.
+When using the RPi Zero 2 you need to overclock the SoC to 1.2 GHz or 1.3 GHz (see SD:config.txt). The RPi 3A+/3B+ can run at the same frequencies when being used with a C64/C128 (i.e. without overclocking). For the C16/+4 the software is currently tested with the 3A+/3B+ only and also requires a little bit of overclocking. Although I never experienced any problems with it, please be aware that overclocking may void warranty.
 
   
 
@@ -139,7 +139,7 @@ Normally you would use an external power supply for the RPi. Although the circui
 
   
 
-Alternatively you can power the Sidekick64 from the **C64/C128** using the "close to power..."-jumper. The current of the RPi has been measured and stays within the specificiations of the expansion port. In any case I recommend to not try powering the Sidekick64 with a standard PSU/brick of death.
+Alternatively you can power the Sidekick64 from the **C64/C128** using the "close to power..."-jumper. The current of the RPi has been measured and stays within the specifications of the expansion port. In any case I recommend to not try powering the Sidekick64 with a standard PSU/brick of death.
 
   
 
