@@ -1,0 +1,225 @@
+;      _________.__    .___      __   .__        __        
+;     /   _____/|__| __| _/____ |  | _|__| ____ |  | __    
+;     \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /    
+;     /        \|  / /_/ \  ___/|    <|  \  \___|    <     
+;    /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \    
+;            \/         \/    \/     \/       \/     \/    
+;    
+;     cart_ultimax.a
+;    
+;     Sidekick64 - A framework for interfacing the C64 and a Raspberry Pi Zero 2 or 3A+/3B+
+;                - code of a Ultimax cart to download and launch a .PRG from the RPi
+;     Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;    
+;     Logo created with http://patorjk.com/software/taag/
+;     
+;     This program is free software: you can redistribute it and/or modify
+;     it under the terms of the GNU General Public License as published by
+;     the Free Software Foundation, either version 3 of the License, or
+;     (at your option) any later version.
+;    
+;     This program is distributed in the hope that it will be useful,
+;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;     GNU General Public License for more details.
+;     
+;     You should have received a copy of the GNU General Public License
+;     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+* = $8000
+
+DISABLERADR = $33c          ; addr of memcpy (datasette buffer)
+TRAPADR     = ($33c+$10)    ; addr of reset trap (also in datasette buffer)
+
+RESTORE_LOWER = $334
+RESTORE_UPPER = $335
+
+.word coldstart             ; coldstart vector
+.word warmstart             ; warmstart vector
+.byte $C3,$C2,$CD,$38,$30   ; "CBM80"
+ 
+coldstart
+    sei
+    ldx #$ff
+    txs
+    ldx #$05
+    stx $d016
+    jsr $fdb3        	    ; init CIA
+    jsr $fda3               ; prepare IRQ
+
+    ;jsr $fd50              ; init mem, faster code below
+    lda #$00
+    tay
+  - sta $0002,Y
+    sta $0200,Y
+    sta $0300,Y
+    iny
+    bne -
+    ldx #$3c
+    ldy #$03
+    stx $B2
+    sty $B3
+    ldx #$00
+    ldy #$A0
+    stx $0283
+    sty $0284
+    lda #$08
+    sta $0282
+    lda #$04
+    sta $0288
+
+    jsr $fd15               ; init I/O
+    jsr $ff5b               ; init video
+
+    cli
+
+    jmp warmstart
+
+warmstart
+
+    jsr $ff8a               ; restore kernal vectors
+
+    lda #$00                ; clear start of BASIC area
+    sta $0800
+    sta $0801
+    sta $0802
+
+    lda $324                ; save CHRIN vector
+    sta RESTORE_LOWER
+    lda $325
+    sta RESTORE_UPPER
+     
+    ldx #$0                 ; copy reset trap to ram
+  loopCPYRSTTRAP
+    lda RESET_TRAP,x
+    sta TRAPADR,x
+    inx
+    cpx #(RESET_TRAP_END-RESET_TRAP)
+    bne loopCPYRSTTRAP
+
+    lda <#TRAPADR           ; setup reset trap, called after basic init
+    sta $324
+    lda >#TRAPADR
+    sta $325
+
+    ldx #$0		    ; copy code to disable the Ultimax mode to RAM and call it
+copy_disabler
+    lda DISABLER,x
+    sta DISABLERADR,x
+    inx
+    cpx #16
+    bne copy_disabler
+
+    jmp DISABLERADR
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; code which disables Ultimax mode (controlled by SidekickC64)
+DISABLER
+     ; disable ultimax mode
+     lda #1
+     sta $df00
+     jmp $fcfe
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+RESET_TRAP
+    sei
+    pha
+    txa
+    pha
+    tya
+    pha
+
+    lda RESTORE_LOWER       ; restore
+    sta $324
+    lda RESTORE_UPPER
+    sta $325          
+
+     
+    ; copy "basic" program
+    sta $de00
+    LDY $de01		    ; number of 256-byte pages to copy
+    lda $de00		    ; lo-byte of destination address
+    sta TRAPADR + (DEST_ADDR_HI-RESET_TRAP) + 1
+    lda $de00		    ; hi-byte of destination address
+    sta TRAPADR + (DEST_ADDR_HI-RESET_TRAP) + 2
+
+LOOPs0
+    ldx #$00
+LOOPs1
+    lda $de00
+DEST_ADDR_HI
+    sta $0801,x
+    inx
+    bne LOOPs1
+    inc TRAPADR + (DEST_ADDR_HI-RESET_TRAP) + 2
+    dey
+    bne LOOPs0
+
+
+    lda #82		    ; fake "rU[return]" using keyboard buffer 
+    sta $0277
+    lda #85
+    sta $0278
+    lda #78
+    sta $0279
+    lda #$0d
+    sta $027a
+    lda #145
+    sta $027b
+    lda #$0d
+    sta $027c
+    lda #$06
+    sta $C6
+
+
+    lda #$01                ; set current file ("read" from drive 8)
+    ldx #$08
+    tay
+    ;TODO: ldy #$01 instead of lda + tay
+    jsr $ffba               ; set file parameters
+
+    lda #8                  ; last used device = 8
+    sta $ba
+
+
+    ldx #$01                ; pointer to start addr of BASIC
+    lda #$08
+    stx $2b
+    sta $2c
+
+    sta $de00               ; get number of 256-byte pages that we copied
+    clc
+    adc $de01 
+
+    stx $2d                 ; ... and set BASIC program end and begin/end of BASIC variable addr
+    sta $2e
+    stx $2f
+    sta $30
+    stx $31
+    sta $32
+    stx $ae                 ; ... and program end
+    sta $af
+
+
+    lda #123                ; disable Sidekick64
+    sta $df00
+
+    pla
+    tay
+    pla
+    tax
+    pla
+
+    cli
+    rts
+RESET_TRAP_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+* = $9fff                     ; fill up to -$9fff (or $bfff if 16K)
+     .byte 0
+
