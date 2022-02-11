@@ -1405,8 +1405,8 @@ void CKernelMenu::Run( void )
 						u8 *src = &c64color[ vdcCurPosAttr * 40 ];
 						for ( int i = 0; i < 40; i++ )
 						{
-							u8 byteA = *(src++);
-				
+							u8 byteA = *(src++) & 15;
+
 							STX( 0xd600 );
 
 							if ( byteA != curValA )
@@ -1957,10 +1957,10 @@ int main( void )
 		InvalidateInstructionCache();
 
 		/* for debugging purposes only*/
-		if ( launchKernel == 255 ) 
+		/*if ( launchKernel == 255 ) 
 		{
 			reboot (); 	
-		} else
+		} else*/
 
 		switch ( launchKernel )
 		{
