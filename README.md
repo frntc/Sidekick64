@@ -75,7 +75,7 @@ There are two variants of the PCB: a larger one the fits the dimensions of the R
 
   
 
-Here you can find the BOM and assembly information for [Sidekick64 v0.42](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/main/Gerber/ibom_sk64.html), [Sidekick64 v0.42 Zero](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/main/Gerber/ibom_sk64zero.html). Sourcing components: you can use LVC and LVX types for the 07, 245, 257, and 573 ICs, and you can use 74LS30 or 74HCT30. The C16/+4 adapter does not require any electronic components.
+Here you can find the BOM and assembly information for [Sidekick64 v0.42](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk64.html), [Sidekick64 v0.42 Zero](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk64zero.html). Sourcing components: you can use LVC and LVX types for the 07, 245, 257, and 573 ICs, and you can use 74LS30 or 74HCT30. The C16/+4 adapter does not require any electronic components.
 
   
 
