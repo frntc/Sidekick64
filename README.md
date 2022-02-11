@@ -59,7 +59,7 @@ The Sidekick64 software provides a main menu for frequently used features, progr
   
   
 
-## How to build a SIDKick:
+## How to build a Sidekick64:
 
   
 
