@@ -165,6 +165,8 @@ void initPWMOutput()
 	CTimer::SimpleusDelay( 2000 );
 
 	PeripheralExit();
+
+	smpLast = smpCur = 0;
 }
 #endif
 

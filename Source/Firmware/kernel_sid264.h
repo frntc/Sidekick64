@@ -42,7 +42,7 @@
 //
 // sample rate
 //
-#define SAMPLERATE 44100
+#define SAMPLERATE 48000
 
 // 6581 or 8580
 extern unsigned int SID_MODEL[2];

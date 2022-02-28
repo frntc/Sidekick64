@@ -10,7 +10,7 @@
 
  RasPiC64 - A framework for interfacing the C64 (and C16/+4) and a Raspberry Pi 3B/3B+
           - menu/screen code
- Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -370,11 +370,30 @@ int getMainMenuSelection( int key, char **FILE, char **FILE2, int *addIdx )
 
 extern void deactivateCart();
 
-#define MAX_SETTINGS 16
+#define MAX_SETTINGS 18
 u32 curSettingsLine = 0;
-s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 3, 2, 16, 15, 4, 2, 16, 15, 2, 2, 16, 15, 16, 16 };
-s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 0, 15, 7, 15, 15 };
+s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 3, 2, 2, 16, 15, 4, 2, 16, 15, 2, 2, 16, 15, 16, 16, 2 };
+s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 0, 15, 7, 15, 15, 0 };
 u8  geoRAM_SlotNames[ 10 ][ 21 ];
+
+// 0
+// 1
+// 2 SID #1 type
+// 3 SID #1 addr
+// 4 register read
+// 5 vol
+// 6 panning
+// 7 SID #2 type
+// 8 SID #2 addr
+// 9 vol
+// 10 panning
+// 11 clock
+// 12 SFX
+// 13 vol
+// 14 pan
+// 15 Digiblaster vol
+// 16 TED vol
+// 17 output
 
 void writeSettingsFile()
 {
@@ -409,9 +428,13 @@ void readSettingsFile()
 void applySIDSettings()
 {
 	// how elegant...
-	extern void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 digiblasterVol, s32 sidfreq, s32 tedVol );
-	setSIDConfiguration( 0, settings[2], settings[6], settings[7]-1, settings[3], settings[7], settings[11],
-						 settings[4], settings[5], settings[8], settings[9], settings[12], settings[13], settings[14], settings[10], settings[15] );
+	extern void setSIDConfiguration( u32 mode, u32 sid1, u32 sid1addr, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 digiblasterVol, s32 sidfreq, s32 tedVol, u8 output );
+	u8 useHDMI = settings[ 17 ];
+	extern u8 hdmiSoundAvailable;
+	if ( !hdmiSoundAvailable )
+		useHDMI = 0;
+	setSIDConfiguration( 0, settings[2], settings[ 3 ], settings[7], settings[8]-1, settings[4], settings[8], settings[12],
+						 settings[5], settings[6], settings[9], settings[10], settings[13], settings[14], settings[15], settings[11], settings[16], useHDMI );
 }
 
 
@@ -422,11 +445,11 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 
 	if ( menuScreen == MENU_MAIN )
 	{
-		if ( k == VK_SHIFT_RETURN )
+		/*if ( k == VK_SHIFT_RETURN )
 		{
 			*launchKernel = 255; // reboot
 			return;
-		}
+		}*/
 
 		if ( k == KEY_HELP )
 		{
@@ -799,18 +822,26 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 		// left
 		if ( k == 157 )
 		{
-			settings[ curSettingsLine ] --;
-				//+= rangeSettings[ curSettingsLine ] - 1;
-			if ( settings[ curSettingsLine ] < 0 )
-				settings[ curSettingsLine ] = rangeSettings[ curSettingsLine ] - 1; else
-				settings[ curSettingsLine ] = max( 0, settings[ curSettingsLine ] );
-
-			if ( rangeSettings[ curSettingsLine ] < 15 )
+			if ( rangeSettings[ curSettingsLine ] == 17 ) // a volume variable
 			{
-				settings[ curSettingsLine ] %= rangeSettings[ curSettingsLine ]; 
+				settings[ curSettingsLine ] = max( 0, settings[ curSettingsLine ] - 1 );
 			} else
-				settings[ curSettingsLine ] = max( 0, settings[ curSettingsLine ] );
+			{
+				settings[ curSettingsLine ] --;
+				if ( rangeSettings[ curSettingsLine ] < 15 )
+				{
+					if ( settings[ curSettingsLine ] < 0 )
+						settings[ curSettingsLine ] = rangeSettings[ curSettingsLine ] - 1;
+				} else
+					settings[ curSettingsLine ] = max( 0, settings[ curSettingsLine ] );
 
+			}
+			if ( curSettingsLine == 17 ) // PWM or HDMI -> force to PWM if HDMI not available
+			{
+				extern u8 hdmiSoundAvailable;
+				if ( !hdmiSoundAvailable )
+					settings[ 17 ] = 0;
+			}
 		} else
 		// right 
 		if ( k == 29 )
@@ -819,6 +850,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal )
 			if ( rangeSettings[ curSettingsLine ] < 15 )
 				settings[ curSettingsLine ] %= rangeSettings[ curSettingsLine ]; else
 				settings[ curSettingsLine ] = min( settings[ curSettingsLine ], rangeSettings[ curSettingsLine ] - 1 );
+
+			if ( curSettingsLine == 17 ) // PWM or HDMI -> force to PWM if HDMI not available
+			{
+				extern u8 hdmiSoundAvailable;
+				if ( !hdmiSoundAvailable )
+					settings[ 17 ] = 0;
+			}
 		} else
 		// down
 		if ( k == 17 )
@@ -966,9 +1004,9 @@ void printSettingsScreen()
 	clearC64();
 	//               "012345678901234567890123456789012345XXXX"
 	printC64( 0,  1, "   .- Sidekick264 - Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
-	printC64( 0, 23, "    F3 Back to Menu, S Save Settings    ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
-	printC64( 4, 23, "F3", skinValues.SKIN_MENU_TEXT_HEADER, 128, 0 );
-	printC64( 21, 23, "S", skinValues.SKIN_MENU_TEXT_HEADER, 128, 0 );
+	printC64( 0, 24, "    F3 Back to Menu, S Save Settings    ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	printC64( 4, 24, "F3", skinValues.SKIN_MENU_TEXT_HEADER, 128, 0 );
+	printC64( 21, 24, "S", skinValues.SKIN_MENU_TEXT_HEADER, 128, 0 );
 
 	u32 x = 1, x2 = 8,y1 = 1, y2 = 1;
 	u32 l = curSettingsLine;
@@ -997,68 +1035,79 @@ void printSettingsScreen()
 	u32 textCol2 = skinValues.SKIN_MENU_TEXT_ITEM - 32;
 	y2 --;
 
-	printC64( x+1,  y2+11, "SID #1 ($FD40)", skinValues.SKIN_MENU_TEXT_ITEM, (l==2)?0x80:0 );
+	printC64( x+1,  y2+11, "SID #1", skinValues.SKIN_MENU_TEXT_ITEM, (l==2)?0x80:0 );
 	char sidStrS[ 3 ][ 20 ] = { "6581", "8580", "8580 w/ Digiboost" };
 	printC64( x2+10, y2+11, sidStrS[ settings[2] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==2)?0x80:0 );
 
-	printC64( x+1,  y2+12, "Register Read", skinValues.SKIN_MENU_TEXT_ITEM, (l==3)?0x80:0 );
+	char sidStrA1[ 2 ][ 8 ] = { "$FD40", "$D400" };
+	printC64( x+1,  y2+12, "Address", skinValues.SKIN_MENU_TEXT_ITEM, (l==3)?0x80:0 );
+	printC64( x2+10, y2+12, sidStrA1[ settings[3] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==3)?0x80:0 );
+
+	y2 ++;
+	printC64( x+1,  y2+12, "Register Read", skinValues.SKIN_MENU_TEXT_ITEM, (l==4)?0x80:0 );
 	char sidStrO[ 3 ][ 8 ] = { "off", "on" };
-	printC64( x2+10, y2+12, sidStrO[ settings[3] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==3)?0x80:0 );
+	printC64( x2+10, y2+12, sidStrO[ settings[4] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==4)?0x80:0 );
 
-	printC64( x+1,  y2+13, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==4)?0x80:0 );
+	printC64( x+1,  y2+13, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==5)?0x80:0 );
 	printC64( x+1+6,  y2+13, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
-	printC64( x+1+7,  y2+13, "Panning", skinValues.SKIN_MENU_TEXT_ITEM, (l==5)?0x80:0 );
-	sprintf( t, "%2d", settings[ 4 ] );
-	printC64( x2+10, y2+13, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==4)?0x80:0 );
+	printC64( x+1+7,  y2+13, "Panning", skinValues.SKIN_MENU_TEXT_ITEM, (l==6)?0x80:0 );
+	sprintf( t, "%2d", settings[ 5 ] );
+	printC64( x2+10, y2+13, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==5)?0x80:0 );
 	printC64( x2+13, y2+13, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
-	sprintf( t, "%2d", settings[ 5 ] - 7 );
-	printC64( x2+15, y2+13, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==5)?0x80:0 );
+	sprintf( t, "%2d", settings[ 6 ] - 7 );
+	printC64( x2+15, y2+13, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==6)?0x80:0 );
 
-	printC64( x+1,  y2+14, "SID #2", textCol2, (l==6)?0x80:0 );
+	printC64( x+1,  y2+14, "SID #2", textCol2, (l==7)?0x80:0 );
 	char sidStrS2[ 4 ][ 20 ] = { "6581", "8580", "8580 w/ Digiboost", "none" };
-	printC64( x2+10, y2+14, sidStrS2[ settings[6] ], textCol2, (l==6)?0x80:0 );
+	printC64( x2+10, y2+14, sidStrS2[ settings[7] ], textCol2, (l==7)?0x80:0 );
 
-	printC64( x+1,  y2+15, "Address", textCol2, (l==7)?0x80:0 );
+	printC64( x+1,  y2+15, "Address", textCol2, (l==8)?0x80:0 );
 	char sidStrA[ 2 ][ 8 ] = { "$FD40", "$FE80" };
-	printC64( x2+10, y2+15, sidStrA[ settings[7] ], textCol2, (l==7)?0x80:0 );
+	printC64( x2+10, y2+15, sidStrA[ settings[8] ], textCol2, (l==8)?0x80:0 );
 
-	printC64( x+1,  y2+16, "Volume", textCol2, (l==8)?0x80:0 );
+	printC64( x+1,  y2+16, "Volume", textCol2, (l==9)?0x80:0 );
 	printC64( x+1+6,  y2+16, "/", textCol2, 0 );
-	printC64( x+1+7,  y2+16, "Panning", textCol2, (l==9)?0x80:0 );
-	sprintf( t, "%2d", settings[ 8 ] );
-	printC64( x2+10, y2+16, t, textCol2, (l==8)?0x80:0 );
+	printC64( x+1+7,  y2+16, "Panning", textCol2, (l==10)?0x80:0 );
+	sprintf( t, "%2d", settings[ 9 ] );
+	printC64( x2+10, y2+16, t, textCol2, (l==9)?0x80:0 );
 	printC64( x2+13, y2+16, "/", textCol2, 0 );
-	sprintf( t, "%2d", settings[ 9 ] - 7 );
-	printC64( x2+15, y2+16, t, textCol2, (l==9)?0x80:0 );
+	sprintf( t, "%2d", settings[ 10 ] - 7 );
+	printC64( x2+15, y2+16, t, textCol2, (l==10)?0x80:0 );
 
-	printC64( x+1,  y2+17, "SID Frequency", skinValues.SKIN_MENU_TEXT_ITEM, (l==10)?0x80:0 );
-	char sidStrFreq[ 2 ][ 12 ] = { "886 KHz", "985 KHz" };
-	printC64( x2+10, y2+17, sidStrFreq[ settings[10] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==10)?0x80:0 );
+	printC64( x+1,  y2+17, "SID Frequency", skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
+//	char sidStrFreq[ 2 ][ 12 ] = { "886 KHz", "985 KHz" };
+	char sidStrFreq[ 2 ][ 13 ] = { "TED clock", "VIC-II clock" };
+	printC64( x2+10, y2+17, sidStrFreq[ settings[11] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
 
-	y2+=2;
-	printC64( x+1,  y2+17, "SFX Sound Exp.", skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
+	y2+=1;
+	printC64( x+1,  y2+17, "SFX Sound Exp.", textCol2, (l==12)?0x80:0 );
 	char sidStrO2[ 3 ][ 12 ] = { "off", "on ($FDE2)" };
-	printC64( x2+10, y2+17, sidStrO2[ settings[11] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==11)?0x80:0 );
+	printC64( x2+10, y2+17, sidStrO2[ settings[12] ], textCol2, (l==12)?0x80:0 );
 
-	printC64( x+1,  y2+18, "Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==12)?0x80:0 );
-	printC64( x+1+6,  y2+18, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
-	printC64( x+1+7,  y2+18, "Panning", skinValues.SKIN_MENU_TEXT_ITEM, (l==13)?0x80:0 );
-	sprintf( t, "%2d", settings[ 12 ] );
-	printC64( x2+10, y2+18, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==12)?0x80:0 );
-	printC64( x2+13, y2+18, "/", skinValues.SKIN_MENU_TEXT_ITEM, 0 );
-	sprintf( t, "%2d", settings[ 13 ] - 7 );
-	printC64( x2+15, y2+18, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==13)?0x80:0 );
+	printC64( x+1,  y2+18, "Volume", textCol2, (l==13)?0x80:0 );
+	printC64( x+1+6,  y2+18, "/", textCol2, 0 );
+	printC64( x+1+7,  y2+18, "Panning", textCol2, (l==14)?0x80:0 );
+	sprintf( t, "%2d", settings[ 13 ] );
+	printC64( x2+10, y2+18, t, textCol2, (l==13)?0x80:0 );
+	printC64( x2+13, y2+18, "/", textCol2, 0 );
+	sprintf( t, "%2d", settings[ 14 ] - 7 );
+	printC64( x2+15, y2+18, t, textCol2, (l==14)?0x80:0 );
 	
 	y2--;
-	printC64( x+1,  y2+20, "Digiblaster Vol", textCol2, (l==14)?0x80:0 );
-	sprintf( t, "%2d", settings[ 14 ] );
-	printC64( x2+10, y2+20, t, textCol2, (l==14)?0x80:0 );
-	printC64( x2+13, y2+20, "($FDE5)", textCol2, (l==14)?0x80:0 );
+	printC64( x+1,  y2+20, "Digiblaster Vol", skinValues.SKIN_MENU_TEXT_ITEM, (l==15)?0x80:0 );
+	sprintf( t, "%2d", settings[ 15 ] );
+	printC64( x2+10, y2+20, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==15)?0x80:0 );
+	printC64( x2+13, y2+20, "($FDE5)", skinValues.SKIN_MENU_TEXT_ITEM, (l==15)?0x80:0 );
 
 
-	printC64( x+1,  y2+21, "EmulaTED Volume", skinValues.SKIN_MENU_TEXT_ITEM, (l==15)?0x80:0 );
-	sprintf( t, "%02d", settings[ 15 ] );
-	printC64( x2+10, y2+21, t, skinValues.SKIN_MENU_TEXT_ITEM, (l==15)?0x80:0 );
+	printC64( x+1,  y2+21, "EmulaTED Volume", textCol2, (l==16)?0x80:0 );
+	sprintf( t, "%2d", settings[ 16 ] );
+	printC64( x2+10, y2+21, t, textCol2, (l==16)?0x80:0 );
+	
+	y2 --;
+	printC64( x+1,  y2+23, "Output", skinValues.SKIN_MENU_TEXT_ITEM, (l==17)?0x80:0 );
+	char sidStrOutput[ 2 ][ 17 ] = { "PWM (audio jack)", "HDMI" };
+	printC64( x2+10, y2+23, sidStrOutput[ settings[17] ], skinValues.SKIN_MENU_TEXT_ITEM, (l==17)?0x80:0 );
 
 	printSidekickLogo();
 
@@ -1096,11 +1145,11 @@ void renderC64()
 			if ( previousMenuScreen == MENU_BROWSER )
 				convert = 3;
 
-			printC64( 0, 10, "שששששששששששששששששששששששששששששששששששששששש", skinValues.SKIN_ERROR_BAR, 0, 1 );
+			printC64( 0, 10, "\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9\xf9", skinValues.SKIN_ERROR_BAR, 0, 1 );
 			printC64( 0, 11, "                                        ", skinValues.SKIN_ERROR_TEXT, 0 );
 			printC64( 0, 12, errorMsg, skinValues.SKIN_ERROR_TEXT, 0, convert );
 			printC64( 0, 13, "                                        ", skinValues.SKIN_ERROR_TEXT, 0 );
-			printC64( 0, 14, "רררררררררררררררררררררררררררררררררררררררר", skinValues.SKIN_ERROR_BAR, 0, 1 );
+			printC64( 0, 14, "\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8\xf8", skinValues.SKIN_ERROR_BAR, 0, 1 );
 		}
 	}
 }

@@ -89,9 +89,11 @@
 							tftClearDirty();
 
 							// remove old needle
-							for ( u32 i = startRow; i < endRow; i++ )
+							for ( s32 i = startRow; i < endRow; i++ )
 							{
 								s32 x = (s32)( px + i * dx );
+								if ( x < 0 ) x = 0; 
+								if ( x > 239 ) x = 239;
 								setPixelDirty( 220 - i, x, *(u16*)&tftBackground[ (x + (220-i) * 240) * 2 ] );
 							}
 
@@ -102,12 +104,15 @@
 							vuValueAvg = vuValueAvg * movAvg + vuValue * ( 1.0f - movAvg );
 							dx = -1.0f + vuValueAvg + 0.01f;
 
-							startRow =  40.0f * cosf( atanf(dx) );
-							endRow   = 100.0f * cosf( atanf(dx) );
+							float a = atanf( dx );
+							startRow =  40.0f * cosf( a );
+							endRow   = 100.0f * cosf( a );
 
-							for ( u32 i = startRow; i < endRow; i++ )
+							for ( s32 i = startRow; i < endRow; i++ )
 							{
 								s32 x = (s32)( px + i * dx );
+								if ( x < 0 ) x = 0; 
+								if ( x > 239 ) x = 239;
 								setPixelDirty( 220 - i, x, 0 );
 							}
 						} else

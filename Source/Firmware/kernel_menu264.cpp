@@ -237,6 +237,14 @@ void activateCart()
 	latchSetClearImm( LATCH_RESET, LATCH_ENABLE_KERNAL );
 }
 
+#define HDMI_SOUND
+
+s32 lastHDMISoundSample = 0;
+#ifdef HDMI_SOUND
+u8 hdmiSoundAvailable = 0;
+CHDMISoundBaseDevice *hdmiSoundDevice = NULL;
+#endif
+
 #ifdef COMPILE_MENU_WITH_SOUND
 CTimer				*pTimer;
 CScheduler			*pScheduler;
@@ -363,6 +371,23 @@ boolean CKernelMenu::Initialize( void )
 	} 
 
 	readSettingsFile();
+
+#ifdef HDMI_SOUND
+	hdmiSoundAvailable = 1;
+	hdmiSoundDevice = new CHDMISoundBaseDevice( 48000 );
+	if ( hdmiSoundDevice )
+	{
+		hdmiSoundDevice->SetWriteFormat( SoundFormatSigned24, 2 );
+		if (!hdmiSoundDevice->Start ())
+		{
+			//m_Logger.Write ("SK264", LogPanic, "Cannot start sound device");
+			hdmiSoundAvailable = 0;
+		} else
+			hdmiSoundDevice->Cancel();		
+	} else
+		hdmiSoundAvailable = 0;
+#endif
+
 	applySIDSettings();
 	renderC64();
 	disableCart = 0;
@@ -426,6 +451,9 @@ void CKernelMenu::Run( void )
 		tftInitImm( screenRotation );
 		tftSendFramebuffer16BitImm( tftFrameBuffer );
 	}
+
+	if ( hdmiSoundDevice )
+		hdmiSoundDevice->Start();
 
 	if ( !disableCart )
 	{

@@ -70,6 +70,8 @@ extern int screenType;
 #include <vc4/vchiq/vchiqdevice.h>
 #include <vc4/sound/vchiqsoundbasedevice.h>
 #endif
+#include <circle/soundbasedevice.h>
+#include <circle/hdmisoundbasedevice.h>
 
 #include "lowlevel_arm64.h"
 #include "gpio_defs.h"

@@ -51,6 +51,7 @@ static __attribute__( ( always_inline ) ) inline void putSample( s16 a, s16 b )
 
 static __attribute__( ( always_inline ) ) inline s32 getSample()
 {
+	if ( smpLast == smpCur ) return sampleBuffer[ smpLast ];
 	u32 ret = sampleBuffer[ smpLast ++ ];
 	smpLast &= 127;
 	return ret;

@@ -11,7 +11,7 @@
  RasPiC64 - A framework for interfacing the C64 (and C16/+4) and a Raspberry Pi 3B/3B+
           - Sidekick SID: a SID and SFX Sound Expander Emulation for the C16/+4
 		    (using reSID by Dag Lem and FMOPL by Jarek Burczynski, Tatsuyuki Satoh, Marco van den Heuvel, and Acho A. Tang)
- Copyright (c) 2019-2021 Carsten Dachsbacher <frenetic@dachsbacher.de>
+ Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  Logo created with http://patorjk.com/software/taag/
  
@@ -37,6 +37,9 @@
 //u32 launchPrg;
 #endif
 
+#define HDMI_SOUND
+
+
 #undef USE_VCHIQ_SOUND
 
 static const char DRIVE[] = "SD:";
@@ -53,11 +56,12 @@ static const char FILENAME_LED_RGB[] = "SD:SPLASH/sk64_sid_led.tga";
 #include "resid/sid.h"
 using namespace reSID;
 
-//u32 CLOCKFREQ = 1773447;//886723;
+u32 CLOCKFREQ_P4 = 1773447;//886723;
 u32 CLOCKFREQ = 2*985248;	
+u32 CLOCKFREQ_ADJ = 985248;
 
 //MUX zum TESTEN auf IO1
-//IO1 kann man später einsparen, in dem man verODERt mit ROMH (C1low und C1high) und dann die Adresse ausdekodiert
+//IO1 kann man spï¿½ter einsparen, in dem man verODERt mit ROMH (C1low und C1high) und dann die Adresse ausdekodiert
 
 // SID types and digi boost (only for MOS8580)
 unsigned int SID_MODEL[2] = { 8580, 8580 };
@@ -111,12 +115,15 @@ u32 cfgEmulateOPL2 = 1;
 u32 cfgSID2_Disabled = 0;
 u32 cfgSID2_PlaySameAsSID1 = 0;
 u32 cfgMixStereo = 1;
+u32 cfgSID1_Addr = 0;
 u32 cfgSID2_Addr = 0;
 s32 cfgVolSID1_Left, cfgVolSID1_Right;
 s32 cfgVolSID2_Left, cfgVolSID2_Right;
 s32 cfgVolOPL_Left, cfgVolOPL_Right;
 
-void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 digiblasterVol, s32 sidfreq, s32 tedVol )
+u8 outputHDMI = 0;
+
+void setSIDConfiguration( u32 mode, u32 sid1, u32 sid1addr, u32 sid2, u32 sid2addr, u32 rr, u32 addr, u32 exp, s32 v1, s32 p1, s32 v2, s32 p2, s32 v3, s32 p3, s32 digiblasterVol, s32 sidfreq, s32 tedVol, u8 output )
 {
 	SID_MODEL[ 0 ] = ( sid1 == 0 ) ? 6581 : 8580;
 	SID_DigiBoost[ 0 ] = ( sid1 == 2 ) ? 1 : 0;
@@ -132,14 +139,9 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	cfgVolOPL_Left  = v3 * ( 14 - p3 ) * 255 / 210;
 	cfgVolOPL_Right = v3 * ( p3 ) * 255 / 210;
 
-/*	int maxVolFactor = max( cfgVolSID1_Left, max( cfgVolSID1_Right, max( cfgVolSID2_Left, max( cfgVolSID2_Right, max( cfgVolOPL_Left, cfgVolOPL_Right ) ) ) ) );
-
-	cfgVolSID1_Left  = cfgVolSID1_Left  * 256 / maxVolFactor;
-	cfgVolSID1_Right = cfgVolSID1_Right * 256 / maxVolFactor;
-	cfgVolSID2_Left  = cfgVolSID2_Left  * 256 / maxVolFactor;
-	cfgVolSID2_Right = cfgVolSID2_Right * 256 / maxVolFactor;
-	cfgVolOPL_Left   = cfgVolOPL_Left   * 256 / maxVolFactor;
-	cfgVolOPL_Right  = cfgVolOPL_Right  * 256 / maxVolFactor;*/
+	if ( sid1addr )
+		cfgSID1_Addr = 0xd400; else
+		cfgSID1_Addr = 0xfd40; 
 
 	if ( sid2 == 3 ) 
 	{ 
@@ -164,10 +166,24 @@ void setSIDConfiguration( u32 mode, u32 sid1, u32 sid2, u32 sid2addr, u32 rr, u3
 	}
 	digiblasterVolume = 255 * digiblasterVol / 15;
 	if ( sidfreq == 0 )
-		CLOCKFREQ = 1773447; else
+	{
+		CLOCKFREQ = 1773447; 
+		CLOCKFREQ_ADJ = CLOCKFREQ / 2;
+	} else
+	{
 		CLOCKFREQ = 2*985248;	
+		CLOCKFREQ_ADJ = CLOCKFREQ / 2;
+	}
+
+//	CLOCKFREQ = 1773447; 
+//	CLOCKFREQ_ADJ = CLOCKFREQ/2;
+
+		//CLOCKFREQ = 2*985248;	
+		//CLOCKFREQ_ADJ = CLOCKFREQ / 2;
 
 	tedVolume = 255 * tedVol / 15;
+
+	outputHDMI = output;
 }
 
 
@@ -248,9 +264,15 @@ void quitSID()
 }
 
 unsigned long long cycleCountC64;
+unsigned long long nCyclesEmulated = 0;
+u8 flushBuffer = 0;
+unsigned long long samplesElapsed = 0;
 
-// to do: integrate HDMI audio out
-#define SAMPLERATE 44100
+unsigned long long adjustedCycleCount( const unsigned long long cycleCountC64 )
+{
+	return ( cycleCountC64 * (unsigned long long)CLOCKFREQ_ADJ ) / (unsigned long long)1773447;
+}
+
 u32 SAMPLERATE_ADJUSTED = SAMPLERATE;
 u32 trackSampleProgress;
 
@@ -314,7 +336,7 @@ static u32 visModeGotoNext = 0;
 
 static float px = 120.0f;
 static float dx = 0.0f;
-static u32 startRow = 1, endRow = 1;
+static s32 startRow = 1, endRow = 1;
 static float vuValueAvg = 0.01f;
 static u32 visUpdate = 1;
 static int scopeX = 0;
@@ -476,35 +498,17 @@ void CKernel::Run( void )
 		prgData_l264[ i ] = prgData_l264[ i - 1 ];
 	prgData_l264[0] = ( ( prgSize_l264 + 255 ) >> 8 );
 
-#ifndef COMPILE_MENU
-	obsolete, do not use this part
-
-	latchSetClearImm( 0, LATCH_RESET | allUsedLEDs | LATCH_ENABLE_KERNAL );
-
-	cycleCountC64 = 0;
-	while ( cycleCountC64 < 10 ) 
-	{
-		pScheduler->MsSleep( 100 );
-	}
-
-	//
-	// measure clock rate of the C64 (more accurate syncing with emulation, esp. for HDMI output)
-	//
-	cycleCountC64 = 0;
-	unsigned long long startTime = pTimer->GetClockTicks();
-	unsigned long long curTime;
-
-	do {
-		curTime = pTimer->GetClockTicks();
-	} while ( curTime - startTime < 1000000 );
-
-	unsigned long long clockFreq = cycleCountC64 * 1000000 / ( curTime - startTime );
-	CLOCKFREQ = clockFreq;
-	logger->Write( "", LogNotice, "Measured clock frequency: %u Hz", (u32)CLOCKFREQ );
-#endif
-
 	for ( int i = 0; i < NUM_SIDS; i++ )
-		sid[ i ]->set_sampling_parameters( CLOCKFREQ, SAMPLE_INTERPOLATE, SAMPLERATE );
+	{
+		int SID_passband = 90;
+		int SID_gain = 97;
+		int SID_filterbias = 1000;
+
+		sid[ i ]->adjust_filter_bias( SID_filterbias / 1000.0f );
+		sid[ i ]->set_sampling_parameters( CLOCKFREQ, SAMPLE_FAST, SAMPLERATE, SAMPLERATE * SID_passband / 200.0f, SID_gain / 100.0f );
+
+		//sid[ i ]->set_sampling_parameters( CLOCKFREQ, SAMPLE_INTERPOLATE, SAMPLERATE );
+	}
 
 	//
 	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
@@ -524,9 +528,6 @@ void CKernel::Run( void )
 	#endif
 
 //	logger->Write( "", LogNotice, "start emulating..." );
-	cycleCountC64 = 0;
-	unsigned long long nCyclesEmulated = 0;
-	unsigned long long samplesElapsed = 0;
 	// how far did we consume the commands in the ring buffer?
 	unsigned int ringRead = 0;
 
@@ -542,6 +543,9 @@ void CKernel::Run( void )
 		FORCE_READ_LINEAR32a( (void*)&FIQ_HANDLER, 6*1024, 32768 );
 	}
 
+	cycleCountC64 = 0;
+	nCyclesEmulated = 0;
+	samplesElapsed = 0;
 	//
 	// setup FIQ
 	//
@@ -560,18 +564,19 @@ void CKernel::Run( void )
 	DELAY(10<<10);
 	m_InputPin.EnableInterrupt( GPIOInterruptOnRisingEdge );
 	asm volatile ("wfi");
+
+#ifdef HDMI_SOUND
+	extern CHDMISoundBaseDevice *hdmiSoundDevice;
+	if ( outputHDMI )
+	{
+		flushBuffer = 0;
+	}
+#endif
+
 	latchSetClearImm( LATCH_RESET, allUsedLEDs | LATCH_ENABLE_KERNAL );
-/*	DELAY(1<<26);
-	latchSetClearImm( 0, LATCH_RESET );
-	DELAY(10<<10);
-	latchSetClearImm( LATCH_RESET, 0 );*/
 
 	if ( launchPrg_l264 )
 	{
-		//launchPrepareAndWarmCache();
-		//launchPrepareAndWarmCache();
-		//launchPrepareAndWarmCache();
-
 		while ( !disableCart_l264 )
 		{
 			#ifdef COMPILE_MENU
@@ -599,13 +604,18 @@ void CKernel::Run( void )
 	}
 	#endif
 
-	//logger->Write( "", LogNotice, "start emulating..." );
-
 	// new main loop mainloop
 	while ( true )
 	{
 		#ifdef COMPILE_MENU
-		TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
+		//TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
+		if ( cycleCountC64 > 2000000 && resetCounter > 500000 ) {		
+			hdmiSoundDevice->Cancel();
+			EnableIRQs();												
+			m_InputPin.DisableInterrupt();								
+			m_InputPin.DisconnectInterrupt();							
+			return;														
+		}
 		#endif
 
 		if ( resetCounter > 3 && resetReleased )
@@ -659,35 +669,29 @@ void CKernel::Run( void )
 		static u32 nSamplesInThisRun = 0;
 		#endif
 
-		unsigned long long cycleCount = cycleCountC64;
+		unsigned long long cycleCount = adjustedCycleCount( cycleCountC64 );
 		while ( cycleCount > nCyclesEmulated )
 		{
-		#ifndef USE_PWM_DIRECT
-			static int start = 0;
-			if ( nSamplesInThisRun > 2205 / 8 )
-			{
-				if ( !start )
-				{
-					m_pSound->Start();
-					start = 1;
-				} else
-				{
-					//pScheduler->MsSleep( 1 );
-					pScheduler->Yield();
-				}
-				nSamplesInThisRun = 0;
-			}
-			nSamplesInThisRun++;
-		#endif
-
 			unsigned long long samplesElapsedBefore = samplesElapsed;
 
+			long long cycleNextSampleReady = ( ( unsigned long long )(samplesElapsedBefore+1) * ( unsigned long long )CLOCKFREQ_ADJ ) / ( unsigned long long )SAMPLERATE;
+			u32 cyclesToNextSample = cycleNextSampleReady - nCyclesEmulated;
+
 			do { // do SID emulation until time passed to create an additional sample (i.e. there may be several cycles until a sample value is created)
-				#ifdef USE_PWM_DIRECT
-				u32 cyclesToEmulate = 16;
-				#else			
-				u32 cyclesToEmulate = 2;
-				#endif
+				u32 cyclesToEmulate = min( 32, cycleCount - nCyclesEmulated );
+				if ( cyclesToEmulate > cyclesToNextSample )
+					cyclesToEmulate = cyclesToNextSample;
+
+				if ( ringRead != ringWrite )
+				{
+					int cyclesToNextWrite = (signed long long)ringTime[ ringRead ] - (signed long long)nCyclesEmulated;
+
+					if ( (int)cyclesToEmulate > cyclesToNextWrite && cyclesToNextWrite > 0 )
+						cyclesToEmulate = cyclesToNextWrite;
+				}
+				if ( cyclesToEmulate <= 0 )
+					cyclesToEmulate = 1;
+
 				sid[ 0 ]->clock( cyclesToEmulate );
 				#ifndef SID2_DISABLED
 				if ( !cfgSID2_Disabled )
@@ -698,50 +702,52 @@ void CKernel::Run( void )
 				outRegisters[ 28 ] = sid[ 0 ]->read( 28 );
 
 				nCyclesEmulated += cyclesToEmulate;
-
+				cyclesToNextSample -= cyclesToEmulate;
+				
 				// apply register updates (we do one-cycle emulation steps, but in case we need to catch up...)
 				unsigned int readUpTo = ringWrite;
 
 				if ( ringRead != readUpTo && nCyclesEmulated >= ringTime[ ringRead ] )
 				{
-					unsigned char A, D;
-					decodeGPIO( ringBufGPIO[ ringRead ], &A, &D );
+	  				{
+						unsigned char A, D;
+						decodeGPIO( ringBufGPIO[ ringRead ], &A, &D );
 
-					u32 tedCommand = ( ringBufGPIO[ ringRead ] >> A6 ) & 1;
+						u32 tedCommand = ( ringBufGPIO[ ringRead ] >> A6 ) & 1;
 
-					if ( tedCommand )
-					{
-						writeSoundReg( A, D );
-					} else
-					#ifdef EMULATE_OPL2
-					if ( cfgEmulateOPL2 && (ringBufGPIO[ ringRead ] & bIO2) )
-					{
-						if ( ( ( A & ( 1 << 4 ) ) == 0 ) )
-							ym3812_write( pOPL, 0, D ); else
-							ym3812_write( pOPL, 1, D );
-					} else
-					#endif
-					//#if !defined(SID2_DISABLED) && !defined(SID2_PLAY_SAME_AS_SID1)
-					// TODO: generic masks
-					if ( !cfgSID2_Disabled && !cfgSID2_PlaySameAsSID1 && (ringBufGPIO[ ringRead ] & SID2_MASK) )
-					{
-						sid[ 1 ]->write( A & 31, D );
-					} else
-					//#endif
-					{
-						sid[ 0 ]->write( A & 31, D );
-						outRegisters[ A & 31 ] = D;
-						//#if !defined(SID2_DISABLED) && defined(SID2_PLAY_SAME_AS_SID1)
-						if ( !cfgSID2_Disabled && cfgSID2_PlaySameAsSID1 )
+						if ( tedCommand )
+						{
+							writeSoundReg( A, D );
+						} else
+						#ifdef EMULATE_OPL2
+						if ( cfgEmulateOPL2 && (ringBufGPIO[ ringRead ] & bIO2) )
+						{
+							if ( ( ( A & ( 1 << 4 ) ) == 0 ) )
+								ym3812_write( pOPL, 0, D ); else
+								ym3812_write( pOPL, 1, D );
+						} else
+						#endif
+						//#if !defined(SID2_DISABLED) && !defined(SID2_PLAY_SAME_AS_SID1)
+						// TODO: generic masks
+						if ( !cfgSID2_Disabled && !cfgSID2_PlaySameAsSID1 && (ringBufGPIO[ ringRead ] & SID2_MASK) )
+						{
 							sid[ 1 ]->write( A & 31, D );
+						} else
 						//#endif
+						{
+							sid[ 0 ]->write( A & 31, D );
+							outRegisters[ A & 31 ] = D;
+							//#if !defined(SID2_DISABLED) && defined(SID2_PLAY_SAME_AS_SID1)
+							if ( !cfgSID2_Disabled && cfgSID2_PlaySameAsSID1 )
+								sid[ 1 ]->write( A & 31, D );
+							//#endif
+						}
 					}
-
 					ringRead++;
 					ringRead &= ( RING_SIZE - 1 );
 				}
 
-				samplesElapsed = ( ( unsigned long long )nCyclesEmulated * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
+				samplesElapsed = ( ( unsigned long long )nCyclesEmulated * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ_ADJ;
 
 			} while ( samplesElapsed == samplesElapsedBefore );
 
@@ -1029,7 +1035,7 @@ void CKernel::FIQHandler (void *pParam)
 			}
 
 			ringBufGPIO[ ringWrite ] = ( remapAddr ) | ( D << D0 ) | bIO2;
-			ringTime[ ringWrite ] = cycleCountC64;
+			ringTime[ ringWrite ] = adjustedCycleCount( cycleCountC64 );
 			ringWrite ++;
 			ringWrite &= ( RING_SIZE - 1 );
 			#pragma GCC diagnostic pop
@@ -1044,9 +1050,10 @@ void CKernel::FIQHandler (void *pParam)
 	// |  | |__) |  |  |__     /__` | |  \ 
 	// |/\| |  \ |  |  |___    .__/ | |__/ 
 	//                                   
-	if ( BUS_AVAILABLE264 && ( GET_ADDRESS264 >= 0xfd40 && GET_ADDRESS264 <= 0xfd58 ) && CPU_WRITES_TO_BUS )
+//	if ( BUS_AVAILABLE264 && ( GET_ADDRESS264 >= 0xfd40 && GET_ADDRESS264 <= 0xfd58 ) && CPU_WRITES_TO_BUS )
+	if ( BUS_AVAILABLE264 && ( GET_ADDRESS264 >= cfgSID1_Addr && GET_ADDRESS264 <= cfgSID1_Addr + 0x18 ) && CPU_WRITES_TO_BUS )
 	{
-		register u32 A = GET_ADDRESS264 - 0xfd40;
+		register u32 A = GET_ADDRESS264 - 0xd400;
 		register u32 remapAddr = (A&31) << A0;
 
 		#pragma GCC diagnostic push
@@ -1063,7 +1070,7 @@ void CKernel::FIQHandler (void *pParam)
 		sidAutoDetectRegs[ A & 31 ] = D;
 
 		ringBufGPIO[ ringWrite ] = ( remapAddr | ( D << D0 ) ) & ~bIO2;
-		ringTime[ ringWrite ] = cycleCountC64;
+		ringTime[ ringWrite ] = adjustedCycleCount( cycleCountC64 );
 		ringWrite ++;
 		ringWrite &= ( RING_SIZE - 1 );
 
@@ -1091,7 +1098,7 @@ void CKernel::FIQHandler (void *pParam)
 		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 		ringBufGPIO[ ringWrite ] = ( remapAddr | ( D << D0 ) ) & ~bIO2;
 		#pragma GCC diagnostic pop
-		ringTime[ ringWrite ] = cycleCountC64;
+		ringTime[ ringWrite ] = adjustedCycleCount( cycleCountC64 );
 		ringWrite ++;
 		ringWrite &= ( RING_SIZE - 1 );
 		goto get_out;
@@ -1119,7 +1126,7 @@ void CKernel::FIQHandler (void *pParam)
 		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 		ringBufGPIO[ ringWrite ] = ( remapAddr | ( D << D0 ) );
 		#pragma GCC diagnostic pop
-		ringTime[ ringWrite ] = cycleCountC64;
+		ringTime[ ringWrite ] = adjustedCycleCount( cycleCountC64 );
 		ringWrite ++;
 		ringWrite &= ( RING_SIZE - 1 );
 
@@ -1146,21 +1153,67 @@ void CKernel::FIQHandler (void *pParam)
 	// OPTIONAL
 	//											
 	#ifdef USE_PWM_DIRECT
-	samplesElapsedFIQ = ( ( unsigned long long )cycleCountC64 * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
+	samplesElapsedFIQ = ( ( unsigned long long )adjustedCycleCount( cycleCountC64 ) * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ_ADJ;
 
 	if ( samplesElapsedFIQ != samplesElapsedBeforeFIQ )
 	{
-		write32( ARM_GPIO_GPCLR0, bCTRL257 ); 
+		//write32( ARM_GPIO_GPCLR0, bCTRL257 ); 
 		samplesElapsedBeforeFIQ = samplesElapsedFIQ;
 
-		u32 s = getSample();
-		u16 s1 = s & 65535;
-		u16 s2 = s >> 16;
+#ifdef HDMI_SOUND
+		if ( outputHDMI )
+#else
+		if ( false )
+#endif
+		{
+			static int first = 1;
+
+			extern CHDMISoundBaseDevice *hdmiSoundDevice;
+
+			if ( first && nCyclesEmulated )
+			{
+				hdmiSoundDevice->Start();
+				first = 0;
+			} 
+
+			if ( !first )
+			{
+				u32 s = getSample();
+				u16 s1 = s & 65535;
+				u16 s2 = s >> 16;
+
+				if ( flushBuffer || nCyclesEmulated == 0 ) s1 = s2 = 0;
+
+				if ( hdmiSoundDevice->IsWritable() )
+				{
+					hdmiSoundDevice->WriteSample( (s32)(*(s16*)&s1) << 8 );
+					hdmiSoundDevice->WriteSample( (s32)(*(s16*)&s2) << 8 );
+					//hdmiSoundDevice->WriteSample( 0 );
+				}
+				/*extern CHDMISoundBaseDevice *hdmiSoundDevice;
+				if ( hdmiSoundDevice->IsWritable() && curChannel == 0 )
+				{
+					hdmiSoundDevice->WriteSample( (s32)(*(s16*)&s1) << 8 );
+					curChannel = 1;
+				}
+				if ( hdmiSoundDevice->IsWritable() && curChannel == 1 )
+				{
+					hdmiSoundDevice->WriteSample( (s32)(*(s16*)&s2) << 8 );
+					curChannel = 0;
+				}*/
+
+			}
+		} else
+		{
+			u32 s = getSample();
+			u16 s1 = s & 65535;
+			u16 s2 = s >> 16;
 		
-		s32 d1 = (s32)( ( *(s16*)&s1 + 32768 ) * PWMRange ) >> 17;
-		s32 d2 = (s32)( ( *(s16*)&s2 + 32768 ) * PWMRange ) >> 17;
-		write32( ARM_PWM_DAT1, d1 );
-		write32( ARM_PWM_DAT2, d2 );
+			s32 d1 = (s32)( ( *(s16*)&s1 + 32768 ) * PWMRange ) >> 17;
+			s32 d2 = (s32)( ( *(s16*)&s2 + 32768 ) * PWMRange ) >> 17;
+			write32( ARM_PWM_DAT1, d1 );
+			write32( ARM_PWM_DAT2, d2 );
+		}
 		goto get_out;
 	} 
 	#endif
@@ -1191,6 +1244,7 @@ void CKernel::FIQHandler (void *pParam)
 	// |     /\   |  /  ` |__| 
 	// |___ /~~\  |  \__, |  | 
 	//
+#if 1
 	#ifdef USE_LATCH_OUTPUT
 	if ( screenType == 0 )
 	{
@@ -1208,7 +1262,7 @@ void CKernel::FIQHandler (void *pParam)
 		}
 	}
 	#endif
-
+#endif
 #if 1
 	if ( screenType == 0 )
 	{
@@ -1267,7 +1321,7 @@ get_out:
 	}
 
 	//OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
-	write32( ARM_GPIO_GPCLR0, bCTRL257 );
+	//write32( ARM_GPIO_GPCLR0, bCTRL257 );
 }
 
 #ifndef COMPILE_MENU
