@@ -1,0 +1,163 @@
+;    _________.__    .___      __   .__        __      _______________   
+;   /   _____/|__| __| _/____ |  | _|__| ____ |  | __  \_____  \   _  \  
+;   \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /   /  ____/  /_\  \ 
+;   /        \|  / /_/ \  ___/|    <|  \  \___|    <   /       \  \_/   \
+;  /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \  \_______ \_____  /
+;          \/         \/    \/     \/       \/     \/          \/     \/  
+;
+;     vic20_crt_sync.a
+;
+;     Sidekick64 - A framework for interfacing 8-Bit Commodore computers (C64/C128,C16/Plus4,VC20) and a Raspberry Pi Zero 2 or 3A+/3B+
+;		         - boot stub when emulating cartridges to sync the real VIC with the emulated one
+;     Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;
+;     Logo created with http://patorjk.com/software/taag/
+;
+;     This program is free software: you can redistribute it and/or modify
+;     it under the terms of the GNU General Public License as published by
+;     the Free Software Foundation, either version 3 of the License, or
+;     (at your option) any later version.
+;
+;     This program is distributed in the hope that it will be useful,
+;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;     GNU General Public License for more details.
+;
+;     You should have received a copy of the GNU General Public License
+;     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+* = $A000
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+BASTART       = $C000
+FRESTOR       = $FD52
+INITSK        = $E518
+INITMEM       = $FD8D
+INITVIA       = $FDF9
+NMISTOP       = $FEC7           ; NMI check for stop key
+SYNC_REGISTER = $9ffe
+
+.word reset                 ; reset vector
+.word NMISTOP               ; NMI vector
+
+autostart
+.byte $41,$30,$C3,$C2,$CD   ; "A0CBM"
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+reset
+    jsr INITMEM             ; initialise and test RAM
+    jsr FRESTOR             ; restore default I/O vectors
+    jsr INITVIA             ; initialise I/O registers
+    jsr INITSK              ; initialise hardware
+    jsr syncVICEmulation
+    jmp (BASTART)           ; start BASIC
+
+syncVICEmulation:
+
+    ; stable raster code: https://codebase64.org/doku.php?id=base:making_stable_raster_routines
+
+    lda $912e
+    pha
+    lda $912d
+    pha
+    lda $911e
+    pha
+
+    lda #$7f
+    sta $912e
+    sta $912d
+    sta $911e
+
+    ; detect PAL/NTSC
+    ; found somewhere in the web...
+    waitnz: 
+    lda $9004 ; wait for non-zero raster line
+    beq waitnz
+    waitlast ; wait for last raster line
+    lda $9004
+    beq gotlast ; the raster counter wrapped around
+    tay ; remember the raster line
+    bne waitlast ; branch always
+    gotlast: 
+    cpy #(312  - 1) / 2 ; now y contains the maximum raster value
+    beq PALsync
+
+; -------------------
+NTSCsync:
+    ldx #28
+nll0:
+    cpx $9004
+    bne nll0
+    ldy #9
+    bit $24
+nll1:
+    ldx $9004
+    txa
+    bit $24
+    bit $24
+    ldx #21
+    dex
+    bne *-1
+    cmp $9004
+    bcs *+2
+    dey
+    bne nll1
+
+    ; now it is fully synchronized
+    ; 6 cycles have passed since last $9004 change
+    ; and we are on line 2(28+9)=74
+
+    lda #0
+    sta SYNC_REGISTER
+
+    pla
+    sta $911e
+    pla
+    sta $912d
+    pla
+    sta $912e
+
+    rts
+
+; -------------------
+
+PALSync:
+    ldx #28
+ll0:
+    cpx $9004
+    bne ll0
+    ldy #9
+    bit $24
+ll1:
+    ldx $9004
+    txa
+    bit $24
+    ldx #24
+
+    dex
+    bne *-1
+    cmp $9004
+    bcs *+2
+    dey
+    bne ll1
+
+    ; 6 cycles have passed since last $9004 change
+    ; and we are on line 2(28+9)=74
+
+    lda #0
+    sta SYNC_REGISTER
+
+    pla
+    sta $911e
+    pla
+    sta $912d
+    pla
+    sta $912e
+
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;* = $bfff                   ; fill
+ ;    .byte $0

@@ -1,0 +1,579 @@
+;    _________.__    .___      __   .__        __      _______________   
+;   /   _____/|__| __| _/____ |  | _|__| ____ |  | __  \_____  \   _  \  
+;   \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /   /  ____/  /_\  \ 
+;   /        \|  / /_/ \  ___/|    <|  \  \___|    <   /       \  \_/   \
+;  /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \  \_______ \_____  /
+;          \/         \/    \/     \/       \/     \/          \/     \/  
+;
+;     cartvic20.a
+;
+;     Sidekick64 - A framework for interfacing 8-Bit Commodore computers (C64/C128,C16/Plus4,VC20) and a Raspberry Pi Zero 2 or 3A+/3B+
+;		         - part of VIC20 menu code
+;
+;     disk emulation adapted from Kung Fu Flash, (C) 2019-2022 Kim Jørgensen
+;
+;     VIC emulation sync code added by Carsten Dachsbacher <frenetic@dachsbacher.de>
+;
+;     Logo created with http://patorjk.com/software/taag/
+;
+;     This program is free software: you can redistribute it and/or modify
+;     it under the terms of the GNU General Public License as published by
+;     the Free Software Foundation, either version 3 of the License, or
+;     (at your option) any later version.
+;
+;     This program is distributed in the hope that it will be useful,
+;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;     GNU General Public License for more details.
+;
+;     You should have received a copy of the GNU General Public License
+;     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+* = $A000
+
+BASTART   = $C000
+
+INITSK    = $E518
+SEARCH    = $F647
+LOADING   = $F66A
+SAVING    = $F728
+FRESTOR   = $FD52
+INITMEM   = $FD8D
+INITVIA   = $FDF9
+NMISTOP   = $FEC7           ; NMI check for stop key
+CHROUT    = $FFD2
+
+CHRIN     = $324
+ILOAD     = $330
+ISAVE     = $332
+
+AUTO_SCR  = $292            ; auto scroll down flag
+
+STATUS   = $90              ; device status
+LDFLAG   = $93              ; load/verify flag
+IN_DEV   = $99              ; input device
+SAPTR_LO = $ac
+SAPTR_HI = $ad
+LDPTR_LO = $ae
+LDPTR_HI = $af
+FILN_LEN = $b7              ; Length of filename
+SEC_ADDR = $b9              ; secondary address
+DEV_NO   = $ba              ; device number
+FILN_PTR = $bb              ; pointer to filename
+SSTRT_LO = $c1              ; save start address
+SSTRT_HI = $c2
+LSTRT_LO = $c3              ; load start address
+LSTRT_HI = $c4
+LINE_LEN = $c8
+INPUT_SC = $d0              ; input from screen/keyboard
+CUR_COL  = $d3              ; cursor column
+QT_MODE  = $d4              ; quotation mode flag
+
+WAIT_FOR_SK   = $100        ; addr of wait routine (end of stack)
+DISK_API_RAM  = $9c00       ; addr of disk API in RAM (I/O3 area)
+IO3_RAM_END   = $9eff
+
+SAVE_REGISTER = $9ffd
+SYNC_REGISTER = $9ffe
+DATA_REGISTER = $9fff
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.word reset                 ; reset vector
+.word NMISTOP               ; NMI vector
+
+autostart
+.byte $41,$30,$C3,$C2,$CD   ; "A0CBM"
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+reset
+    jsr INITMEM             ; initialise and test RAM
+    jsr FRESTOR             ; restore default I/O vectors
+    jsr INITVIA             ; initialise I/O registers
+    jsr INITSK              ; initialise hardware
+
+    ldx #$00                ; copy disk API to ram
+
+cpy_api
+    lda DISK_API_SRC + DISK_API_OFFSET,x
+    sta DISK_API_RAM + DISK_API_OFFSET,x
+    inx
+    bne cpy_api
+
+cpy_api_remain
+    lda DISK_API_SRC + DISK_API_OFFSET + $100,x
+    sta DISK_API_RAM + DISK_API_OFFSET + $100,x
+    inx
+    cpx #(((DISK_API_SRC_END - DISK_API_SRC) - $100) - DISK_API_OFFSET)
+    bne cpy_api_remain
+
+    lda CHRIN               ; save CHRIN vector
+    sta CHRIN_ORG
+    lda CHRIN + 1
+    sta CHRIN_ORG + 1
+
+    lda <#SK_CHRIN_VECTOR   ; setup new CHRIN vector, called after basic init
+    sta CHRIN
+    lda >#SK_CHRIN_VECTOR
+    sta CHRIN + 1
+
+    lda ILOAD               ; save LOAD vector
+    sta ILOAD_ORG
+    lda ILOAD + 1
+    sta ILOAD_ORG + 1
+
+    lda <#SK_LOAD_VECTOR    ; setup new LOAD vector
+    sta ILOAD
+    lda >#SK_LOAD_VECTOR
+    sta ILOAD + 1
+
+    lda ISAVE               ; save SAVE vector
+    sta ISAVE_ORG
+    lda ISAVE + 1
+    sta ISAVE_ORG + 1
+
+    lda <#SK_SAVE_VECTOR    ; setup new SAVE vector
+    sta ISAVE
+    lda >#SK_SAVE_VECTOR
+    sta ISAVE + 1
+
+    jsr syncVICEmulation
+
+    cli                     ; enable interrupts
+
+
+    jmp (BASTART)           ; start BASIC
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+WAIT_FOR_SK_SRC             ; wait routine in non emulated RAM
+.logical WAIT_FOR_SK
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+    sta DATA_REGISTER
+
+wait_for_ram
+    ldx #$08
+check_next
+    stx RAMTEST
+    cpx RAMTEST
+    bne wait_for_ram
+    dex
+    bne check_next
+    rts
+
+.here
+WAIT_FOR_SK_SRC_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+DISK_API_SRC                ; start of disk API in emulated RAM
+.logical DISK_API_RAM
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+                            ; start of uninitialized section
+
+FILENAME                    ; Name of file to load
+    .fill 255
+FILENAME_LEN
+    .fill 1
+
+COMMANDS                    ; BASIC commands to execute at startup
+    .fill 50                ; e.g. "LOAD""*"",8", $00, "RUN", $00, $00
+
+RAMTEST                     ; used to detect if Sidekick is active
+    .fill 1
+
+CHRIN_ORG
+    .fill 2
+ILOAD_ORG
+    .fill 2
+ISAVE_ORG
+    .fill 2
+
+DEVICE_NUMBER_SK
+    .fill 1
+
+DISK_API_UNINIT_END         ; end of uninitialized section
+DISK_API_OFFSET     = (DISK_API_UNINIT_END - DISK_API_RAM)
+
+CMD_PTR
+    .byte $00
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+SK_CHRIN_VECTOR
+    lda IN_DEV              ; check if input device is keyboard
+    bne restore_chrin
+
+keyboard
+    lda INPUT_SC            ; input from the screen?
+    beq print_command
+
+normal_chrin
+    jmp (CHRIN_ORG)
+
+print_command
+    txa
+    pha
+    ldx CMD_PTR
+    lda COMMANDS,x
+    beq restore_chrin       ; no more commands
+
+print_chr
+    jsr CHROUT
+    inc LINE_LEN
+    inx
+    lda COMMANDS,x
+    bne print_chr
+
+end_of_line
+    sta AUTO_SCR            ; auto scroll down
+    sta CUR_COL             ; cursor at column 0
+    sta QT_MODE             ; editor not in quote mode
+    inc INPUT_SC            ; read from screen
+    inx
+    stx CMD_PTR
+
+end_print_command
+    pla
+    tax
+    jmp (CHRIN_ORG)
+
+restore_chrin
+    pla
+    tax
+    lda CHRIN_ORG           ; restore CHRIN vector
+    sta CHRIN
+    lda CHRIN_ORG + 1
+    sta CHRIN + 1
+    jmp (CHRIN)
+
+SK_CHRIN_VECTOR_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+INIT_TRANSFER
+    ldx #$00                ; copy wait routine to ram
+cpy_wait
+    lda WAIT_FOR_SK_SRC,x
+    sta WAIT_FOR_SK,x
+    inx
+    cpx #(WAIT_FOR_SK_SRC_END - WAIT_FOR_SK_SRC)
+    bne cpy_wait
+
+    ldy #$00
+store_filename
+    lda (FILN_PTR),y
+    sta FILENAME,y
+    iny
+    cpy FILN_LEN
+    bne store_filename
+    tya
+    sta FILENAME_LEN
+    rts
+
+INIT_TRANSFER_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+SK_LOAD_VECTOR
+    sta LDFLAG
+    lda DEV_NO
+    cmp DEVICE_NUMBER_SK
+    ;cmp #$08                ; check device number
+    bne normal_load
+
+    lda FILN_LEN            ; ckeck filename length
+    bne sk_load
+
+normal_load
+    lda LDFLAG
+    jmp (ILOAD_ORG)
+
+sk_load
+    jsr SEARCH              ; print searching
+
+    sei
+    jsr INIT_TRANSFER
+    lda #$00                ; start the PRG transfer
+    jsr WAIT_FOR_SK
+    jsr syncVICEmulation
+    cli
+
+    lda DATA_REGISTER       ; check load result
+    bne LOAD_FAILED
+
+    lda DATA_REGISTER       ; lo-byte of size
+    sta REMAIN + 1
+    ldx DATA_REGISTER       ; hi-byte of size
+
+    lda DATA_REGISTER       ; lo-byte of destination address
+    sta LDPTR_LO
+    lda DATA_REGISTER       ; hi-byte of destination address
+    sta LDPTR_HI
+
+    lda SEC_ADDR            ; check if secondary address is set
+    bne START_LOAD
+
+    lda LSTRT_LO            ; set destination address
+    sta LDPTR_LO
+    lda LSTRT_HI
+    sta LDPTR_HI
+
+START_LOAD
+    jsr LOADING             ; print loading
+    ldy #$00
+    cpx #$00
+    beq REMAIN
+LOOP_PAGE                   ; copy a page at a time
+    lda DATA_REGISTER
+    sta (LDPTR_LO),y
+    iny
+    bne LOOP_PAGE
+
+    inc LDPTR_HI
+    dex
+    bne LOOP_PAGE
+
+REMAIN                      ; copy remaining bytes
+    ldx #$ff
+    beq END_CPY
+LOOP_REMAIN
+    lda DATA_REGISTER
+    sta (LDPTR_LO),y
+    iny
+    dex
+    bne LOOP_REMAIN
+END_CPY
+
+    clc
+    tya
+    adc LDPTR_LO
+    sta LDPTR_LO
+    bcc NO_CARRY
+    inc LDPTR_HI
+NO_CARRY
+
+    ; lda #7                  ; disable Sidekick64
+    ; sta DATA_REGISTER
+
+    lda #$40                ; set device status to end of file
+    sta STATUS
+    ldx LDPTR_LO
+    ldy LDPTR_HI
+    lda #$00
+    clc
+    rts
+
+LOAD_FAILED
+    lda #$42                ; set device status to end of file + read error
+    sta STATUS
+    lda #$04                ; return file not found error
+    sec
+    rts
+
+SK_LOAD_VECTOR_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+SK_SAVE_VECTOR
+    lda DEV_NO
+    cmp DEVICE_NUMBER_SK
+    ;cmp #$08                ; check device number
+    bne normal_save
+
+    lda FILN_LEN            ; ckeck filename length
+    bne sk_save
+
+normal_save
+    jmp (ISAVE_ORG)
+
+sk_save
+    jsr SAVING              ; print saving
+    sei
+    lda SAVE_REGISTER       ; start the PRG transfer
+
+    lda SSTRT_LO            ; lo-byte of source address
+    sta SAPTR_LO
+    sta SAVE_REGISTER
+
+    lda SSTRT_HI            ; hi-byte of source address
+    sta SAPTR_HI
+    sta SAVE_REGISTER
+
+    ldy #$00
+SAVE_LO                     ; copy low bytes
+    lda SAPTR_LO
+    cmp LDPTR_LO
+    beq SAVE_HI
+
+    lda (SAPTR_LO),y
+    sta SAVE_REGISTER
+    inc SAPTR_LO
+    bne SAVE_LO
+
+    inc SAPTR_HI
+    jmp SAVE_LO
+
+SAVE_HI                     ; copy high bytes
+    lda SAPTR_HI
+    cmp LDPTR_HI
+    beq END_SAVE
+SAVE_PAGE                   ; copy a page at a time
+    lda (SAPTR_LO),y
+    sta SAVE_REGISTER
+    iny
+    bne SAVE_PAGE
+
+    inc SAPTR_HI
+    jmp SAVE_HI
+END_SAVE
+
+    jsr INIT_TRANSFER
+    lda #$04                ; save the file
+    jsr WAIT_FOR_SK
+    jsr syncVICEmulation
+    cli
+
+    lda DATA_REGISTER       ; check save result
+    bne SAVE_FAILED
+
+    lda #$00                ; clear device status
+    sta STATUS
+    clc
+    rts
+
+SAVE_FAILED
+    lda #$80                ; set device status to file exists error
+    sta STATUS
+    lda #$00
+    clc
+    rts
+
+SK_SAVE_VECTOR_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.cerror * > IO3_RAM_END, "Disk API too large by ", * - IO3_RAM_END, " bytes"
+
+.here                ; end of disk API
+DISK_API_SRC_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+syncVICEmulation:
+
+    ; stable raster code: https://codebase64.org/doku.php?id=base:making_stable_raster_routines
+
+    lda $912e
+    pha
+    lda $912d
+    pha
+    lda $911e
+    pha
+
+    lda #$7f
+    sta $912e
+    sta $912d
+    sta $911e
+
+    ; detect PAL/NTSC
+    ; found somewhere in the web...
+    waitnz: 
+    lda $9004 ; wait for non-zero raster line
+    beq waitnz
+    waitlast ; wait for last raster line
+    lda $9004
+    beq gotlast ; the raster counter wrapped around
+    tay ; remember the raster line
+    bne waitlast ; branch always
+    gotlast: 
+    cpy #(312  - 1) / 2 ; now y contains the maximum raster value
+    beq PALsync
+
+; -------------------
+NTSCsync:
+    ldx #28
+nll0:
+    cpx $9004
+    bne nll0
+    ldy #9
+    bit $24
+nll1:
+    ldx $9004
+    txa
+    bit $24
+    bit $24
+    ldx #21
+    dex
+    bne *-1
+    cmp $9004
+    bcs *+2
+    dey
+    bne nll1
+
+    ; now it is fully synchronized
+    ; 6 cycles have passed since last $9004 change
+    ; and we are on line 2(28+9)=74
+
+    lda #0
+    sta SYNC_REGISTER
+
+    pla
+    sta $911e
+    pla
+    sta $912d
+    pla
+    sta $912e
+
+    rts
+
+; -------------------
+
+PALSync:
+    ldx #28
+ll0:
+    cpx $9004
+    bne ll0
+    ldy #9
+    bit $24
+ll1:
+    ldx $9004
+    txa
+    bit $24
+    ldx #24
+
+    dex
+    bne *-1
+    cmp $9004
+    bcs *+2
+    dey
+    bne ll1
+
+    ; 6 cycles have passed since last $9004 change
+    ; and we are on line 2(28+9)=74
+
+    lda #0
+    sta SYNC_REGISTER
+
+    pla
+    sta $911e
+    pla
+    sta $912d
+    pla
+    sta $912e
+
+    rts
+
+getout:
+    lda #$7b                ; disable Sidekick64
+    sta DATA_REGISTER
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;* = $bfff                   ; fill
+ ;    .byte $0

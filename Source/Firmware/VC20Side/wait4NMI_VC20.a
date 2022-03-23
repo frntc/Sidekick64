@@ -1,0 +1,156 @@
+;    _________.__    .___      __   .__        __      _______________   
+;   /   _____/|__| __| _/____ |  | _|__| ____ |  | __  \_____  \   _  \  
+;   \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /   /  ____/  /_\  \ 
+;   /        \|  / /_/ \  ___/|    <|  \  \___|    <   /       \  \_/   \
+;  /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \  \_______ \_____  /
+;          \/         \/    \/     \/       \/     \/          \/     \/  
+;
+;     wait4NMI_vc20.a
+;
+;     Sidekick64 - A framework for interfacing 8-Bit Commodore computers (C64/C128,C16/Plus4,VC20) and a Raspberry Pi Zero 2 or 3A+/3B+
+;		         - part of VIC20 menu code
+;     Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;
+;     Logo created with http://patorjk.com/software/taag/
+;
+;     This program is free software: you can redistribute it and/or modify
+;     it under the terms of the GNU General Public License as published by
+;     the Free Software Foundation, either version 3 of the License, or
+;     (at your option) any later version.
+;
+;     This program is distributed in the hope that it will be useful,
+;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;     GNU General Public License for more details.
+;
+;     You should have received a copy of the GNU General Public License
+;     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+BASE_ADDR := $33c
+
+* = BASE_ADDR
+
+    sei
+    lda #<get_out_with_nmi
+    sta $318
+    lda #>get_out_with_nmi
+    sta $319
+    cli
+
+    jsr initScreen
+
+    lda #20
+mainloop:
+    jsr sendKeyAndWait
+    jsr updateScreen
+    jsr cgetc
+
+    ldx #0
+    stx $c6
+
+    jmp mainloop
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+cgetc:
+    lda     $c6     ; # characters in buffer
+    beq     cgetc   ; none -> wait
+    jsr     $e5cf   ; read char
+    rts
+
+initScreen:
+    lda #$00
+    sta $fb
+    lda #$10
+    sta $fc
+
+	ldy #$00
+	ldx #$10
+loopInitScreen:
+	txa
+    sta ($fb),y
+	inx
+    iny
+    bne loopInitScreen
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+updateScreen:
+    ; bitmap
+	lda #$01
+    sta $9fff
+
+    lda #$00
+    sta $fb
+    lda #$11
+    sta $fc
+
+	ldy #$00
+loop:
+    lda $9fff
+    sta ($fb),y
+    iny
+    bne loop
+
+    inc $fc
+    lda $fc
+    cmp #32
+    bne loop
+
+    ; color ram
+	lda #$02
+    sta $9fff
+
+    lda #$00
+    sta $fb
+    lda #$94
+    sta $fc
+
+	ldy #$00
+loopc:
+    lda $9fff
+    sta ($fb),y
+    iny
+    bne loopc
+
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+sendKeyAndWait:        
+    sei
+
+    pha
+
+    ; stopping criterion
+    lda #$ff
+    sta BASE_ADDR+$3fb-$33c
+
+
+    ; send keypress to sidekick
+    pla
+    sta $9fff
+
+    ; loop until NMI tells us (via $ff) to get out
+	loopUntilNMI:
+    lda BASE_ADDR+$3fb-$33c
+    bne loopUntilNMI 
+
+    cli
+    rts
+
+get_out_with_nmi:
+    pha
+    txa
+    pha
+    tya
+    pha
+
+    ; signal loop to get out
+    lda #$00
+    sta BASE_ADDR+$3fb-$33c
+
+no_nmi_for_us:
+    pla
+    tay
+    pla
+    tax
+    pla
+	rti
