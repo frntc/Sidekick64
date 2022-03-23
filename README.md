@@ -1,7 +1,8 @@
 
+
 <img align="right"  width="280" src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_logo.jpg">
 
-**Sidekick64** is a versatile cartridge/expansion for the C64, C128, and the C16/+4. It uses a Raspberry Pi 3A+, 3B+ or Zero 2 (only for C64/C128) to emulate memory expansions, sound devices (up to 8 SIDs, SFX Sound Expander, MIDI), freezer cartridges, cartridges such as Easyflash/GMOD, kernal replacements, C128 function ROMs and many more. Some functionalities can be combined with others, e.g. kernal replacement plus freezers or GeoRAM expansion. The Sidekick64 handles among others PRGs, D64, SID files and also integrates tools such as Disk2EasyFlash, PSID64.
+**Sidekick64** is a versatile cartridge/expansion for the C64, C128, the C16/+4, and the VIC20. It uses a Raspberry Pi 3A+, 3B+ or Zero 2 (only for C64/C128/VIC20) to emulate memory expansions, sound devices (up to 8 SIDs, SFX Sound Expander, MIDI), freezer cartridges, cartridges such as Easyflash/GMOD, kernal replacements, C128 function ROMs and many more. Some functionalities can be combined with others, e.g. kernal replacement plus freezers or GeoRAM expansion. The Sidekick64 handles among others PRGs, D64, SID files and also integrates tools such as Disk2EasyFlash, PSID64.
 
 <p align="center" font-size: 30px;>
 
@@ -44,11 +45,19 @@ Its functionality is entirely defined by software. The connecting circuitry is q
 - simplified Datel and Sequential MIDI interface emulation with built-in SoundFont-synthesizer (slightly modified version of [TinySoundFont](https://github.com/schellingb/TinySoundFont))
 - TED-sound and Digiblaster emulation for C16/+4 (to have all sound devices on one output)
 
+The **Sidekick20** (Sidekick64 on the VIC20):
+- provides a VIC-emulation which outputs picture and sound via the Raspberry Pi's HDMI-output
+- the emulated VIC incorporates the VFLI extension
+- emulates a memory expansion (RAM1/2/3, BLK 1, 2, 3, 5, IO2/3)
+- comes with a built-in rudimentary disk emulation (LOAD/SAVE via kernal vectors)
+- runs PRGs and VIC20-cartridges stored as (multiple) PRG-files or CRT-files
+- automatically determines memory settings for programs and carts (override with manual settings possible)
+
 But many more things are imaginable, e.g. 80 column cards with HDMI video output, custom accelerators/coprocessors etc.
 
-Sidekick64 has been tested with various PAL-machines (C64s, C128, C128D), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC), Ultimate64 and C64 Reloaded boards. Sidekick64 connects to the C16/+4 using a simple adapter.
+Sidekick64 has been tested with various PAL-machines (C64s, C128, C128D), C64 NTSC, C16/+4 (PAL, PAL-N, NTSC), VIC20 (PAL/NTSC), Ultimate64 and C64 Reloaded boards. Sidekick64 connects to the C16/+4 and the VIC20 using simple adapters.
 
-The Sidekick64 software provides a main menu for frequently used features, programs, cartridges (either configured manually or created from a folder of favorites on the SD card), a configuration screen, and a file browser. The menu can be customized (entries, layout, color schemes, font, animation). It also autodetects and interoperates with a [SIDKick](https://github.com/frntc/SIDKick) if present. The C16/+4 version comes with two fabulous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue! Here's a [video](Video/Sidekick64_ElectricCity_by_Flex.mp4) of Sidekick64 emulating SIDs and playing [Electric City](https://csdb.dk/release/?id=189742) by Flex.
+The Sidekick64 software provides a main menu for frequently used features, programs, cartridges (either configured manually, or for the C64/C128 version created from a folder of favorites on the SD card), a configuration screen, and a file browser. The menu can be customized (entries, layout, color schemes, font, animation). It also autodetects and interoperates with a [SIDKick](https://github.com/frntc/SIDKick) if present. The C16/+4 version comes with two fabulous games ported to run directly off the emulated memory expansion: Alpharay and Pet's Rescue! Here's a [video](Video/Sidekick64_ElectricCity_by_Flex.mp4) of Sidekick64 emulating SIDs and playing [Electric City](https://csdb.dk/release/?id=189742) by Flex.
 
   
   
@@ -89,11 +98,11 @@ The first step when building the Sidekick64 is soldering the surface-mount compo
 
 **Important:** d=0..3 (see PCB) is an external delay of the multiplexer switching signal. For the C64/C128 use a jumper connecting the pins in the d=0 columns. For the C16/+4 connect the d=3 column!
 
-  
-
 **Important (for C64/C128):** if you want to use the kernal-replacement and SID-emulation functionality you need to connect the two pins on the left side of the PCB (dubbed "SID CS" and "CPU P1") using wires to the CPU (pin 28 for MOS 6510/8500 in C64, pin 29 for 8502 in C128) and the SID-socket (pin 8). Note that the Sound Expander and MIDI emulation works without the SID CS-wire.
 
 The jumper "A13-BTN" is used select whether the Sidekick64 reads the A13-signal from the computer or the middle button, currently the latter is not used.
+
+**Important (for VIC20):** set the external delay-jumper to d=0 and the "A13-BTN"-jumper to A13!
 
   
 
@@ -129,7 +138,7 @@ Sometimes 'button #2' has extra function (e.g. freezing, reactivating Sidekick64
 
   
 
-When using the RPi Zero 2 you need to overclock the SoC to 1.2 GHz or 1.3 GHz (see SD:config.txt). The RPi 3A+/3B+ can run at the same frequencies when being used with a C64/C128 (i.e. without overclocking). For the C16/+4 the software is currently tested with the 3A+/3B+ only and also requires a little bit of overclocking. Although I never experienced any problems with it, please be aware that overclocking may void warranty.
+When using the RPi Zero 2 you need to overclock the SoC to 1.2 GHz or 1.3 GHz (see SD:config.txt). The RPi 3A+/3B+ can run at the same frequencies when being used with a C64/C128 (i.e. without overclocking). For the C16/+4 the software is currently tested with the 3A+/3B+ only and also requires a little bit of overclocking. The VIC20 version requires some overclocking on the Zero 2, the 3A+/3B+ run quite relaxed. Although I never experienced any problems with it, please be aware that overclocking may void warranty.
 
   
 
@@ -141,13 +150,12 @@ Normally you would use an external power supply for the RPi. Although the circui
 
 Alternatively you can power the Sidekick64 from the **C64/C128** using the "close to power..."-jumper. The current of the RPi has been measured and stays within the specifications of the expansion port. In any case I recommend to not try powering the Sidekick64 with a standard PSU/brick of death.
 
-  
+ 
+In principle **Sidekick20** can be powered from the VIC20 expansion port (tested), but I was not able to find technical documents which reveal whether the current/power is actually within specs or not. 
 
-**Important:**  **NEVER** power the Sidekick64 from the C64/C128 and externally at the same time. NEVER!
+Do NOT power the Sidekick64 from a **C16/+4**, always use an external power supply for these computers!
 
-  
-
-Do also NOT power the Sidekick64 from a **C16/+4**, always use an external power supply for these computers!
+**Important:**  **NEVER** power the Sidekick from the computer and externally at the same time. NEVER!
 
   
 
@@ -170,6 +178,7 @@ Known limitations: the C128 behaves differently in C64-Ultimax-mode (VIC-II ROMH
 
 Sidekick264 requires a passive adapter (Gerber files and schematics are in the repo) to be put between the C16/+4 expansion port and the Sidekick64.
 
+To enable Sidekick264 it has to be selected in config.txt on the SD-card by activating  the *include sidekick264_rpi3.txt*-line.
   
 
 The Sidekick264 provides the same menu and browser as the C64/C128 version, and supports PRG loading and C1low/C1high cartridges. As a bonus it can be used as Dual-SID-card (addresses $FD40 and $FE80), as FM-card (I chose address $FDE2), can emulate TED-sound and Digiblaster output. And -- until recently without any use case :-) -- a Geo/NeoRAM-compatible memory expansion (registers at $FDE8-$FDEA, memory window at $FE00-$FE7F). The Sidekick264 repository contains Alpharay and Pet's Rescue modified to run directly off the emulated NeoRAM! The SD Card contains example programs with source to demonstrate these functionalities.
@@ -188,17 +197,41 @@ There is a simple hardware fix which would require to bridge pin 2 and 12 of a 7
 
 ## Sidekick20 for VIC20
 
-  
+Sidekick20 also requires a passive adapter (Gerber files and schematics are in the repo) to connect the Sidekick64 to the expansion port. Note there are two variants for horizontal and vertical positioning of the Sidekick-PCB. The interactive BOMs are [this](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk20.html) and [this](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk20v.html).
 
-Coming soon ... :-)
+### Setup and Raspberry Pi models
 
-  
+To enable Sidekick20 it has to be selected in *config.txt* on the SD-card by activating the *include sidekick20_rpi0.txt*-line. If this works, you can skip over to the next section. If it doesn't, read on. 
+
+The Raspberry Pi clock settings are set in *sidekick20*.txt* in the SD-card root folder, and bus timings in *VC20/sidekick.cfg* (again, note that overclocking voids warranty). There are three settings/files as reference points and I recommend to try the following order of settings: 
++ the default is choosing *sidekick20_rpi0.txt* in *config.txt* and the *consolidated timings* in VC20/sidekick20.cfg (these are default settings for the RPi Zero 2, but normally work on other models as well). 
++ if this doesn't work and you use a RPi 3A+/3B+ choose *sidekick20_rpi3.txt* and *timings for 1.4GHz RPi 3* 
++ if this still doesn't work (I'd suspect the problem being somewhere else, but) try the even higher clock settings.
+
+The reasons for exposing the timings stem from the limited number of machines which are available to me for testing and thus some remaining uncertainty about the ideal timings. Also be aware that VIC-emulation is very performance critical as it is cycle-exact, i.e. the emulated-VIC is in lockstep with the real one (there is no delay other than that of your HDMI-display setup), and immediately outputs to the HDMI frame buffer. This means, you're probably less likely to experience instabilities when the emulation is deactivated.  
+ 
+### VIC-emulation (HDMI output)
+
+**Note:** to use the VIC-emulation (i.e. VIC output via HDMI) you have to connect the A15-signal, e.g. from the 6502 CPU pin 25, to the pin labelled "in 1" on the adapter. This signal is not available at the expansion port, but necessary to track VIC read/write accesses.
+
+There are some special configuration settings for Sidekick20 (in VC20/sidekick20.cfg):
+- *VIC_EMULATION* disables the emulation (setting it to *NONE*) or enables it by setting your system's video standard, i.e. *PAL* or *NTSC*
+- the HDMI output can simulate simple scanlines, you can set their default brightness (0=black, 256=no visible scanline) with *VIC_SCANLINE_INTENSITY*. The intensity can be changed at runtime by pressing '+' and '-'.
+- to enable the support for the VFLI graphics mode (208x256 pixels, 16 colors) - which normally requires quite some hardware modification, simply enable it with *VIC_VFLI_SUPPORT YES* (or disable it with *NO*)
+- the VIC audio output can undergo some filtering (as on the real machine) which can be controlled by setting *VIC_AUDIO_FILTER* to *YES* or *NO*
+
+Again, if you do not connect A15, the VIC-emulation will not work/be disabled.
+
+The Sidekick20-menu supports two font sizes (5x8 and 6x8) which you can choose by setting *FONT_WIDTH* to *NARROW* (38 column screen) or *WIDE* (32 column screen). Don't forget to adjust the positioning of the main menu entries accordingly.
+
+**Note:** ideally you configure the Raspberry Pi's HDMI-mode consistent with your PAL/NTSC setting above. This can be done using the "hdmi_mode" in sidekick20*.txt on the SD-card.
+
+
+### Drive emulation
+The Sidekick20 emulates LOAD and SAVE via kernal vectors, i.e. single-file programs and programs that use kernal routines LOAD/SAVE only work fine (for other programs use a real drive, Pi1541 or SD2IEC). The drive emulation exposes the very same folder structure as shown in the browser. When LOADing a sub-folder or D64-file (which appear in the directory) you change into it, e.g. *LOAD"game.d64",9* (replace "9" by your drive letter if you changed it). To go one level up in the file hierarchy use *LOAD"&larr;",9* , and to go to the root folder use *LOAD"//",9*.
   
 
 ## How does it work? (technical details)
-
-  
-
 Connecting the computers to the RPi requires level shifting to interface the 5V bus with the 3.3V GPIOs of the RPi. However, things get a bit more complicated as communication on the data lines (obviously) needs to be bidirectional and there are way too few GPIOs on a standard RPi to simply connect to all signals. The Sidekick64 reads A0-A13, IO1, IO2, ROML, ROMH, Phi2, Reset, HIRAM and SID-chipselect,
 
 R/W and reads/writes data lines D0-D7 (plus GPIOs for controlling the circuitry). This makes the use of multiplexers necessary. Additionally it also controls GAME, EXROM, NMI, DMA and RESET, and, very important :-), drive an OLED or TFT display and LEDs.
@@ -223,7 +256,7 @@ Please keep in mind that you're not reading about a product, but my personal pla
 
 ## Building the code (if you want to)
 
-Setup your Circle44+ and gcc-arm environment, then you can compile Sidekick64 almost like any other example program (the repository contains the build settings for Circle that I use -- make sure you use them, otherwise it will probably not work). Use "make -kernel={sid|cart|ram|ef|fc3|ar|menu}" to build the different kernels, then put the kernel together with the Raspberry Pi firmware on an SD(HC) card with FAT file system and boot your RPi with it (the "menu"-kernel is the aforementioned main software). The C64 code is compiled using cc65 and 64tass.
+Setup your Circle44.3 and gcc-arm environment, then you can compile Sidekick64 almost like any other example program (the repository contains the build settings for Circle that I use -- make sure you use them, otherwise it will probably not work). Use "make -kernel={sid|cart|ram|ef|fc3|ar|menu|menu20|menu264}" to build the different kernels, then put the kernel together with the Raspberry Pi firmware on an SD(HC) card with FAT file system and boot your RPi with it (the "menu"-kernels are the aforementioned main software). The C64/C16/VIC20 code is compiled using cc65 and 64tass.
 
   
 
@@ -249,7 +282,7 @@ The software uses third-party libraries and components such as reSID, TinySoundF
 
 Last but not least I would like to thank a few people and give proper credits:
 
-kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works. Kim Jørgensen for chats on weird bus timings and freezers, hints on how to get things right and last but not least for letting me adapt his C64-side code of KFF's EAPI for use with Sidekick64. Thanks also go to Roland Hermans for creating and sharing PSID64, and to ALeX for letting me use his Disk2EasyFlash. Also, thanks to the beta testers on F64 (in particular emulaThor, bigby, kinzi and TurboMicha).
+kinzi (forum64.de, F64) for lots of discussions and explanations on electronics and how a C64 actually works. Kim Jørgensen for chats on weird bus timings and freezers, letting me adapt his C64-side code of KFF's EAPI for use with Sidekick64 and last but not least for joining for SK20, in particular for the VIC20 disk emulation. Thanks also go to Roland Hermans for creating and sharing PSID64, and to ALeX for letting me use his Disk2EasyFlash. Also, thanks to the beta testers on F64 (in particular emulaThor, bigby, kinzi and TurboMicha).
 
 Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in all recent releases, and for the Sidekick logo. And of course thanks a lot to Mad^BKN for porting Alpharay and Pet's Rescue in an amazingly short time!
 
