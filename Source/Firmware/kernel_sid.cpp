@@ -376,7 +376,7 @@ static u32 visModeGotoNext = 0;
 
 static float px = 120.0f;
 static float dx = 0.0f;
-static u32 startRow = 1, endRow = 1;
+static s32 startRow = 1, endRow = 1;
 static float vuValueAvg = 0.01f;
 static u32 visUpdate = 1;
 static int scopeX = 0;

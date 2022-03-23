@@ -282,6 +282,11 @@ static __attribute__( ( always_inline ) ) inline void flushI2CBuffer( bool witho
 	i2cBufferCountLast = i2cBufferCountCur = 0;
 }
 
+static __attribute__( ( always_inline ) ) inline void clearI2CBuffer()
+{
+	i2cBufferCountLast = i2cBufferCountCur = 0;
+}
+
 static __attribute__( ( always_inline ) ) inline void prepareOutputLatch4Bit()
 {
 	test:

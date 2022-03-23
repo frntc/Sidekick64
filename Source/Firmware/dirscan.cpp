@@ -30,6 +30,7 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "dirscan.h"
+#include "crt.h"
 #include "linux/kernel.h"
 #include <circle/util.h>
 
@@ -38,6 +39,7 @@
 #include <stdio.h>
 
 DIRENTRY dir[ MAX_DIR_ENTRIES ];
+u32 dirSpecialAttr[ MAX_DIR_ENTRIES ];
 s32 nDirEntries;
 
 #define DIRSECTS  18
@@ -78,7 +80,7 @@ u32 getTracks( u32 d64size )
 	return 0xff;
 }
 
-int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 parent, u32 *nFiles )
+int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 parent, u32 *nFiles, char *filenameInD64 )
 {
 	u32 nTracks = getTracks( d64size );
 
@@ -151,6 +153,7 @@ int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 pare
 				strcat( fln2, " " );
 				strcat( fln2, types[ nt ] );
 				DIRENTRY *d = &((DIRENTRY *)dst)[ *s ];
+				memset( d->name, 0, 256 );
 				sprintf( (char*)d->name, "%3d %s", blk, fln2 );
 
 				strcpy( (char*)&d->name[128], fln2 );
@@ -165,6 +168,19 @@ int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s, u32 pare
 		{
 			u32 c = 0;
 			*s = 0;
+
+			u8 *fileInfo = &ptr[ ofs ];
+
+			if ( filenameInD64 )
+			{
+				char fln2[ 17 + 6 ];
+				strncpy( fln2, (const char*)&fileInfo[ 3 ], 16 );
+				fln2[ 16 ] = 0;
+				strcpy( filenameInD64, fln2 );
+				//extern CLogger *logger;
+				//logger->Write( "extracting", LogNotice, "'%s'", (const char*)&fileInfo[ 3 ] );
+			}	
+
 
 			// invalid track or sector?
 			if ( ( ptr[ ofs + 1 ] < 1 ) || ( ptr[ ofs + 1 ] > nTracks ) || ( ptr[ ofs + 2 ] >= nSectorTable[ (int)( ptr[ ofs + 1 ] - 1 ) ] ) )
@@ -294,6 +310,43 @@ void quicksort( DIRENTRY *begin, DIRENTRY *end )
 	quicksort( split, end );
 }
 
+// returns start and end address of .PRG
+int readStartEndAddressPRG( CLogger *logger, const char *FILENAME, u32 *addr )
+{
+	// get filesize
+	FILINFO info;
+	u32 res = f_stat( FILENAME, &info );
+	u32 filesize = (u32)info.fsize;
+
+	if ( filesize > 65535 )
+		return 0;
+
+	// open file
+	FIL file;
+	res = f_open( &file, FILENAME, FA_READ | FA_OPEN_EXISTING );
+	if ( res != FR_OK )
+	{
+		//logger->Write( "RaspiMenu", LogNotice, "Cannot open file: %s", FILENAME );
+		return 0;
+	}
+
+	// read data in one big chunk
+	u32 nBytesRead;
+	u8 data[ 2 ];
+	res = f_read( &file, data, 2, &nBytesRead );
+
+	*addr = data[ 0 ] + data[ 1 ] * 256;
+	*addr |= ( (*addr + filesize-3) << 16 );
+
+	if ( res != FR_OK )
+		logger->Write( "RaspiMenu", LogError, "Read error" );
+
+	if ( f_close( &file ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot close file" );
+
+	return 1;
+}
+
 void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 parent = 0xffffffff, u32 level = 0, u32 takeAll = 0, u32 *nAdded = NULL )
 {
 	char temp[ 4096 ];
@@ -416,11 +469,14 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 
 	do {
 		d[*n].size = sort[ pos ].size;
+		d[*n].vc20 = 0;
+		d[*n].vc20flags = 0;
 
 		// file or folder?
 		if ( sort[ pos ].level & AM_DIR )
 		{
-			strcpy( (char*)d[*n].name, (char*)sort[ pos ].name );
+			//strcpy( (char*)d[*n].name, (char*)sort[ pos ].name );
+			memcpy( (char*)d[*n].name, (char*)sort[ pos ].name, 256 );
 			d[*n].f = DIR_DIRECTORY;
 			if ( takeAll )
 				d[ *n ].f |= DIR_LISTALL;
@@ -429,7 +485,8 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 			d[*n].next = 1 + *n; (*n) ++;
 		} else
 		{
-			strcpy( (char*)d[*n].name, (char*)sort[ pos ].name );
+			//strcpy( (char*)d[*n].name, (char*)sort[ pos ].name );
+			memcpy( (char*)d[*n].name, (char*)sort[ pos ].name, 256 );
 
 			if ( strstr( (char*)sort[ pos ].name, ".d64" ) > 0 || strstr( (char*)sort[ pos ].name, ".D64" ) > 0 ||
 			 	 strstr( (char*)sort[ pos ].name, ".d71" ) > 0 || strstr( (char*)sort[ pos ].name, ".D71" ) > 0 )
@@ -472,6 +529,7 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 				d[ curIdx - 2 ].next = *n;
 
 			} else
+			#ifndef SIDEKICK20
 			if ( strstr( (char*)DIRPATH, "KERNAL" ) > 0  )
 			{
 				//logger->Write( "RaspiMenu", LogNotice, "-> found kernal %s", sort[ pos ].name );
@@ -480,13 +538,20 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 				d[ *n ].level = level;
 				( *n )++;
 			} else 
+			#endif
 			if ( strstr( (char*)sort[ pos ].name, ".crt" ) > 0 || strstr( (char*)sort[ pos ].name, ".CRT" ) > 0 )
 			{
+				#ifdef SIDEKICK20
+				strcpy( temp, DIRPATH );
+				strcat( temp, "\\" );
+				strcat( temp, (char*)sort[ pos ].name );
+				#endif
 				d[ *n ].f = DIR_CRT_FILE;
 				d[ *n ].parent = parent;
 				d[ *n ].level = level;
 				( *n )++;
 			} else 
+			#ifndef SIDEKICK20
 			if ( strstr( (char*)sort[ pos ].name, ".georam" ) > 0 || strstr( (char*)sort[ pos ].name, ".GEORAM" ) > 0 )
 			{
 				d[ *n ].f = DIR_CRT_FILE;
@@ -494,14 +559,33 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 				d[ *n ].level = level;
 				( *n )++;
 			} else
+			#endif
 			if ( strstr( (char*)sort[ pos ].name, ".prg" ) > 0 || strstr( (char*)sort[ pos ].name, ".PRG" ) > 0 )
 			{
+			#ifdef SIDEKICK20
+				u32 addr;
+				strcpy( temp, DIRPATH );
+				strcat( temp, "\\" );
+				strcat( temp, (char*)sort[ pos ].name );
+				if ( readStartEndAddressPRG( logger, temp, &addr ) )
+				{
+					if ( strstr( DIRPATH, "CART20" ) )
+						d[ *n ].vc20flags = CART20;
+					d[ *n ].vc20 = addr;
+					d[ *n ].f = DIR_PRG_FILE;
+					d[ *n ].parent = parent;
+					d[ *n ].level = level;
+					( *n )++;
+				}
+			#else
 				d[ *n ].f = DIR_PRG_FILE;
 				d[ *n ].parent = parent;
 				d[ *n ].level = level;
 				( *n )++;
-			} else
-			if ( strstr( (char*)sort[ pos ].name, ".sid" ) > 0 || strstr( (char*)sort[ pos ].name, ".SID" ) > 0 )
+			#endif
+			} 
+			#ifndef SIDEKICK20
+			else if ( strstr( (char*)sort[ pos ].name, ".sid" ) > 0 || strstr( (char*)sort[ pos ].name, ".SID" ) > 0 )
 			{
 				d[ *n ].f = DIR_SID_FILE;
 				d[ *n ].parent = parent;
@@ -522,6 +606,7 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 				d[ *n ].level = level;
 				( *n )++;
 			} 
+			#endif
 		}
 
 	} while ( ++pos < sortCur );
@@ -584,6 +669,45 @@ void scanDirectories( char *DRIVE )
 	APPEND_SUBTREE_UNSCANNED( "KERNAL", "SD:KERNAL", 0 )
 	APPEND_SUBTREE_UNSCANNED( "PRG128", "SD:PRG128", 0 )
 	APPEND_SUBTREE_UNSCANNED( "CART128", "SD:CART128", 0 )
+
+	//insertDirectoryContents( 0, "SD:" );
+
+	// unmount file system
+	if ( f_mount( 0, DRIVE, 0 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot unmount drive: %s", DRIVE );
+}
+
+void scanDirectoriesVIC20( char *DRIVE )
+{
+	FATFS m_FileSystem;
+
+	// mount file system
+	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
+		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
+
+	u32 head = 0;
+	nDirEntries = 0;
+
+	#define APPEND_SUBTREE( NAME, PATH, ALL )						\
+		head = nDirEntries ++;										\
+		strcpy( (char*)dir[ head ].name, NAME );					\
+		dir[ head ].f = DIR_DIRECTORY | (ALL?DIR_LISTALL:0);		\
+		dir[ head ].parent = 0xffffffff;							\
+		readDirectory( 0, PATH, dir, &nDirEntries, head, 1, ALL );	\
+		if ( nDirEntries == (s32)head + 1 ) nDirEntries --; else	\
+		dir[ head ].next = nDirEntries;
+
+	#define APPEND_SUBTREE_UNSCANNED( NAME, PATH, ALL )				\
+		head = nDirEntries ++;										\
+		strcpy( (char*)dir[ head ].name, NAME );					\
+		dir[ head ].f = DIR_DIRECTORY | (ALL?DIR_LISTALL:0);		\
+		dir[ head ].parent = 0xffffffff;							\
+		dir[ head ].next = nDirEntries;
+
+	APPEND_SUBTREE_UNSCANNED( "CART20", "SD:CART20", 0 )
+	//APPEND_SUBTREE_UNSCANNED( "UTILS20", "SD:UTILS20", 0 )
+	APPEND_SUBTREE_UNSCANNED( "D20", "SD:D20", 0 )
+	APPEND_SUBTREE_UNSCANNED( "PRG20", "SD:PRG20", 0 )
 
 	//insertDirectoryContents( 0, "SD:" );
 

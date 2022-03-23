@@ -37,6 +37,13 @@
 
 //#define DEBUG_OUT
 
+#ifdef SIDEKICK20
+u8 	cfgVIC_Emulation = 0,
+	cfgVIC_VFLI_Support = 0,
+	cfgVIC_Audio_Filter = 0;
+u16	cfgVIC_ScanlineIntensity = 256;
+#endif
+
 u32 skinFontLoaded;
 char skinFontFilename[ 1024 ];
 char skinAnimationFilename[ 1024 ];
@@ -234,6 +241,38 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 				#endif
 				}
 
+				#ifdef SIDEKICK20 
+				if ( strcmp( ptr, "VIC_EMULATION" ) == 0 )
+				{
+					ptr = strtok_r( NULL, " \t", &rest );
+					if ( strstr( ptr, "NONE" ) ) cfgVIC_Emulation = 0;
+					if ( strstr( ptr, "PAL" ) ) cfgVIC_Emulation = 1;
+					if ( strstr( ptr, "NTSC" ) ) cfgVIC_Emulation = 2;
+				}
+
+				if ( strcmp( ptr, "VIC_VFLI_SUPPORT" ) == 0 )
+				{
+					ptr = strtok_r( NULL, " \t", &rest );
+					if ( strstr( ptr, "YES" ) ) cfgVIC_VFLI_Support = 1;
+					if ( strstr( ptr, "NO" ) ) cfgVIC_VFLI_Support = 0;
+				}
+				if ( strcmp( ptr, "VIC_AUDIO_FILTER" ) == 0 )
+				{
+					ptr = strtok_r( NULL, " \t", &rest );
+					if ( strstr( ptr, "YES" ) ) cfgVIC_Audio_Filter = 1;
+					if ( strstr( ptr, "NO" ) ) cfgVIC_Audio_Filter = 0;
+				}
+				if ( strcmp( ptr, "VIC_SCANLINE_INTENSITY" ) == 0 && ( ptr = strtok_r( NULL, "\"", &rest ) ) )
+				{
+					cfgVIC_ScanlineIntensity = atoi( ptr );
+					if ( cfgVIC_ScanlineIntensity < 0 ) cfgVIC_ScanlineIntensity = 0;
+					if ( cfgVIC_ScanlineIntensity > 256 ) cfgVIC_ScanlineIntensity = 256;
+					ptr = strtok_r( NULL, " \t", &rest );
+					if ( strstr( ptr, "YES" ) ) cfgVIC_Audio_Filter = 1;
+					if ( strstr( ptr, "NO" ) ) cfgVIC_Audio_Filter = 0;
+				}
+				#endif
+
 				if ( strcmp( ptr, "SKIN_BACKGROUND_ANIMATION" ) == 0 )
 				{
 					ptr = strtok_r( NULL, " \t", &rest );
@@ -272,12 +311,16 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 	if ( timingValues[ 8 ] ) WAIT_TRIGGER_DMA = timingValues[ 8 ];
 	if ( timingValues[ 9 ] ) WAIT_RELEASE_DMA = timingValues[ 9 ];
 
+	#ifndef SIDEKICK20 
+
 	backupUserProfile();
 
 	vdcSupport = skinValues.SKIN_ENABLE_VDC_OUTPUT > 0 ? 1 : 0;
 
 	if ( skinValues.SKIN_USE_FAVORITES )
 		readFavorites( logger, DRIVE );
+
+	#endif
 
 	return 1;
 }

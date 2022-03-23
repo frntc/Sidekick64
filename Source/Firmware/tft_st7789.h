@@ -46,6 +46,9 @@ extern void tftUse12BitColor();
 extern void tftUse16BitColor();
 extern void setDoubleWPixel12( u32 x, u32 y, u32 c );
 
+extern void tftCommandImm( u8 c );
+extern void tftCommandImm( u8 c, u8 d );
+
 extern void tftSplashScreen( const u8 *fb );
 extern int tftSplashScreenFile( const char *drive, const char *fn );
 
@@ -55,6 +58,7 @@ extern unsigned char tftFrameBuffer12Bit[ 240 * 240 * 3 / 2 ];
 
 extern void tftSendFramebuffer16BitImm( const u8 *raw );
 extern void tftSendFramebuffer12BitImm( const u8 *raw );
+extern void tftSetPartial( u8 s, u8 e );
 extern void tftInit( int rot = -1 );
 extern void tftInitImm( int rot = -1 );
 

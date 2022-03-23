@@ -36,6 +36,13 @@ extern char menuText[ 5 ][ MAX_ITEMS ][ 32 ], menuFile[ 5 ][ MAX_ITEMS ][ 2048 ]
 extern int menuItemPos[ 5 ][ MAX_ITEMS ][ 2 ];
 extern int screenType, screenRotation, vdcSupport;
 
+#ifdef SIDEKICK20
+extern u8 cfgVIC_Emulation,
+		  cfgVIC_VFLI_Support,
+		  cfgVIC_Audio_Filter;
+extern u16 cfgVIC_ScanlineIntensity;
+#endif
+
 #define TIMING_NAMES 10
 const char timingNames[TIMING_NAMES][32] = {
 	"WAIT_FOR_SIGNALS", 

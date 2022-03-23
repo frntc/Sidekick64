@@ -43,11 +43,15 @@
 #define D64_COUNT_FILES ( 1 << 27 )
 
 #define DISPLAY_LINES 19
+#define DISPLAY_LINES_VIC20 16
 
 typedef struct
 {
 	u8	name[ 256 ];
 	u32 f, parent, next, level, size;
+
+	u32 vc20; // stores: high-byte of start/end addr
+	u8 vc20flags;
 } DIRENTRY;
 
 // file type requires 3 bits
@@ -65,14 +69,18 @@ typedef struct
 #define DIR_FILE_IN_D64	(1<<30)
 #define DIR_BIN_FILE	(1<<31)
 
+// vc20flags
+#define CART20        1
+#define ITEM_SELECTED 128
 
 #define MAX_DIR_ENTRIES		16384
 extern DIRENTRY dir[ MAX_DIR_ENTRIES ];
 extern s32 nDirEntries;
 
+extern void scanDirectoriesVIC20( char *DRIVE );
 extern void printBrowserScreen();
 extern int printFileTree( s32 cursorPos, s32 scrollPos );
-extern int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s = 0, u32 parent = 0xffffffff, u32 *nFiles = 0 );
+extern int d64ParseExtract( u8 *d64buf, u32 d64size, u32 job, u8 *dst, s32 *s = 0, u32 parent = 0xffffffff, u32 *nFiles = 0, char *filenameInD64 = 0 );
 
 
 #endif

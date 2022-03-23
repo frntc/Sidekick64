@@ -62,6 +62,7 @@
 #define BS_WARPSPEED    	0x14
 
 static const char CRT_HEADER_SIG[] = "C64 CARTRIDGE   ";
+static const char CRT_HEADER_SIG20[] = "VIC20 CARTRIDGE  ";
 static const char CHIP_HEADER_SIG[] = "CHIP";
 
 typedef struct  {
@@ -89,5 +90,7 @@ int  readCRTHeader( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, c
 void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, const char *FILENAME, u8 *flash, volatile u8 *bankswitchType, volatile u32 *ROM_LH, volatile u32 *nBanks, bool getRAW = false );
 void writeChanges2CRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *flash, bool isRAW );
 int  checkCRTFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 *error, u32 *isFreezer = 0 );
+int checkCRTFileVIC20( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 *error );
+extern int  getVIC20CRTFileStartEndAddr( CLogger *logger, const char *FILENAME, u32 *addr );
 
 #endif

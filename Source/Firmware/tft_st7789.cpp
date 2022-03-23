@@ -225,6 +225,16 @@ void tftInitDisplay()
 	flush4BitBuffer( true );	delay( 100 );
 }
 
+void tftSetPartial( u8 s, u8 e )
+{
+	tftCommandImm( 0x12 );
+	tftCommandImm( 0x30 );
+	tftSendDataImm( 0 );
+	tftSendDataImm( s );
+	tftSendDataImm( 0 );
+	tftSendDataImm( e );
+}
+
 void tftInitDisplayImm() 
 {
 	TFTimm_SDA_LOW
@@ -263,6 +273,52 @@ void tftInitDisplayImm()
 		tftSendDataImm( i * 4 );
 
 	tftCommandImm( 0xe3 );					// blue gamme lut
+	for ( int i = 0; i < 64; i++ )
+		tftSendDataImm( i * 4 );
+
+	tftCommandImm( 0x29 );								// display on
+	delay( 100 );
+}
+
+void tftReInitDisplayImm() 
+{
+	TFTimm_SDA_LOW
+	TFT_SDA_LOW
+	lastBit = 0;
+	TFTimm_SCK_HIGH
+	TFTimm_DC_HIGH
+
+	tftCommandImm( 0x34 );								// tearing off
+	delay( 500 );
+
+	tftCommandImm( 0x38 );								// idle mode off
+	delay( 500 );
+	tftCommandImm( 0x13 );								// partial off
+	delay( 500 );
+	tftCommandImm( 0x11 );								// quit sleep mode
+	delay( 500 );
+
+	tftCommandImm( 0x3A, 0x05 );						// 16-bit color mode 
+	tftCommandImm( 0x20 + invert );						// invert
+	tftCommandImm( 0x36, rotate << 5 );					// orientation
+
+	tftCommandImm( 0x26, 0 );
+
+	tftCommandImm( 0xe0 );
+	for ( int i = 0; i < 14; i++ )
+		tftSendDataImm( posGamma[ i ] );
+
+	tftCommandImm( 0xe1 );
+	for ( int i = 0; i < 14; i++ )
+		tftSendDataImm( negGamma[ i ] );
+
+	tftCommandImm( 0xba, 4 );
+
+	tftCommandImm( 0xe2 );					// red gamma lut
+	for ( int i = 0; i < 64; i++ )
+		tftSendDataImm( i * 4 );
+
+	tftCommandImm( 0xe3 );					// blue gamma lut
 	for ( int i = 0; i < 64; i++ )
 		tftSendDataImm( i * 4 );
 
