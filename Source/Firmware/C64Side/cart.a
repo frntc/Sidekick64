@@ -7,9 +7,9 @@
 ;    
 ;     cart.a
 ;    
-;     Sidekick64 - A framework for interfacing the C64 and a Raspberry Pi Zero 2 or 3A+/3B+
-;                - code of a CBM80 cart to download and launch a .PRG from the RPi
-;     Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;     RasPiC64 - A framework for interfacing the C64 and a Raspberry Pi 3B/3B+
+;              - code of a CBM80 cart to download and launch a .PRG from the RPi
+;     Copyright (c) 2019, 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
 ;    
 ;     Logo created with http://patorjk.com/software/taag/
 ;     
@@ -44,6 +44,13 @@ coldstart
     txs
     ldx #$05
     stx $d016
+
+        ;disable display
+        ;lda #0
+        ;sta $d020
+        ;lda #$0b
+        ;sta $d011
+
     jsr $fdb3        	   ; init CIA
     jsr $fda3               ; prepare IRQ
 
@@ -79,7 +86,18 @@ coldstart
 
     jmp warmstart
 
+; 5 bytes
+burn_5xPlus1_Cycles .macro
+	ldx #\1		; 2c					2
+	dex			; x * 2c				42
+	bne *-1       ; (x-1) * 3c + 1 * 2c		62
+	.endm
+
 warmstart
+    ;lda #0
+    ;sta $d020
+    ;lda #$0b
+    ;sta $d011
 
     jsr $ff8a               ; restore kernal vectors
 
@@ -88,13 +106,18 @@ warmstart
     sta $0801
     sta $0802
 
-    jsr $ff81               ; init screen editor
+    jsr $ff5b               ; init screen editor
+    ;jsr myInitVideo
+
+        ;lda #0
+        ;sta $d020
+        ;lda #$0b
+        ;sta $d011
 
     lda $324                ; save CHRIN vector
     sta RESTORE_LOWER
     lda $325
     sta RESTORE_UPPER
-
      
     ldx #$0                 ; copy reset trap to ram
   loopCPYRSTTRAP
@@ -117,11 +140,19 @@ warmstart
     lda >#TRAPADR
     sta $325
 
-    jmp $fcfe
+    cli
+
+
+    jmp ($a000)
+    ;jmp $fcfe
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 MEMCPYA000
+    ; enter SIDKick-configuration mode (if it exists), to avoid IO-space conflicts, for 25000 cycles
+	lda #255
+	sta $d41f
+
     sta $de02   ; transfer of PRG-parts starting at $a000
 
     ; number of 256-byte pages to copy
@@ -139,6 +170,11 @@ MEMCPYA000
     
 COPYTEMP_LOOPs0
     ldx #$00
+
+    ; enter SIDKick-configuration mode (if it exists), to avoid IO-space conflicts, for 25000 cycles
+	lda #255
+	sta $d41f
+
 COPYTEMP_LOOPs1
     lda $de00
     sta $2000,x
@@ -159,6 +195,11 @@ COPYTEMP_LOOPs1
     tay
 COPYA000_LOOPs0
     ldx #$00
+
+    ; enter SIDKick-configuration mode (if it exists), to avoid IO-space conflicts, for 25000 cycles
+	lda #255
+	sta $d41f
+
 COPYA000_LOOPs1
     lda $2000,x
     sta $a000,x
@@ -187,6 +228,11 @@ RESET_TRAP
     tya
     pha
 
+        ;lda #0
+        ;sta $d020
+        ;lda #$0b
+        ;sta $d011
+
     lda RESTORE_LOWER       ; restore
     sta $324
     lda RESTORE_UPPER
@@ -194,6 +240,10 @@ RESET_TRAP
 
     ; copy higher part of PRG (if present)
     jsr MEMCPYADR
+
+    ; enter SIDKick-configuration mode (if it exists), to avoid IO-space conflicts, for 25000 cycles
+	lda #255
+	sta $d41f
 
     ; copy lower part of PRG
     sta $de00
@@ -219,6 +269,10 @@ LOOPs1
      bne LOOPs1
 
      inc (LOOPs1-RESET_TRAP+TRAPADR) + 5
+
+     ; enter SIDKick-configuration mode (if it exists), to avoid IO-space conflicts, for 25000 cycles
+ 	 lda #255
+ 	 sta $d41f
 
      dey
      bne LOOPs0
@@ -267,6 +321,17 @@ LOOPs1
     lda #123                ; disable Sidekick64
     sta $df00
 
+    ldy #0
+-
+    burn_5xPlus1_Cycles     200
+    dey                     ; 2 cycles
+    bne -                   ; 2* cycles
+
+;          lda #$1b
+ ;         sta $d011
+
+;    jsr $ff5b               ; init video
+
     pla
     tay
     pla
@@ -278,6 +343,175 @@ LOOPs1
 RESET_TRAP_END
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+myInitVideo:
+;JSR $E518
+; initialise screen and keyboard
+
+;E518   20 A0 E5   
+;JSR $E5A0
+;init VIC
+LDA #$03
+STA $9A
+LDA #$00
+STA $99
+LDX #$2F
+- LDA TVIC,X
+STA $CFFF,X
+DEX
+BNE -
+
+LDA #$00
+STA $0291
+STA $CF
+LDA #$48   ; low  EB48
+STA $028F
+LDA #$EB   ; high EB48
+STA $0290
+LDA #$0A
+STA $0289
+STA $028C
+LDA #$0E
+STA $0286
+LDA #$04
+STA $028B
+LDA #$0C
+STA $CD
+STA $CC
+
+LDA $0288
+
+ORA #$80
+TAY
+LDA #$00
+TAX
+bla:
+STY $D9,X
+CLC
+ADC #$28
+BCC +
+INY
++ INX
+CPX #$1A
+BNE bla
+LDA #$FF
+STA $D9,X
+LDX #$18
+blub:
+;E560   20 FF E9   
+
+;JSR $E9FF
+; clear one screen line
+LDY #$27
+JSR routineE9F0
+JSR routineEA24
+- 
+;JSR $E4DA
+LDA $0286
+STA ($F3),Y
+LDA #$20
+STA ($D1),Y
+DEY
+BPL -
+;;;;;
+
+DEX
+BPL blub
+
+LDY #$00
+
+STY $D3
+STY $D6
+
+
+; set address of curent screen line
+
+LDX $D6
+LDA $D3
+bla2:
+LDY $D9,X
+BMI blub2
+CLC
+ADC #$28
+STA $D3
+DEX
+BPL bla2
+blub2:
+;E57C   20 F0 E9   
+JSR routineE9F0
+LDA #$27
+INX
+bla3:
+LDY $D9,X
+BMI +
+CLC
+ADC #$28
+INX
+BPL bla3
++ STA $D5
+;E58E   4C 24 EA   
+JMP routineEA24
+
+CPX $C9
+
+BEQ bla4
+;JMP $E6ED
+- LDA $D9,X
+BMI +
+DEX
+BNE -
++ JMP routineE9F0
+
+bla4:
+
+
+- LDA $D012
+BNE -
+LDA $D019
+AND #$01
+STA $02A6
+JMP $FDDD
+
+; fetch screen addresses
+routineE9F0:
+LDA tabECF0,X
+STA $D1
+LDA $D9,X
+AND #$03
+ORA $0288
+STA $D2
+RTS
+
+; low bytes of screen line addresses
+tabECF0:
+.byte $00,$28,$50,$78,$A0
+.byte $C8,$F0,$18,$40,$68
+.byte $90,$B8,$E0,$08,$30
+.byte $58,$80,$A8,$D0,$F8
+.byte $20,$48,$70,$98,$C0
+
+; set colour memory adress parallel to screen
+routineEA24:
+LDA $D1
+STA $F3
+LDA $D2
+AND #$03
+ORA #$D8
+STA $F4
+RTS
+
+TVIC
+.byte   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ;SPRITES (0-16)
+; original
+;.byte   $1B,0,0,0,0,$08,0,$14,0,0,0,0,0,0,0 ;DATA (17-31)
+; modified
+ .byte   0,0,0,0,0,$08,0,$14,0,0,0,0,0,0,0 ;DATA (17-31)
+
+; original
+;.byte   14,6,1,2,3,4,0,1,2,3,4,5,6,7 ;32-46
+;modified
+.byte   14,6,1,2,3,4,0,1,2,3,4,5,6,7 ;32-46
+
 
 * = $9fff                     ; fill 
      .byte 0

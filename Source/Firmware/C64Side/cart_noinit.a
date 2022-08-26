@@ -1,0 +1,119 @@
+;      _________.__    .___      __   .__        __        
+;     /   _____/|__| __| _/____ |  | _|__| ____ |  | __    
+;     \_____  \ |  |/ __ |/ __ \|  |/ /  |/ ___\|  |/ /    
+;     /        \|  / /_/ \  ___/|    <|  \  \___|    <     
+;    /_______  /|__\____ |\___  >__|_ \__|\___  >__|_ \    
+;            \/         \/    \/     \/       \/     \/    
+;    
+;     cart.a
+;    
+;     Sidekick64 - A framework for interfacing the C64 and a Raspberry Pi Zero 2 or 3A+/3B+
+;                - code of a CBM80 cart to download and launch a .PRG from the RPi
+;     Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;    
+;     Logo created with http://patorjk.com/software/taag/
+;     
+;     This program is free software: you can redistribute it and/or modify
+;     it under the terms of the GNU General Public License as published by
+;     the Free Software Foundation, either version 3 of the License, or
+;     (at your option) any later version.
+;    
+;     This program is distributed in the hope that it will be useful,
+;     but WITHOUT ANY WARRANTY; without even the implied warranty of
+;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;     GNU General Public License for more details.
+;     
+;     You should have received a copy of the GNU General Public License
+;     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+* = $8000
+
+TRAPADR   = ($33c)         ; addr of reset trap (also in datasette buffer)
+MEMCPYADR = $1000          ; addr of memcpy
+
+RESTORE_LOWER = $334
+RESTORE_UPPER = $335
+
+.word coldstart             ; coldstart vector
+.word warmstart             ; warmstart vector
+.byte $C3,$C2,$CD,$38,$30   ; "CBM80"
+ 
+coldstart
+warmstart
+
+    lda #$00                
+    sta $d011
+;    sta $d015
+
+    lda #0
+    sta $d020
+    sta $d021
+    lda #$0b
+    sta $d011
+
+;    lda #$02
+;    sta $d020
+;    sta $d021
+
+;lda $dd00
+;ora #3
+;sta $dd00
+;lda #$1c
+;sta $d018
+
+    ldx #$0                 ; copy reset trap to ram
+  loopCPYRSTTRAP
+    lda RESET_TRAP,x
+    sta TRAPADR,x
+    inx
+    cpx #(RESET_TRAP_END-RESET_TRAP)
+    bne loopCPYRSTTRAP
+
+    jmp TRAPADR
+
+RESET_TRAP
+    ; copy lower part of PRG
+    sta $de00
+
+    ; number of 256-byte pages to copy
+    ldy $de01
+    ldy $de01
+
+    ; lo-byte of destination address
+    lda $de00
+    ;lda #$01
+    ;sta (LOOPs1-RESET_TRAP+TRAPADR) + 4
+    
+    ; hi-byte of destination address
+    lda $de00
+    ;lda #$08
+    ;sta (LOOPs1-RESET_TRAP+TRAPADR) + 5
+
+LOOPs0
+     ldx #$00
+LOOPs1
+     lda $de00
+     sta $0801,x
+     inx
+     bne LOOPs1
+
+     inc (LOOPs1-RESET_TRAP+TRAPADR) + 5
+
+     dey
+     bne LOOPs0
+
+    lda #123                ; disable Sidekick64
+    sta $df00
+    sta $df00
+    sta $df00
+
+    jmp $080d
+
+RESET_TRAP_END
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+* = $9fff                     ; fill 
+     .byte 0
+
