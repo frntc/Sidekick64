@@ -1,14 +1,16 @@
 
 
+
 <img align="right"  width="280" src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_logo.jpg">
 
-**Sidekick64** is a versatile cartridge/expansion for the C64, C128, the C16/+4, and the VIC20. It uses a Raspberry Pi 3A+, 3B+ or Zero 2 (only for C64/C128/VIC20) to emulate memory expansions, sound devices (up to 8 SIDs, SFX Sound Expander, MIDI), freezer cartridges, cartridges such as Easyflash/GMOD, kernal replacements, C128 function ROMs and many more. Some functionalities can be combined with others, e.g. kernal replacement plus freezers or GeoRAM expansion. The Sidekick64 handles among others PRGs, D64, SID files and also integrates tools such as Disk2EasyFlash, PSID64.
+
+**Sidekick64** is a versatile cartridge/expansion for the C64, C128, the C16/+4, and the VIC20. It uses a Raspberry Pi 3A+, 3B+ or Zero 2 (only for C64/C128/VIC20) to emulate memory expansions, sound devices (up to 8 SIDs, SFX Sound Expander, MIDI), freezer cartridges, cartridges such as Easyflash/GMOD, kernal replacements, C128 function ROMs and many more. Some functionalities can be combined with others, e.g. kernal replacement plus freezers or GeoRAM expansion. The Sidekick64 handles among others PRGs, D64, SID, MOD, YM and WAV files and also integrates tools such as Disk2EasyFlash, PSID64.
 
 <p align="center" font-size: 30px;>
 
-<img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_menu.gif"  height="200">  
+<img src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_menu.gif"  height="200">  
 <img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_rpi3a.jpg"  height="200">  
- <img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_sb.jpg"  height="200">
+<img  src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_cases.jpg"  height="200">  
 
 </p>
 
@@ -43,6 +45,7 @@ Its functionality is entirely defined by software. The connecting circuitry is q
 - Function ROMs on a C128
 - multiple SIDs and Sound Expander/FM emulation (up to 8 SIDs, e.g. to play [The Tuneful 8](https://csdb.dk/release/?id=182735))
 - simplified Datel and Sequential MIDI interface emulation with built-in SoundFont-synthesizer (slightly modified version of [TinySoundFont](https://github.com/schellingb/TinySoundFont))
+- audio player (MOD, YM and WAV files) with SID- and HDMI-output, supporting up to stereo 48kHz output on dual-SID setups (C64 and C128)
 - TED-sound and Digiblaster emulation for C16/+4 (to have all sound devices on one output)
 
 The **Sidekick20** (Sidekick64 on the VIC20):
@@ -70,7 +73,7 @@ The Sidekick64 software provides a main menu for frequently used features, progr
 
 ## How to build a Sidekick64:
 
-  
+<img align="right" src="https://raw.githubusercontent.com/frntc/Sidekick64/master/Images/sidekick64_sb.jpg"  height="200">  
 
 This section summarizes building and setting up the hardware. If you're not into building one yourself: [Restore Store](https://restore-store.de) (not my shop) offers pre-assembled Sidekick64s at fair prices.
 
@@ -80,11 +83,11 @@ This section summarizes building and setting up the hardware. If you're not into
 
   
 
-There are two variants of the PCB: a larger one the fits the dimensions of the Raspberry Pi 3A+/3B+ and a smaller one with tailored for the Raspberry Pi Zero 2. Note that all is interchangeable, i.e. you can use either PCB with any of the supported RPis.
+There are two variants of the PCB: a larger one the fits the dimensions of the Raspberry Pi 3A+/3B+ (shown above) and a smaller one with tailored for the Raspberry Pi Zero 2 (image on the right). Note that all is interchangeable, i.e. you can use either PCB with any of the supported RPis.
 
   
 
-Here you can find the BOM and assembly information for [Sidekick64 v0.42](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk64.html), [Sidekick64 v0.42 Zero](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk64zero.html). Sourcing components: you can use LVC and LVX types for the 07, 245, 257, and 573 ICs, and you can use 74LS30 or 74HCT30. The C16/+4 adapter does not require any electronic components.
+Here you can find the BOM and assembly information for [Sidekick64 v0.42](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk64.html), [Sidekick64 v0.42 Zero](https://htmlpreview.github.io/?https://github.com/frntc/Sidekick64/blob/master/Gerber/ibom_sk64zero.html). Sourcing components: you can use LVC and LVX types for the 07, 245, 257, and 573 ICs, and you can use 74LS30 or 74HCT30. The C16/+4 adapter does not require any electronic components. The VIC20 adapter uses only plain resistors and diodes.
 
   
 
@@ -108,7 +111,7 @@ The jumper "A13-BTN" is used select whether the Sidekick64 reads the A13-signal 
 
 ### 3D printed cases
 
-My first attempt at designing a case for 3D printing is included in this repository. A much nicer one for the RPi 3B+ has been created by bigby and is available [here](https://www.thingiverse.com/thing:4771926) -- cases for the smaller RPis are in the making.
+My first attempt at designing a case for 3D printing is included in this repository. Much nicer ones for both the RPi 3B+ and the RPi Zero 2 have been created by bigby (who provided the photo shown above) and are available [here](https://www.printables.com/model/257138-sidekick64-zero-cartridge-case) and [here](https://www.thingiverse.com/hackup/designs). Jukk4 on forum64.de also designed a [case for the RPi 3A+](https://www.forum64.de/index.php?thread/87523-projektvorstellung-sidekick64/&postID=1691161#post1691161). [Here](https://www.printables.com/de/model/89901-sidekick-64-raspberry-3a-preliminary-version/related) is a 3A+ case derived from the case in this repository.
 
   
 
@@ -286,7 +289,7 @@ kinzi (forum64.de, F64) for lots of discussions and explanations on electronics 
 
 Rene Stange (the author of Circle) for his framework and patiently answering questions on it, and digging into special functionality (e.g. ARM stubs without L1 prefetching). Retrofan (https://compidiaries.wordpress.com/) for sharing his new system font which is also used in all recent releases, and for the Sidekick logo. And of course thanks a lot to Mad^BKN for porting Alpharay and Pet's Rescue in an amazingly short time!
 
-The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic. The C16/+4 SID and FM examples are based on code by Mr.Mouse/Xentax and Antti Hannula's (flex) 2sid tune "Eternity" (original mod by Matt Simmonds); the FM songs are Koere and Like Galway by Jesper Olson (jo). The C16 cartridge startup code is based on CBMHARDWARE's example.
+The authors of reSID and the OPL emulators (also used in WinVICE), the authors of SSD1306xLED (https://bitbucket.org/tinusaur/ssd1306xled, which I modified to work in this setting) for making their work available. The code in the repo further builds on d642prg V2.09 and some other code fragments found on cbm-hackers and codebase64.org. Also thanks and greetings fly to Arnaud Carré (aka Leonard/Oxygene) for his StSound library which SK64 uses to play YM files (https://github.com/arnaud-carre/StSound), and to rombankzero for pocketmod (https://github.com/rombankzero/pocketmod) used to render MOD-files. The OLED-Sidekick logo is based on a font by Atomic Flash found at https://codepo8.github.io/logo-o-matic. The C16/+4 SID and FM examples are based on code by Mr.Mouse/Xentax and Antti Hannula's (flex) 2sid tune "Eternity" (original mod by Matt Simmonds); the FM songs are Koere and Like Galway by Jesper Olson (jo). The C16 cartridge startup code is based on CBMHARDWARE's example.
 
   
   
