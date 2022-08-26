@@ -7,10 +7,10 @@
 ;    
 ;     cart264.a
 ;    
-;     RasPiC64 - A framework for interfacing the C64 (and C16/+4) and a Raspberry Pi 3B/3B+
-;              - code of a cart to download and launch a .PRG from the RPi
-;              - significant parts taken from http://www.cbmhardware.de/show.php?r=4&id=29 by CBMHARDWARE
-;     Copyright (c) 2020 Carsten Dachsbacher <frenetic@dachsbacher.de>
+;     Sidekick64 - A framework for interfacing the C64 and a Raspberry Pi Zero 2 or 3A+/3B+
+;                - code of a cart to download and launch a .PRG from the RPi
+;                - significant parts taken from http://www.cbmhardware.de/show.php?r=4&id=29 by CBMHARDWARE
+;     Copyright (c) 2020-22 Carsten Dachsbacher <frenetic@dachsbacher.de>
 ;    
 ;     Logo created with http://patorjk.com/software/taag/
 ;     
@@ -30,7 +30,8 @@
 t_lo         = $fe
 t_hi         = $ff 
 temp         = $332
-trampoline   = $333
+nofpages     = $333
+trampoline   = $334
 
 
 *=$8000
@@ -94,9 +95,6 @@ cpy2   lda $8100,x
        dex
        bpl cpy2
 
-       jmp trampoline
-
-*=$8100                 ; trampoline code 
        sei 
        lda #$00
        sta $02FE       
@@ -105,23 +103,30 @@ cpy2   lda $8100,x
        sta $0314
        lda #$f2
        sta $0315
-       lda #$00         ; basic , kernal
-       sta $FDD0        ; function rom off
-       sta $fb
 
-       ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-       ; "download" .PRG
+       ; "download" .PRG (some preparations here)
        lda #03
        sta $fde5
 
        ; number of 256-byte pages to copy
        ldx $fde5
+       stx nofpages
 
        ; get loading address
        lda $fde5
        sta t_lo  
        lda $fde5
        sta t_hi  
+
+       jmp trampoline
+
+*=$8100                 ; trampoline code 
+       lda #$00         ; basic , kernal
+       sta $FDD0        ; function rom off
+       sta $fb
+
+       ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+       ; "download" .PRG
 
    LOOPs0
        ldy #$00
@@ -138,6 +143,11 @@ cpy2   lda $8100,x
        bne LOOPs0
 
        ;; disable Sidekick64-transfer
+       lda $fde5
+       sta trampoline      ; high byte
+       lda $fde5
+       sta trampoline+1    ; low byte
+
        lda #123
        sta $fde5
        ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -167,8 +177,25 @@ cpy2   lda $8100,x
        lda #8                  ; last used device = 8
        sta $ba
 
+    ldx #$01                ; pointer to start addr of BASIC
+    stx $2b
+
+    lda trampoline+1
+    sta $2d                 ; ... and set BASIC program end and begin/end of BASIC variable addr
+    sta $2f
+    sta $31
+
+    lda #$10
+    sta $2c
+
+    lda trampoline
+    sta $2e
+    sta $30
+    sta $32
+
        lda temp
        sta $ff13
+
 
        jsr $8bea        ; start 
        rts   
