@@ -9,7 +9,7 @@
  dirscan.h
 
  Sidekick64 - A framework for interfacing 8-Bit Commodore computers (C64/C128,C16/Plus4,VC20) and a Raspberry Pi Zero 2 or 3A+/3B+
-            - code for reading/parsing D64 files
+            - code for reading/parsing D64 files, reading directories etc.
  Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  .d64 reader below adapted from d642prg V2.09, original source (C)Covert Bitops, (C)2003/2009 by iAN CooG/HokutoForce^TWT^HVSC
@@ -36,6 +36,7 @@
 #include <fatfs/ff.h>
 #include <circle/util.h>
 #include "helpers.h"
+#include "mempool.h"
 
 #define D64_GET_HEADER	( 1 << 24 )
 #define D64_GET_DIR		( 1 << 25 )
@@ -51,12 +52,16 @@ typedef struct
 	u32 f, parent, next, level, size;
 
 	u32 vc20; // stores: high-byte of start/end addr
-	u8 vc20flags;
-} DIRENTRY;
+	union {
+		u8 vc20flags;
+		u8 c64flags;
+	};
+} __attribute__((packed)) DIRENTRY;
 
 // file type requires 3 bits
 #define SHIFT_TYPE		16
 
+#define DIR_MUSIC_FILE	(1<<20)
 #define DIR_KERNAL_FILE	(1<<21)
 #define DIR_SID_FILE	(1<<22)
 #define DIR_LISTALL 	(1<<23)
@@ -73,8 +78,11 @@ typedef struct
 #define CART20        1
 #define ITEM_SELECTED 128
 
+// c64flags
+#define DONT_SHOW_ON_C64	1
+
 #define MAX_DIR_ENTRIES		16384
-extern DIRENTRY dir[ MAX_DIR_ENTRIES ];
+extern DIRENTRY *dir;//[ MAX_DIR_ENTRIES ];
 extern s32 nDirEntries;
 
 extern void scanDirectoriesVIC20( char *DRIVE );

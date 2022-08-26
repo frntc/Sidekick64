@@ -299,6 +299,8 @@ boolean CKernelMenu::Initialize( void )
 	initScreenAndLEDCodes();
 	latchSetClearImm( LED_INIT1_HIGH, LED_INIT1_LOW );
 
+	initGlobalMemPool( 128 * 1024 * 1024 );
+
 	u32 size = 0;
 
 #if 1
@@ -339,8 +341,14 @@ boolean CKernelMenu::Initialize( void )
 		prgData[ i ] = prgData[ i - 1 ];
 	prgData[0] = ( ( prgSize + 255 ) >> 8 );
 
+	int startAddr = prgData[ 1 ] + prgData[ 2 ] * 256;
+	prgData[ prgData[0] * 256 + 3 ] = ( startAddr + prgSize - 2 ) >> 8;
+	prgData[ prgData[0] * 256 + 3 + 1 ] = ( startAddr + prgSize - 2 ) & 255;
+
 
 	latchSetClearImm( LED_INIT3_HIGH, LED_INIT3_LOW );
+
+	logger->Write( "RaspiMenu", LogNotice, "scan dir" );
 
 	extern void scanDirectories264( char *DRIVE );
 	scanDirectories264( (char *)DRIVE );
@@ -355,6 +363,7 @@ boolean CKernelMenu::Initialize( void )
 		setDefaultTimings264( AUTO_TIMING_RPI0_264 ); else
 		setDefaultTimings264( AUTO_TIMING_RPI3_264 ); 
 
+	logger->Write( "RaspiMenu", LogNotice, "read cfg" );
 	if ( !readConfig( logger, (char*)DRIVE, (char*)FILENAME_CONFIG ) )
 	{
 		latchSetClearImm( LED_INITERR_HIGH, LED_INITERR_LOW );
@@ -577,6 +586,12 @@ void CGPIOPinFIQ2::FIQHandler( void *pParam )
 	{
 		PUT_DATA_ON_BUS_AND_CLEAR257( *( curTransfer++ ) )
 		CACHE_PRELOADL2STRM( curTransfer );
+		goto get_out;
+	}
+	if ( BUS_AVAILABLE264 && CPU_READS_FROM_BUS && GET_ADDRESS264 >= 0xfde6 && GET_ADDRESS264 <= 0xfde7 )
+	{
+		D = prgData[ 1 ] + prgData[ 2 ] * 256;
+		PUT_DATA_ON_BUS_AND_CLEAR257( (addr2 == 0xfde6) ? ( ( D + prgSize - 2 ) & 255 ) : ( ( D + prgSize - 2 ) >> 8 ) )
 		goto get_out;
 	}
 

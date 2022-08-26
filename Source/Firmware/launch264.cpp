@@ -50,7 +50,7 @@ static const char FILENAME_CBM80[] = "SD:C16/launch16.cbm80";	// launch code (8k
 u32	disableCart_l264, transferStarted_l264, currentOfs_l264;
 
 u32 prgSize_l264, launchPrg_l264;
-unsigned char prgData_l264[ 65536 + 64 ] AAA;
+unsigned char prgData_l264[ 65536 + 256 + 64 ] AAA;
 
 // in case the launch code starts with the loading address
 #define LAUNCH_BYTES_TO_SKIP	0

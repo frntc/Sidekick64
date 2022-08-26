@@ -57,11 +57,12 @@ char FILENAME_LOGO_RGBA[] = "SD:SPLASH/sk64_logo_blend.tga";
 // background animation
 //
 bool showAnimation;
-u8 tempX[ 256 * 1024 ];
-unsigned char animationRLE[ 128 * 1024 ];
-unsigned char bitflagsRLE[ 128 * 1024 / 8 ];
-u32 animationState[ 192 * 147 / 8 ];
-u32 animationStateInitial[ 192 * 147 / 8 ];
+u8 *tempX;
+unsigned char *animationRLE;
+unsigned char *bitflagsRLE;
+u32 *animationState;
+u32 *animationStateInitial;
+
 
 static u32	disableCart     = 0;
 static u32	resetCounter    = 0;
@@ -101,6 +102,7 @@ static u32 wireSIDGotHigh = 0;
 static u32 wireSIDGotLow = 0;
 
 u32 wireKernalAvailable = 0;
+u8 typeSIDAddr[ 5 ];
 static u32 wireKernalDetectMode = 0;
 static u32 wireKernalTrackAccess = 0;
 
@@ -218,6 +220,28 @@ void deactivateCart()
 }
 
 
+void globalMemoryAllocation()
+{
+	initGlobalMemPool( 128 * 1024 * 1024 );
+
+	tempX = (u8*)getPoolMemory( 256 * 1024 );
+	animationRLE = (u8*)getPoolMemory( 128 * 1024 );
+	bitflagsRLE  = (u8*)getPoolMemory( 128 * 1024 / 8 );
+	animationState = (u32*)getPoolMemory( sizeof( u32 ) * 192 * 147 / 8 );
+	animationStateInitial = (u32*)getPoolMemory( sizeof( u32 ) * 192 * 147 / 8 );
+
+	extern u8 *flash_cacheoptimized_pool;//[ 1024 * 1024 + 8 * 1024 ] AAA;
+	u64 p = (u64)getPoolMemory( 1024 * 1024 + 8 * 1024 + 128 );
+	p = ( p + 128ULL ) & ~128ULL;
+	flash_cacheoptimized_pool = (u8*)p;
+
+	extern u8 *geoRAM_Pool;
+	p = (u64)getPoolMemory( 4096 * 1024 + 256 );
+	p = ( p + 128ULL ) & ~128ULL;
+	geoRAM_Pool = (u8*)p;
+}
+
+
 // cache warmup
 
 volatile u8 forceRead;
@@ -289,12 +313,23 @@ char filenameKernal[ 2048 ];
 CLogger			*logger;
 CScreenDevice	*screen;
 
+#define HDMI_SOUND
+
+s32 lastHDMISoundSample = 0;
+#ifdef HDMI_SOUND
+u8 hdmiSoundAvailable = 0;
+CHDMISoundBaseDevice *hdmiSoundDevice = NULL;
+#endif
+
 #ifdef COMPILE_MENU_WITH_SOUND
 CTimer				*pTimer;
 CScheduler			*pScheduler;
 CInterruptSystem	*pInterrupt;
+#ifndef HDMI_SOUND
 CVCHIQDevice		*pVCHIQ;
 #endif
+#endif
+CVCHIQDevice		*pVCHIQ;
 
 // create color look up tables for the menu
 const unsigned char fadeTab[ 16 ] = { 0, 15, 9, 14, 2, 11, 0, 10, 9, 0, 2, 0, 11, 5, 6, 12 };
@@ -336,8 +371,10 @@ boolean CKernelMenu::Initialize( void )
 	pScheduler = &m_Scheduler;
 	pInterrupt = &m_Interrupt;
 
+	//#ifndef HDMI_SOUND
 	if ( bOK ) bOK = m_VCHIQ.Initialize();
 	pVCHIQ = &m_VCHIQ;
+	//#endif
 #endif
 
 	CMachineInfo * m_pMachineInfo;
@@ -362,8 +399,11 @@ boolean CKernelMenu::Initialize( void )
 
 	u32 size = 0;
 
+	globalMemoryAllocation();
+
 #if 1
-	u8 tempHDMI[ 640 * 480 * 3 ];
+	extern u8 *flash_cacheoptimized_pool;
+	u8 *tempHDMI = flash_cacheoptimized_pool;
 	readFile( logger, (char*)DRIVE, (char*)FILENAME_SPLASH_HDMI, tempHDMI, &size );
 	u32 xOfs = ( screen->GetWidth() - 640 ) / 2;
 	u32 yOfs = ( screen->GetHeight() - 480 ) / 2;
@@ -426,7 +466,6 @@ boolean CKernelMenu::Initialize( void )
 	}
 
 	//readFavorites( logger, (char *)DRIVE );
-
 
 	extern int fileExists( CLogger *logger, const char *DRIVE, const char *FILENAME );
 
@@ -493,6 +532,22 @@ boolean CKernelMenu::Initialize( void )
 	memcpy( &cartMenu[ 0x1c10 ], col, 6 );
 
 	readSettingsFile();
+
+#ifdef HDMI_SOUND
+	hdmiSoundAvailable = 1;
+	hdmiSoundDevice = new CHDMISoundBaseDevice( 48000 );
+	if ( hdmiSoundDevice )
+	{
+		hdmiSoundDevice->SetWriteFormat( SoundFormatSigned24, 2 );
+		if (!hdmiSoundDevice->Start ())
+		{
+			m_Logger.Write ("SK64", LogPanic, "Cannot start sound device");
+			hdmiSoundAvailable = 0;
+		}
+	} else
+		hdmiSoundAvailable = 0;
+#endif
+
 	applySIDSettings();
 	renderC64();
 	startInjectCode();
@@ -1011,12 +1066,6 @@ void CKernelMenu::Run( void )
 			sprintf( tt, "vdc=%d, support=%d, %d", currentVDCMode, vdcSupport, vdc40ColumnMode );
 			printC64( 0,  0, tt, 1, 0 );*/
 
-			/*char tt[64];
-			sprintf( tt, "fiq-reset=%d   timeout-reset=%d", globalReset, timeOutReset );
-			printC64( 0,  0, tt, 1, 0 );
-			sprintf( tt, "boot-reset=%d   launch-reset=%d", bootReset, launchReset );
-			printC64( 0,  2, tt, 1, 0 );*/
-
 			if ( skinValues.SKIN_COLORFADING && !( lastChar == 1094 || lastChar == 1222 ) )
 			if ( delayFrame || postDelayFrame )
 			{
@@ -1507,6 +1556,28 @@ void CKernelMenu::Run( void )
 			if ( launchKernel )
 			{
 				// jmp to minimal reset
+				//POKE( 0xd011, 0 );
+				/*
+				0000  2C 11 D0               BIT $D011
+				0003  10 FB                  BPL $0000
+				0005  2C 11 D0               BIT $D011
+				0008  30 FB                  BMI $0005
+				*/
+				/*cartMenu[ curAddr ++ ] = 0x2c;
+				cartMenu[ curAddr ++ ] = 0x11;
+				cartMenu[ curAddr ++ ] = 0xd0;
+				
+				cartMenu[ curAddr ++ ] = 0x10;
+				cartMenu[ curAddr ++ ] = 0xfb;
+				
+				cartMenu[ curAddr ++ ] = 0x2c;
+				cartMenu[ curAddr ++ ] = 0x11;
+				cartMenu[ curAddr ++ ] = 0xd0;
+
+				cartMenu[ curAddr ++ ] = 0x30;
+				cartMenu[ curAddr ++ ] = 0xfb;*/
+
+
 				JSR( RELOC_BASE + 0x0d00 );
 			}
 
@@ -1739,6 +1810,14 @@ void CKernelMenu::FIQHandler (void *pParam)
 				//nmiMinCyclesWait = c64Data * 63;
 				WRITE_D0to7_TO_BUS( 0 );
 				break;
+			case 5: // type of SID at $d400
+			case 6: // type of SID at $d420
+			case 7: // type of SID at $d500
+			case 8: // type of SID at $de00
+			case 9: // type of SID at $df00
+				typeSIDAddr[ c64Command - 5 ] = c64Data;
+				WRITE_D0to7_TO_BUS( 0 );
+				break;
 			case 10: // enable/disable kernal replacement
 				if ( c64Data )
 				{
@@ -1904,12 +1983,14 @@ void mainMenu()
 
 int main( void )
 {
+
 	CKernelMenu kernel;
 	kernel.Initialize();
 
 	extern void KernelKernalRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME );
 	extern void KernelGeoRAMRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu );
-	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 );
+	extern void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0, u8 noInitStartup = 0 );
+	
 	extern void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr, const char *FILENAME_KERNAL = NULL );
 	extern void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL, const char *FILENAME_KERNAL = NULL );
 	extern void KernelFMRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME = NULL, const char *FILENAME_KERNAL = NULL );
@@ -1922,7 +2003,7 @@ int main( void )
 	extern void KernelSIDRun8( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
 	extern void KernelRKLRun( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME_KERNAL, const char *FILENAME, const char *FILENAME_RAM, u32 sizeRAM, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0 );
 	extern void KernelCartRun128( CGPIOPinFIQ	m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr );
-
+	extern void KernelMODplayRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0, bool playHDMIinParallel = false, u32 musicPlayer = 0 );
 
 	extern u32 octaSIDMode;
 
@@ -1956,6 +2037,18 @@ int main( void )
 		InvalidateDataCache();
 		InvalidateInstructionCache();
 
+/*		bool recreateHDMISound = false;
+
+		if ( subSID || octaSIDMode || launchKernel == 42 || launchKernel == 43 || launchKernel == 8 )
+		{
+		} else
+		{
+			recreateHDMISound = true;
+			hdmiSoundDevice->Cancel();
+			delete hdmiSoundDevice;
+			hdmiSoundDevice = NULL;
+		}*/
+
 		/* for debugging purposes only*/
 		/*if ( launchKernel == 255 ) 
 		{
@@ -1980,7 +2073,10 @@ int main( void )
 			if ( subSID ) {
 				applySIDSettings();
 				if ( octaSIDMode )
-					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); else
+				{
+					//hdmiSoundDevice->Cancel(); delete hdmiSoundDevice; hdmiSoundDevice = NULL; recreateHDMISound = true;
+					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); 
+				} else
 					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, false, NULL, 0, loadC128PRG ); 
 				break;
 			}
@@ -2009,7 +2105,10 @@ int main( void )
 			if ( subSID ) {
 				applySIDSettings();
 				if ( octaSIDMode )
-					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 ); else
+				{
+					//hdmiSoundDevice->Cancel(); delete hdmiSoundDevice; hdmiSoundDevice = NULL; recreateHDMISound = true;
+					KernelSIDRun8( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128 ); 
+				} else
 					KernelSIDRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128, playingPSID );
 				break;
 			}
@@ -2025,6 +2124,15 @@ int main( void )
 			} else {
 				KernelLaunchRun( kernel.m_InputPin, &kernel, FILENAME, true, prgDataLaunch, prgSizeLaunch, startForC128, playingPSID );
 			}
+			break;
+		case 42:
+		case 43:
+		case 44:
+		case 45:
+			KernelMODplayRun( kernel.m_InputPin, &kernel, FILENAME, false, prgDataLaunch, prgSizeLaunch, startForC128, playingPSID, launchKernel == 43 || launchKernel == 45, launchKernel > 43 ? 1 : 0 );
+			CleanDataCache();
+			InvalidateDataCache();
+			InvalidateInstructionCache();
 			break;
 		case 5:
 			if ( subHasKernal == -1 )
@@ -2077,7 +2185,10 @@ int main( void )
 		case 8:
 			applySIDSettings();
 			if ( octaSIDMode )
-				KernelSIDRun8( kernel.m_InputPin, &kernel, NULL ); else
+			{
+				//hdmiSoundDevice->Cancel(); delete hdmiSoundDevice; hdmiSoundDevice = NULL; recreateHDMISound = true;
+				KernelSIDRun8( kernel.m_InputPin, &kernel, NULL ); 
+			} else
 				KernelSIDRun( kernel.m_InputPin, &kernel, NULL );
 			break;
 		case 9:
@@ -2095,6 +2206,17 @@ int main( void )
 		default:
 			break;
 		}
+		
+		/*if ( recreateHDMISound && hdmiSoundAvailable )
+		{
+			hdmiSoundDevice = new CHDMISoundBaseDevice( 48000 );
+			if ( hdmiSoundDevice )
+			{
+				hdmiSoundDevice->SetWriteFormat( SoundFormatSigned24, 2 );
+				hdmiSoundDevice->Start();
+			}
+		}*/
+
 	}
 
 	return EXIT_HALT;

@@ -36,7 +36,7 @@
 
 extern u32 disableCart_l264, transferStarted_l264, currentOfs_l264;
 extern u32 prgSize_l264, launchPrg_l264;
-extern unsigned char prgData_l264[ 65536 + 64 ];
+extern unsigned char prgData_l264[ 65536 + 256 + 64 ];
 extern unsigned char launchCode_l264[ 65536 ];
 extern unsigned char *curTransfer_l264;
 

@@ -59,6 +59,7 @@ void initSoundOutput( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ, u32 ou
 	if ( outputPWM )
 		initPWMOutput();
 #endif
+	smpLast = smpCur = 0;
 #ifdef USE_VCHIQ_SOUND
 //	if ( m_pSound == NULL || m_VCHIQ == NULL || outputHDMI == 0 )
 	if ( outputHDMI == 0 )
@@ -91,6 +92,28 @@ void initSoundOutput( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ, u32 ou
 #endif
 }
 
+void initSoundOutputVCHIQ( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ )
+{
+	clearSoundBuffer();
+
+	if ( (*m_pSound) == NULL )
+	{
+		( *m_pSound ) = new CVCHIQSoundBaseDevice( m_VCHIQ, SAMPLERATE, CHUNK_SIZE, VCHIQSoundDestinationHDMI );
+		( *m_pSound )->AllocateQueue( QUEUE_SIZE_MSECS );
+		( *m_pSound )->SetWriteFormat( FORMAT, WRITE_CHANNELS );
+		( *m_pSound )->RegisterNeedDataCallback( cbSound, (void*)( *m_pSound ) );
+	}
+
+	extern u32 SAMPLERATE_ADJUSTED;
+	SAMPLERATE_ADJUSTED = SAMPLERATE;
+	FirstBufferUpdate = 1;
+
+	clearSoundBuffer();
+	PCMCountLast = PCMCountCur = 0;
+	nSamplesPrecompute = QUEUE_SIZE_MSECS * SAMPLERATE / 1000;
+	soundDebugCode = 0;
+}
+
 // __________  __      __  _____         _________                        .___
 // \______   \/  \    /  \/     \       /   _____/ ____  __ __  ____    __| _/
 //  |     ___/\   \/\/   /  \ /  \      \_____  \ /  _ \|  |  \/    \  / __ | 
@@ -101,6 +124,7 @@ void initSoundOutput( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ, u32 ou
 // for PWM Output
 //
 u32 sampleBuffer[ 128 ];
+u32 sampleBufferHDMI[ HDMI_BUF_SIZE ];
 u32 smpLast, smpCur;
 
 #ifdef USE_PWM_DIRECT

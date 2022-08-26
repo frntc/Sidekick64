@@ -37,14 +37,15 @@
 //
 // choose whether to output sound via the headphone jack (PWM), otherwise HDMI audio will be used (higher delay)
 //
+#define HDMI_SOUND
 #define USE_PWM_DIRECT
-#define USE_VCHIQ_SOUND
+//#define USE_VCHIQ_SOUND
 
 
 //
 // sample rate
 //
-#define SAMPLERATE 44100
+#define SAMPLERATE 48000
 
 // 6581 or 8580
 extern unsigned int SID_MODEL[2];
@@ -81,9 +82,9 @@ extern unsigned int SID_DigiBoost[2];
 #define USE_LATCH_OUTPUT
 #endif
 
-#ifndef USE_PWM_DIRECT
-#define USE_VCHIQ_SOUND
-#endif
+//#ifndef USE_PWM_DIRECT
+//#define USE_VCHIQ_SOUND
+//#endif
 
 #include <circle/startup.h>
 #include <circle/bcm2835.h>

@@ -63,10 +63,10 @@ typedef struct
 static volatile WSSTATE ws AAA;
 
 // ... flash/ROM
-extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
+extern u8 *flash_cacheoptimized_pool;
 
 //static unsigned char kernalROM[ 8192 ] AAA;
-static unsigned char *kernalROM = &flash_cacheoptimized_pool[ 1024 * 1024 - 8192 ];
+static unsigned char *kernalROM;
 
 __attribute__( ( always_inline ) ) inline void initWS()
 {
@@ -130,7 +130,8 @@ void CKernelWS::Run( void )
 	#endif
 
 	memset( (void*)&ws, 0, sizeof( WSSTATE ) );
-
+	kernalROM = &flash_cacheoptimized_pool[ 1024 * 1024 - 8192 ];
+	
 	// load kernal if any
 	u32 kernalSize = 0; // should always be 8192
 	if ( FILENAME_KERNAL != NULL )

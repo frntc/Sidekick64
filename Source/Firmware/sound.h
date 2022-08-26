@@ -30,6 +30,8 @@
 #ifndef _sound_h_
 #define _sound_h_
 
+#include <circle/hdmisoundbasedevice.h>
+
 #define PCMBufferSize (48000/4)
 #define QUEUE_SIZE_MSECS 	50		// size of the sound queue in milliseconds duration
 extern u32 nSamplesPrecompute; 
@@ -37,10 +39,14 @@ extern u32 nSamplesPrecompute;
 extern u32 PWMRange;
 
 extern void initSoundOutput( CSoundBaseDevice **m_pSound = NULL, CVCHIQDevice *m_VCHIQ = NULL, u32 outputPWM = 0, u32 outputHDMI = 0 );
+extern void initSoundOutputVCHIQ( CSoundBaseDevice **m_pSound, CVCHIQDevice *m_VCHIQ );
 extern void clearSoundBuffer();
 
 extern u32 sampleBuffer[ 128 ];
 extern u32 smpLast, smpCur;
+
+#define HDMI_BUF_SIZE 4096
+extern u32 sampleBufferHDMI[ HDMI_BUF_SIZE ];
 
 static __attribute__( ( always_inline ) ) inline void putSample( s16 a, s16 b )
 {
@@ -55,6 +61,34 @@ static __attribute__( ( always_inline ) ) inline s32 getSample()
 	u32 ret = sampleBuffer[ smpLast ++ ];
 	smpLast &= 127;
 	return ret;
+}
+
+static __attribute__( ( always_inline ) ) inline void putSampleHDMI( s32 a, s32 b )
+{
+	extern CHDMISoundBaseDevice *hdmiSoundDevice;
+	sampleBufferHDMI[ smpCur ++ ] = hdmiSoundDevice->ConvertSample( a );
+	sampleBufferHDMI[ smpCur ++ ] = hdmiSoundDevice->ConvertSample( b );
+	smpCur &= HDMI_BUF_SIZE - 1;
+}
+
+static __attribute__( ( always_inline ) ) inline u8 getSampleHDMI( u32 *a, u32 *b )
+{
+	if ( smpLast == smpCur ) { *a = sampleBufferHDMI[ ( smpLast - 2 + 2048 ) & 2047 ]; *b = sampleBufferHDMI[ ( smpLast - 1 + 2048 ) & 2047 ]; return 0; }
+	*a = sampleBufferHDMI[ smpLast ++ ];
+	*b = sampleBufferHDMI[ smpLast ++ ];
+	smpLast &= HDMI_BUF_SIZE - 1;
+	return 1;
+}
+
+static __attribute__( ( always_inline ) ) inline u32 getNSamplesHDMI()
+{
+	return ( smpCur + HDMI_BUF_SIZE - smpLast ) & ( HDMI_BUF_SIZE - 1 );
+}
+
+static __attribute__( ( always_inline ) ) inline void skipSamplesHDMI( u32 n )
+{
+	smpLast += n;
+	smpLast &= HDMI_BUF_SIZE - 1;
 }
 
 extern short PCMBuffer[ PCMBufferSize ];

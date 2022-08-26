@@ -37,8 +37,8 @@ static u64 c128CycleCount = 0;
 static u32 resetCounter = 0;
 
 // ... flash/ROM
-extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
-static unsigned char *externalROM = &flash_cacheoptimized_pool[ 0 ];
+extern u8 *flash_cacheoptimized_pool;
+static unsigned char *externalROM;
 
 static u8 isMegabitROM = 0;
 static u32 releaseDMA = 0;
@@ -56,6 +56,7 @@ void CKernelCart128::Run( void )
 
 	u32 size;
 	isMegabitROM = 0;
+	externalROM = &flash_cacheoptimized_pool[ 0 ];
 	memset( externalROM, 0, 32768 );
 	readFile( logger, DRIVE, FILENAME, externalROM, &size );
 

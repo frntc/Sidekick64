@@ -80,6 +80,9 @@ extern int screenType;
 #include <vc4/sound/vchiqsoundbasedevice.h>
 #endif
 
+#include <circle/hdmisoundbasedevice.h>
+
+
 #include "lowlevel_arm64.h"
 #include "gpio_defs.h"
 #include "latch.h"
@@ -94,6 +97,7 @@ extern int screenType;
 #include "tft_st7789.h"
 //#endif
 
+#include "mempool.h"
 
 extern CLogger *logger;
 

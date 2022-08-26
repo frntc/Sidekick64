@@ -9,7 +9,7 @@
  dirscan.cpp
 
  Sidekick64 - A framework for interfacing 8-Bit Commodore computers (C64/C128,C16/Plus4,VC20) and a Raspberry Pi Zero 2 or 3A+/3B+
-            - code for reading/parsing D64 files (and other things)
+            - code for reading/parsing D64 files, reading directories etc.
  Copyright (c) 2019-2022 Carsten Dachsbacher <frenetic@dachsbacher.de>
 
  .d64 reader below adapted from d642prg V2.09, original source (C)Covert Bitops, (C)2003/2009 by iAN CooG/HokutoForce^TWT^HVSC
@@ -38,8 +38,7 @@
 #include <string.h>
 #include <stdio.h>
 
-DIRENTRY dir[ MAX_DIR_ENTRIES ];
-u32 dirSpecialAttr[ MAX_DIR_ENTRIES ];
+DIRENTRY *dir;//[ MAX_DIR_ENTRIES ];//[ MAX_DIR_ENTRIES ];
 s32 nDirEntries;
 
 #define DIRSECTS  18
@@ -389,6 +388,9 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 						 strstr( FileInfo.fname, ".prg" ) > 0 || strstr( FileInfo.fname, ".PRG" ) > 0 || 
 						 strstr( FileInfo.fname, ".sid" ) > 0 || strstr( FileInfo.fname, ".SID" ) > 0 || 
 						 strstr( FileInfo.fname, ".bin" ) > 0 || strstr( FileInfo.fname, ".BIN" ) > 0 ||
+						 strstr( FileInfo.fname, ".mod" ) > 0 || strstr( FileInfo.fname, ".MOD" ) > 0 ||
+						 strstr( FileInfo.fname, ".wav" ) > 0 || strstr( FileInfo.fname, ".WAV" ) > 0 ||
+						 strstr( FileInfo.fname, ".ym" ) > 0 || strstr( FileInfo.fname, ".YM" ) > 0 ||
 						 strstr( FileInfo.fname, ".rom" ) > 0 || strstr( FileInfo.fname, ".ROM" ) > 0 )
 					{
 						strcpy( (char*)sort[sortCur].name, FileInfo.fname );
@@ -599,6 +601,15 @@ void readDirectory( int mode, const char *DIRPATH, DIRENTRY *d, s32 *n, u32 pare
 				d[ *n ].level = level;
 				( *n )++;
 			} else
+			if ( strstr( (char*)sort[ pos ].name, ".mod" ) > 0 || strstr( (char*)sort[ pos ].name, ".MOD" ) > 0 || 
+				 strstr( (char*)sort[ pos ].name, ".wav" ) > 0 || strstr( (char*)sort[ pos ].name, ".WAV" ) > 0 || 
+				 strstr( (char*)sort[ pos ].name, ".ym" ) > 0 || strstr( (char*)sort[ pos ].name, ".YM" ) > 0 )
+			{
+				d[ *n ].f = DIR_MUSIC_FILE;
+				d[ *n ].parent = parent;
+				d[ *n ].level = level;
+				( *n )++;
+			} else
 			if ( strstr( (char*)sort[ pos ].name, ".rom" ) > 0 || strstr( (char*)sort[ pos ].name, ".ROM" ) > 0 || takeAll == 1 || (d[ parent ].f & DIR_LISTALL) )
 			{
 				d[ *n ].f = DIR_CRT_FILE;
@@ -642,6 +653,9 @@ void scanDirectories( char *DRIVE )
 	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
 		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
 
+	dir = (DIRENTRY*)getPoolMemory( sizeof( DIRENTRY ) * MAX_DIR_ENTRIES );
+	memset( dir, 0, sizeof( DIRENTRY ) * MAX_DIR_ENTRIES );
+
 	u32 head = 0;
 	nDirEntries = 0;
 
@@ -667,8 +681,9 @@ void scanDirectories( char *DRIVE )
 	APPEND_SUBTREE_UNSCANNED( "SID", "SD:SID", 0 )
 	APPEND_SUBTREE_UNSCANNED( "FREEZER", "SD:FREEZER", 0 )
 	APPEND_SUBTREE_UNSCANNED( "KERNAL", "SD:KERNAL", 0 )
-	APPEND_SUBTREE_UNSCANNED( "PRG128", "SD:PRG128", 0 )
-	APPEND_SUBTREE_UNSCANNED( "CART128", "SD:CART128", 0 )
+	APPEND_SUBTREE_UNSCANNED( "PRG128", "SD:PRG128", 0 )		dir[ head ].c64flags = DONT_SHOW_ON_C64;
+	APPEND_SUBTREE_UNSCANNED( "CART128", "SD:CART128", 0 )		dir[ head ].c64flags = DONT_SHOW_ON_C64;
+	APPEND_SUBTREE_UNSCANNED( "MUSIC", "SD:MUSIC", 0 )
 
 	//insertDirectoryContents( 0, "SD:" );
 
@@ -684,6 +699,9 @@ void scanDirectoriesVIC20( char *DRIVE )
 	// mount file system
 	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
 		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
+
+	dir = (DIRENTRY*)getPoolMemory( sizeof( DIRENTRY ) * MAX_DIR_ENTRIES );
+	memset( dir, 0, sizeof( DIRENTRY ) * MAX_DIR_ENTRIES );
 
 	u32 head = 0;
 	nDirEntries = 0;
@@ -723,6 +741,9 @@ void scanDirectories264( char *DRIVE )
 	// mount file system
 	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
 		logger->Write( "RaspiMenu", LogPanic, "Cannot mount drive: %s", DRIVE );
+
+	dir = (DIRENTRY*)getPoolMemory( sizeof( DIRENTRY ) * MAX_DIR_ENTRIES );
+	memset( dir, 0, sizeof( DIRENTRY ) * MAX_DIR_ENTRIES );
 
 	u32 head = 0;
 	nDirEntries = 0;

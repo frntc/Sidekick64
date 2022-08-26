@@ -36,6 +36,7 @@ static const char FILENAME[] = "SD:C64/test.prg";		// .PRG to start
 static const bool c128PRG = false;
 #endif
 static const char FILENAME_CBM80[] = "SD:C64/launch.cbm80";	// launch code (CBM80 8k cart)
+static const char FILENAME_CBM80_NOINIT[] = "SD:C64/launch_noinit.cbm80";	// launch code (CBM80 8k cart)
 static const char FILENAME_CBM128[] = "SD:C64/launch128.cbm80";	// launch code (C128 cart)
 
 static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_launch.tga";
@@ -99,7 +100,7 @@ void prepareOnReset( bool refresh = false )
 static u32 nBytesRead, stage;
 
 #ifdef COMPILE_MENU
-void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0 )
+void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0, u8 noInitStartup = 0 )
 #else
 void CKernelLaunch::Run( void )
 #endif
@@ -170,7 +171,11 @@ void CKernelLaunch::Run( void )
 	u32 size;
 	if ( c128PRG )
 		readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM128, launchCode, &size ); else
-		readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
+	{
+		if ( noInitStartup )
+			readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80_NOINIT, launchCode, &size ); else
+			readFile( logger, (char*)DRIVE, (char*)FILENAME_CBM80, launchCode, &size );
+	}
 
 	#ifdef COMPILE_MENU
 	if ( !hasData )

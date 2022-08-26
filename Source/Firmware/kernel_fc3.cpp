@@ -75,10 +75,10 @@ typedef struct
 static volatile FC3STATE fc3 AAA;
 
 // ... flash/ROM
-extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
+extern u8 *flash_cacheoptimized_pool;
 
 //static unsigned char kernalROM[ 8192 ] AAA;
-static unsigned char *kernalROM = &flash_cacheoptimized_pool[ 1024 * 1024 - 8192 ];
+static unsigned char *kernalROM;
 
 static void initFC3()
 {
@@ -122,6 +122,24 @@ static void initScreenAndLEDCodes()
 	}
 }
 
+
+bool loadCustomLogoIfAvailable( char *FILENAME )
+{
+	char fn[ 1024 ];
+	// attention: this assumes that the filename ending is always ".crt"!
+	memset( fn, 0, 1024 );
+	strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
+	strcat( fn, ".tga" );
+
+	logger->Write( "RaspiFlash", LogNotice, "trying to load: '%s'", fn );
+
+	if ( tftLoadBackgroundTGA( (char*)DRIVE, fn ) )
+		return true;
+
+	return false;
+}
+
+
 #ifdef COMPILE_MENU
 void KernelFC3Run( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, char *FILENAME, const char *FILENAME_KERNAL = NULL )
 #else
@@ -145,6 +163,7 @@ void CKernelFC3::Run( void )
 	#endif
 
 	memset( (void*)&fc3, 0, sizeof( FC3STATE ) );
+	kernalROM = &flash_cacheoptimized_pool[ 1024 * 1024 - 8192 ];
 
 	// load kernal if any
 	u32 kernalSize = 0; // should always be 8192
@@ -173,15 +192,18 @@ void CKernelFC3::Run( void )
 	} else
 	if ( screenType == 1 )
 	{
-		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
-
-		int w, h; 
-		extern char FILENAME_LOGO_RGBA[128];
-		extern unsigned char tempTGA[ 256 * 256 * 4 ];
-
-		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		if ( !loadCustomLogoIfAvailable( FILENAME ) )
 		{
-			tftBlendRGBA( tempTGA, tftBackground, 0 );
+			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+			int w, h; 
+			extern char FILENAME_LOGO_RGBA[128];
+			extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+			if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+			{
+				tftBlendRGBA( tempTGA, tftBackground, 0 );
+			}
 		}
 
 		tftCopyBackground2Framebuffer();

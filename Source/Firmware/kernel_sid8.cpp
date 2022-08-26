@@ -37,6 +37,9 @@
 static u32 launchPrg;
 #endif
 
+#define HDMI_SOUND
+#undef USE_VCHIQ_SOUND
+
 static const char FILENAME_SPLASH_RGB[] = "SD:SPLASH/sk64_sid_bg2.tga";
 static const char FILENAME_SPLASH_RGB2[] = "SD:SPLASH/sk64_sid_bg.tga";
 static const char FILENAME_LED_RGB[] = "SD:SPLASH/sk64_sid_led.tga";
@@ -65,13 +68,13 @@ FM_OPL *pOPL;
 u32 fmOutRegister;
 #endif
 
-extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 8 * 1024 ] AAA;
+extern u8 *flash_cacheoptimized_pool;
 
 // a ring buffer storing SID-register writes (filled in FIQ handler)
 // TODO should be much smaller
-#define RING_SIZE (1024*128)
-static u32 *ringBufGPIO = (u32*)&flash_cacheoptimized_pool[ 0 ]; //[ RING_SIZE ];
-static unsigned long long *ringTime = (unsigned long long *)&flash_cacheoptimized_pool[ RING_SIZE * 4 ]; //[ RING_SIZE ];
+#define RING_SIZE (1024*80)
+static u32 *ringBufGPIO;// = (u32*)&flash_cacheoptimized_pool[ 0 ]; //[ RING_SIZE ];
+static unsigned long long *ringTime;// = (unsigned long long *)&flash_cacheoptimized_pool[ RING_SIZE * 4 ]; //[ RING_SIZE ];
 static u32 ringWrite;
 
 // prepared GPIO output when SID-registers are read
@@ -92,9 +95,9 @@ extern s32 cfgVolSID1_Left, cfgVolSID1_Right;
 extern s32 cfgVolSID2_Left, cfgVolSID2_Right;
 extern s32 cfgVolOPL_Left, cfgVolOPL_Right;
 
-extern u32 outputPWM, outputHDMI;
+extern u32 outputPWM, outputHDMI, outputHDMISound;
 
-unsigned int SAMPLERATE = 44100;
+unsigned int SAMPLERATE = 48000;
 
 static int startVCHIQ = 0;
 
@@ -180,11 +183,6 @@ boolean CKernel::Initialize( void )
 	if ( bOK ) bOK = m_Interrupt.Initialize();
 	if ( bOK ) bOK = m_Timer.Initialize();
 
-#ifdef USE_VCHIQ_SOUND
-	if ( bOK ) bOK = m_VCHIQ.Initialize();
-	pVCHIQ = &m_VCHIQ;
-#endif
-
 	pTimer = &m_Timer;
 	pScheduler = &m_Scheduler;
 	pInterrupt = &m_Interrupt;
@@ -198,6 +196,7 @@ void quitSID8()
 {
 	if ( outputHDMI && m_pSound != NULL )
 	{
+		#ifndef HDMI_SOUND
 		CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
 		if ( sd->IsActive() )
 			sd->SetControl( VCHIQ_SOUND_VOLUME_MIN, VCHIQSoundDestinationAuto );
@@ -205,6 +204,7 @@ void quitSID8()
 			sd->Cancel();
 		delete sd;
 		m_pSound = NULL;
+		#endif
 	}
 	for ( int i = 0; i < NUM_SIDS; i++ )
 		delete sid[ i ];
@@ -290,6 +290,7 @@ static u32 targetSamplesAvail = 0, targetCount = 0;
 extern u32 fillSoundBuffer;
 extern bool CVCHIQ_CB_Manual;
 
+static int first = 1;
 
 #ifdef COMPILE_MENU
 void KernelSIDFIQHandler8( void *pParam );
@@ -300,7 +301,7 @@ void CKernel::Run( void )
 #endif
 {
 startHereAfterReset:
-// initialize ARM cycle counters (for accurate timing)
+	// initialize ARM cycle counters (for accurate timing)
 	initCycleCounter();
 
 	// initialize GPIOs
@@ -372,14 +373,17 @@ startHereAfterReset:
 
 	} 
 
-		//logger->Write( "", LogNotice, "initialize SIDs..." );
+	ringBufGPIO = (u32*)&flash_cacheoptimized_pool[ 0 ];
+	ringTime = (unsigned long long *)&flash_cacheoptimized_pool[ RING_SIZE * 4 ]; 
+
+	//logger->Write( "", LogNotice, "initialize SIDs..." );
 	initSID8();
 
 	//
 	// initialize sound output (either PWM which is output in the FIQ handler, or via HDMI)
 	//
 	startVCHIQ = 0;
-	initSoundOutput( &m_pSound, pVCHIQ, outputPWM, outputHDMI );
+	initSoundOutput( &m_pSound, NULL, outputPWM | outputHDMISound, outputHDMI );
 
 	#ifdef COMPILE_MENU
 	if ( FILENAME == NULL && !hasData )
@@ -495,20 +499,32 @@ startHereAfterReset:
 
 	latchSetClear( 0, allUsedLEDs );
 
-	static u32 hdmiVol = 1;
-
 	#ifdef USE_VCHIQ_SOUND
 	static u32 nSamplesInThisRun = 0;
 	#endif
 
 	fillSoundBuffer = 0;
 
+	first = 1;
+	#ifdef HDMI_SOUND
+	extern CHDMISoundBaseDevice *hdmiSoundDevice;
+	hdmiSoundDevice->Cancel();
+//	hdmiSoundDevice->Start();
+	while ( hdmiSoundDevice->IsWritable() )
+	{
+		hdmiSoundDevice->WriteSample( 0 );
+		hdmiSoundDevice->WriteSample( 0 );
+	}
+	//hdmiSoundDevice->Cancel();
+	#endif
+
 	// new main loop mainloop
 	while ( true )
 	{
 		#ifdef COMPILE_MENU
 		//TEST_FOR_JUMP_TO_MAINMENU( cycleCountC64, resetCounter )
-		if ( cycleCountC64 > 2000000 && resetCounter > 0 && outputHDMI && m_pSound && hdmiVol == 1 ) {
+/*		if ( cycleCountC64 > 2000000 && resetCounter > 0 && outputHDMI && m_pSound && hdmiVol == 1 ) {
+			#ifdef USE_VCHIQ_SOUND
 			CVCHIQ_CB_Manual = false;
 			if ( outputHDMI )
 			{
@@ -517,11 +533,17 @@ startHereAfterReset:
 					sd->SetControl( VCHIQ_SOUND_VOLUME_MIN, VCHIQSoundDestinationAuto );
 				sd->Cancel();
 			}
+			#endif
 			hdmiVol = 0;
-		}
+		}*/
 		if ( cycleCountC64 > 2000000 && resetCounter > 500000 ) {
 			CVCHIQ_CB_Manual = false;
 			//logger->Write( "", LogNotice, "adjusted sample rate: %u Hz", (u32)SAMPLERATE_ADJUSTED );
+			while ( hdmiSoundDevice->IsWritable() )
+			{
+				hdmiSoundDevice->WriteSample( 0 );
+				hdmiSoundDevice->WriteSample( 0 );
+			}
 			quitSID8();
 			EnableIRQs();
 			m_InputPin.DisableInterrupt();
@@ -542,15 +564,18 @@ startHereAfterReset:
 
 			if ( m_pSound )
 			{
-				if ( outputHDMI )
+				if ( outputHDMISound )
 				{
-					CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
-					while ( sd->IsActive() ) {}
-					//sd->SetControl( VCHIQ_SOUND_VOLUME_DEFAULT, VCHIQSoundDestinationAuto );
-					hdmiVol = 1;
+					initSoundOutput( &m_pSound, NULL, 1, 0 );
+				} else
+				{
+					initSoundOutput( &m_pSound, NULL, outputPWM, outputHDMI );
 				}
-				nSamplesInThisRun = startVCHIQ = 0;
-				initSoundOutput( &m_pSound, pVCHIQ, outputPWM, outputHDMI );
+				#ifdef USE_VCHIQ_SOUND
+				nSamplesInThisRun = 0;
+				startVCHIQ = 0;
+				#endif
+				//initSoundOutput( &m_pSound, pVCHIQ, outputPWM, outputHDMI );
 				avgSamplesAvail = 0;
 				avgCounter = 0;
 				adjustRateAllowed = 0;
@@ -597,121 +622,6 @@ startHereAfterReset:
 		while ( cycleCount > nCyclesEmulated )
 		{
 			CACHE_PRELOAD_INSTRUCTION_CACHE( (void*)&FIQ_HANDLER, 6*1024 );
-		#ifdef USE_VCHIQ_SOUND
-			if ( outputHDMI )
-			{
-				//extern u32 CVCHIQ_CB_Last,  CVCHIQ_CB_Cur;
-				extern CVCHIQSoundBaseDevice *CVCHIQ_CB_Device;
-				extern VCHI_CALLBACK_REASON_T CVCHIQ_CB_Reason;
-				extern void *CVCHIQ_CB_hMessage;
-				if ( CVCHIQ_CB_Device )
-				{
-					CVCHIQ_CB_Device->Callback (CVCHIQ_CB_Reason, CVCHIQ_CB_hMessage);
-					CVCHIQ_CB_Device = NULL;
-				}
-
-				if ( samplesElapsed > 8 * nSamplesPrecompute / 2 && !startVCHIQ )
-				{
-					m_pSound->Start();
-					fillSoundBuffer = 1;
-					startVCHIQ = 1;
-				}
-				//s32 nFramesMax = m_pSound->GetQueueSizeFrames() - m_pSound->GetQueueFramesAvail();
-				//if ( startVCHIQ && nFramesMax > m_pSound->GetQueueSizeFrames() / 2 )
-				if ( fillSoundBuffer )
-				{
-					fillSoundBuffer = 0;
-
-					extern u32 samplesInBuffer();
-					#define TYPE		s16
-					#define TYPE_SIZE	sizeof (s16)
-
-					s32 nFramesComputed = samplesInBuffer();
-					s32 nFramesMax = m_pSound->GetQueueSizeFrames() - m_pSound->GetQueueFramesAvail();
-					trackSampleProgress = 1024 * 1024 + ( nFramesComputed - nFramesMax );
-
-					s32 nWriteFrames = min( nFramesComputed, nFramesMax );
-
-				#if 1
-					if ( nWriteFrames * 2 + PCMCountLast > PCMBufferSize )
-					{
-						m_pSound->Write( &PCMBuffer[ PCMCountLast ], (PCMBufferSize - PCMCountLast) * TYPE_SIZE );
-						m_pSound->Write( &PCMBuffer[ 0 ], (2 * nWriteFrames - (PCMBufferSize - PCMCountLast)) * TYPE_SIZE );
-					} else
-					{
-						m_pSound->Write( &PCMBuffer[ PCMCountLast ], 2 * nWriteFrames * TYPE_SIZE );
-					}
-					PCMCountLast += nWriteFrames * 2;
-					PCMCountLast %= PCMBufferSize;
-				#else
-					short temp[ 16384 ];
-					short *p = (short*)temp;
-					for ( u32 j = 0; j < nWriteFrames; j++ )
-					{
-						*(p++) = PCMBuffer[ PCMCountLast++ ];
-						*(p++) = PCMBuffer[ PCMCountLast++ ];
-						PCMCountLast %= PCMBufferSize;
-					}
-
-					unsigned nWriteBytes = 2 * nWriteFrames * TYPE_SIZE;
-					m_pSound->Write( &temp[ 0 ], nWriteBytes );
-				#endif
-				}
-				if ( nSamplesInThisRun > 2205 / 8 )
-				{
-					//trackSampleProgress = 1024 * 1024 + ( nFramesComputed - nFramesMax );
-					if ( trackSampleProgress )
-					{
-						avgSamplesAvail += (s32)trackSampleProgress - 1024 * 1024;
-						avgCounter ++;
-
-						if ( avgCounter > 50 )
-						{
-							s32 avail = (s32)avgSamplesAvail / avgCounter;
-							if ( targetSamplesAvail == 0 && ++ targetCount > 2 )
-								CVCHIQ_CB_Manual = true; 
-							if ( targetSamplesAvail == 0 && ++ targetCount > 10 )
-								targetSamplesAvail = max( avail, (s32)nSamplesPrecompute );
-
-							if ( targetSamplesAvail != 0 )
-							{
-								if ( avail < (s32)targetSamplesAvail )
-								{
-									if ( avail < 5 * (s32)targetSamplesAvail / 100 && SAMPLERATE_ADJUSTED < SAMPLERATE )
-										SAMPLERATE_ADJUSTED = SAMPLERATE; else
-										SAMPLERATE_ADJUSTED ++; 
-								} else
-								if ( avail > (s32)targetSamplesAvail )
-								{
-									if ( avail > 105 * (s32)targetSamplesAvail / 100 && SAMPLERATE_ADJUSTED > SAMPLERATE )
-										SAMPLERATE_ADJUSTED = SAMPLERATE; else
-										SAMPLERATE_ADJUSTED --; 
-								}
-								adjustRateAllowed = 0;
-							}
-							//logger->Write( "", LogNotice, "samples ahead: %d (target: %d), rate: %u Hz", avail, targetSamplesAvail, SAMPLERATE_ADJUSTED );
-							avgSamplesAvail = avgCounter = 0;
-						}
-						trackSampleProgress = 0;
-					}
-
-					{
-						if ( nCyclesEmulated < (4*256000) )
-						{
-							CVCHIQSoundBaseDevice *sd = (CVCHIQSoundBaseDevice*)m_pSound;
-							if ( sd->IsActive() )
-								sd->SetControl( VCHIQ_SOUND_VOLUME_MIN + (VCHIQ_SOUND_VOLUME_DEFAULT - VCHIQ_SOUND_VOLUME_MIN) * nCyclesEmulated / (4*256000), VCHIQSoundDestinationAuto );
-							hdmiVol = 1;
-						}
-						//pScheduler->MsSleep( 1 );
-						pScheduler->Yield();
-					}
-					nSamplesInThisRun = 0;
-				}
-				nSamplesInThisRun++;
-			}
-		#endif
-
 			CACHE_PRELOADL2STRMW( &smpCur );
 
 			static u32 carrySamples = 0;
@@ -777,17 +687,11 @@ startHereAfterReset:
 			right = max( -32767, min( 32767, right ) );
 			left  = max( -32767, min( 32767, left ) );
 
-			#ifdef USE_PWM_DIRECT
 			if ( outputPWM )
 				putSample( left, right );
-			#endif
-			#ifdef USE_VCHIQ_SOUND
-			if ( outputHDMI )
-			{
-				putSample( left );
-				putSample( right );
-			}
-			#endif
+
+			if ( outputHDMISound )
+				putSampleHDMI( left << 8, right << 8 );
 
 		#if 1
 			// vu meter
@@ -848,6 +752,16 @@ startHereAfterReset:
 
 
 //static u32 releaseDMA = 0;
+
+// taken from Circle itself for inlining
+
+#define REG(name, base, offset, base4, offset4)	\
+			static const u32 Reg##name = (base) + (offset);
+#define REGBIT(reg, name, bitnr)	static const u32 Bit##reg##name = 1U << (bitnr);
+
+REG (MaiData, ARM_HD_BASE, 0x20, ARM_HD_BASE, 0x1C);
+REG (MaiControl, ARM_HD_BASE, 0x14, ARM_HD_BASE, 0x10);
+	REGBIT (MaiControl, Full, 11);
 
 #ifdef COMPILE_MENU
 void KernelSIDLaunchFIQHandler8( void *pParam )
@@ -1008,6 +922,39 @@ void CKernel::FIQHandler (void *pParam)
 			return;
 		} 
 	}
+	#endif
+	#ifdef HDMI_SOUND
+	if ( outputHDMISound )
+	{
+		static unsigned long long samplesElapsedBeforeFIQ = 0;
+		if ( first && nCyclesEmulated )
+		{
+			first = 0;
+			samplesElapsedBeforeFIQ = 0;
+		} 
+
+		if ( !first )
+		{
+			//unsigned long long samplesElapsedFIQ = ( ( unsigned long long )cycleCountC64 * ( unsigned long long )SAMPLERATE ) / ( unsigned long long )CLOCKFREQ;
+			unsigned long long samplesElapsedFIQ = ( ( unsigned long long )cycleCountC64 * ( unsigned long long )48000 ) / ( unsigned long long )CLOCKFREQ;
+			if ( samplesElapsedFIQ != samplesElapsedBeforeFIQ && !CPU_RESET )
+			{
+				write32( ARM_GPIO_GPCLR0, bCTRL257 ); 
+				samplesElapsedBeforeFIQ = samplesElapsedFIQ;
+
+				u32 s1, s2;
+				getSampleHDMI( &s1, &s2 );
+				if ( !( read32( RegMaiControl ) & BitMaiControlFull ) )
+				{
+					write32( RegMaiData, s1 );
+					write32( RegMaiData, s2 );
+				}
+
+				RESET_CPU_CYCLE_COUNTER
+				return;
+			}
+		}
+	} 
 	#endif
 	
 

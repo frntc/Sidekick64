@@ -114,7 +114,7 @@ typedef struct
 static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash
-u8 flash_cacheoptimized_pool[ 1024 * 1024 + 8 * 1024 ] AAA;
+u8 *flash_cacheoptimized_pool;//[ 1024 * 1024 + 8 * 1024 ] AAA;
 
 static volatile EFSTATE ef AAA;
 
@@ -503,7 +503,7 @@ void CKernelEF::Run( void )
 		 ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+2) * 2 + 1 ] == 0x70 &&
 		 ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+3) * 2 + 1 ] == 0x69 )
 	{
-		//logger->Write( "RaspiFlash", LogNotice, "replacing EAPI" );
+		logger->Write( "RaspiFlash", LogNotice, "replacing EAPI" );
 		u32 size;
 		readFile( logger, (char*)DRIVE, (char*)FILENAME_EAPI, eapiC64Code, &size );
 
@@ -743,7 +743,8 @@ void CKernelEF::Run( void )
 	{
 		#ifdef COMPILE_MENU
 		TEST_FOR_JUMP_TO_MAINMENU2FIQs_CB( ef.c64CycleCount, ef.resetCounter2, 
-		{ if ( ef.eapiCRTModified ) writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );} 
+		{ if ( ef.eapiCRTModified ) {			/*logger->Write( "RaspiFlash", LogNotice, "EF-CRT saved!" );*/
+		writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );}} 
 		{ if ( ef.bankswitchType == BS_GMOD2 ) { extern uint8_t m93c86_data[M93C86_SIZE]; char fn[ 4096 ]; sprintf( fn, "%s.eeprom", FILENAME ); writeFile( logger, DRIVE, fn, m93c86_data, 2048 ); } } )
 		#endif
 
@@ -763,6 +764,7 @@ void CKernelEF::Run( void )
 		if ( ef.mainloopCount++ > 10000 && ef.eapiCRTModified ) 
 		{
 			writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );
+			/*logger->Write( "RaspiFlash", LogNotice, "EF-CRT saved, c64 switched off!" );*/
 			ef.eapiCRTModified = 0;
 			/*{
 				u32 c1 = rgb24to16( 166, 250, 128 );

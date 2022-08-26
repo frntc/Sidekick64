@@ -62,15 +62,20 @@ void CKernelKernal::Run( void )
 	{
 		allUsedLEDs = LATCH_LED0to1;
 
-		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+		extern bool loadCustomLogoIfAvailable( char *FILENAME );
 
-		int w, h; 
-		extern char FILENAME_LOGO_RGBA[128];
-		extern unsigned char tempTGA[ 256 * 256 * 4 ];
-
-		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		if ( !loadCustomLogoIfAvailable( FILENAME ) )
 		{
-			tftBlendRGBA( tempTGA, tftBackground, 0 );
+			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+			int w, h; 
+			extern char FILENAME_LOGO_RGBA[128];
+			extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+			if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+			{
+				tftBlendRGBA( tempTGA, tftBackground, 0 );
+			}
 		}
 
 		tftCopyBackground2Framebuffer();

@@ -37,8 +37,9 @@
 //
 // choose whether to output sound via the headphone jack (PWM), otherwise HDMI audio will be used (higher delay)
 //
+#define HDMI_SOUND
 #define USE_PWM_DIRECT
-#define USE_VCHIQ_SOUND
+//#define USE_VCHIQ_SOUND
 
 #define SID2_MASK (1<<A5)
 

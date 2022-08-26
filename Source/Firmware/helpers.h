@@ -152,6 +152,15 @@ extern int writeFile( CLogger *logger, const char *DRIVE, const char *FILENAME, 
 			return;														\
 		}
 
+#define TEST_FOR_JUMP_TO_MAINMENU_CB_POST( c64CycleCount, resetCounter, CB )	\
+		if ( c64CycleCount > 2000000 && resetCounter > 500000 ) {		\
+			EnableIRQs();												\
+			m_InputPin.DisableInterrupt();								\
+			m_InputPin.DisconnectInterrupt();							\
+			CB;															\
+			return;														\
+		}
+
 #define TEST_FOR_JUMP_TO_MAINMENU2FIQs( c64CycleCount, resetCounter )	\
 		if ( c64CycleCount > 2000000 && resetCounter > 500000 ) {		\
 			EnableIRQs();												\

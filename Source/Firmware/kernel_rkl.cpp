@@ -114,7 +114,9 @@ typedef struct
 volatile static GEOSTATE geo AAA;
 
 // geoRAM memory pool 
-static u8  geoRAM_Pool[ MAX_GEORAM_SIZE * 1024 + 128 ] AA;
+// initialization in kernel_menu!
+//static u8  geoRAM_Pool[ MAX_GEORAM_SIZE * 1024 + 128 ] AA;
+u8  *geoRAM_Pool;
 
 // u8* to current window
 #define GEORAM_WINDOW (&geo.RAM[ ( geo.reg[ 1 ] * 16384 ) + ( geo.reg[ 0 ] * 256 ) ])
@@ -177,7 +179,8 @@ __attribute__( ( always_inline ) ) inline void geoRAM_IO2_Write( u32 A, u8 D )
 static void saveGeoRAM( const char *FILENAME_RAM )
 {
 	// lazy, we always store max size files
-	writeFile( logger, DRIVE, FILENAME_RAM, geo.RAM, geoSizeKB * 1024 );
+	//logger->Write( "georam", LogNotice, "'%s'", (const char*)FILENAME_RAM );
+	writeFile( logger, DRIVE, FILENAME_RAM, geo.RAM, MAX_GEORAM_SIZE * 1024 );
 }
 
 #ifdef COMPILE_MENU
@@ -403,7 +406,7 @@ void CKernelRKL::Run( void )
 			latchSetClearImm( LATCH_RESET, 0 );
 		}
 
-		TEST_FOR_JUMP_TO_MAINMENU_CB( geo.c64CycleCount, geo.resetCounter, saveGeoRAM(FILENAME_RAM) )
+		TEST_FOR_JUMP_TO_MAINMENU_CB_POST( geo.c64CycleCount, geo.resetCounter, saveGeoRAM(FILENAME_RAM) )
 
 		if ( geo.saveRAM )
 		{

@@ -71,7 +71,7 @@ static unsigned char kernalROM[ 8192 ] AAA;
 
 // ... flash/ROM (32k) and RAM (8k)
 //u8 flash_cacheoptimized_pool[ 5 * 8192 + 1024 ] AAA;
-extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
+extern u8 *flash_cacheoptimized_pool;
 
 __attribute__( ( always_inline ) ) inline void setGAMEEXROM( u32 f )
 {
@@ -220,15 +220,20 @@ void CKernel::Run( void )
 	} else
 	if ( screenType == 1 )
 	{
-		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+		extern bool loadCustomLogoIfAvailable( char *FILENAME );
 
-		int w, h; 
-		extern char FILENAME_LOGO_RGBA[128];
-		extern unsigned char tempTGA[ 256 * 256 * 4 ];
-
-		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		if ( !loadCustomLogoIfAvailable( FILENAME ) )
 		{
-			tftBlendRGBA( tempTGA, tftBackground, 0 );
+			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+			int w, h; 
+			extern char FILENAME_LOGO_RGBA[128];
+			extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+			if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+			{
+				tftBlendRGBA( tempTGA, tftBackground, 0 );
+			}
 		}
 
 		tftCopyBackground2Framebuffer();

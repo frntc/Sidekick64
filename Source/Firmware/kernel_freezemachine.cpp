@@ -65,10 +65,10 @@ typedef struct
 static volatile FMSTATE fm AAA;
 
 // ... flash/ROM
-extern u8 flash_cacheoptimized_pool[ 1024 * 1024 + 1024 ] AAA;
+extern u8 *flash_cacheoptimized_pool;
 
 //static unsigned char kernalROM[ 8192 ] AAA;
-static unsigned char *kernalROM = &flash_cacheoptimized_pool[ 1024 * 1024 - 8192 ];
+static unsigned char *kernalROM;
 
 __attribute__( ( always_inline ) ) inline void initFM()
 {
@@ -143,6 +143,7 @@ void CKernelFM::Run( void )
 	#endif
 
 	memset( (void*)&fm, 0, sizeof( FMSTATE ) );
+	kernalROM = &flash_cacheoptimized_pool[ 1024 * 1024 - 8192 ];
 
 	// load kernal if any
 	u32 kernalSize = 0; // should always be 8192
@@ -172,15 +173,20 @@ void CKernelFM::Run( void )
 	} else
 	if ( screenType == 1 )
 	{
-		tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+		extern bool loadCustomLogoIfAvailable( char *FILENAME );
 
-		int w, h; 
-		extern char FILENAME_LOGO_RGBA[128];
-		extern unsigned char tempTGA[ 256 * 256 * 4 ];
-
-		if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+		if ( !loadCustomLogoIfAvailable( FILENAME ) )
 		{
-			tftBlendRGBA( tempTGA, tftBackground, 0 );
+			tftLoadBackgroundTGA( DRIVE, FILENAME_SPLASH_RGB, 8 );
+
+			int w, h; 
+			extern char FILENAME_LOGO_RGBA[128];
+			extern unsigned char tempTGA[ 256 * 256 * 4 ];
+
+			if ( tftLoadTGA( DRIVE, FILENAME_LOGO_RGBA, tempTGA, &w, &h, true ) )
+			{
+				tftBlendRGBA( tempTGA, tftBackground, 0 );
+			}
 		}
 
 		tftCopyBackground2Framebuffer();

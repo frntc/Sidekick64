@@ -56,6 +56,9 @@ const int VK_SHIFT_RETURN = 141;
 const int VK_MOUNT = 205; // SHIFT-M
 const int VK_MOUNT_START = 77; // M
 
+const int VK_SPACE = 32;
+const int VK_SHIFT_SPACE = 160;
+
 
 const int VK_LEFT  = 157;
 const int VK_RIGHT = 29;
@@ -110,7 +113,7 @@ const char errorMessages[NUM_ERRORMESSAGES][52] = {
 #define MAX_SETTINGS_SAVED 64
 u32 curSettingsLine = 0;
 const s32 rangeSettings[ MAX_SETTINGS ] = { 4, 10, 6, 2, 16, 15, 4, 4, 16, 15, 2, 16, 15, 2, 4, 16, 2 };
-s32 settings[ MAX_SETTINGS ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 15, 7, 0, 7, 0 };
+s32 settings[ MAX_SETTINGS_SAVED ]      = { 0,  0, 0, 0, 15,  0, 0, 0, 15, 14, 0, 15, 7, 0, 7, 0 };
 u8  geoRAM_SlotNames[ 10 ][ 21 ];
 
 /*char *extraMsg = NULL;
@@ -251,6 +254,12 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 		if ( idx >= nDirEntries ) 
 			break;
 
+		if ( !modeC128 && (dir[ idx ].c64flags & DONT_SHOW_ON_C64) )
+		{
+			idx ++;
+			continue;
+		}
+
 		u32 convert = 3;
 		u8 color = skinValues.SKIN_TEXT_BROWSER;
 	
@@ -317,8 +326,18 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 				} else
 				{
 					if ( dir[ idx ].size / 1024 > 999 )
-						sprintf( temp, " %1.1fm", (float)dir[ idx ].size / (1024 * 1024) ); else
-						sprintf( temp, " %3dk", dir[ idx ].size / 1024 );
+					{
+						if ( dir[ idx ].size >= 1024 * 1024 * 10 )
+							sprintf( temp, " %3dm", dir[ idx ].size / (1024 * 1024) ); else
+							sprintf( temp, " %1.1fm", (float)dir[ idx ].size / (1024 * 1024) ); 
+					} else
+					{
+						if ( dir[ idx ].size < 1000 )
+							sprintf( temp, " %3dB", dir[ idx ].size ); else
+						if ( dir[ idx ].size < 1024 )
+							sprintf( temp, " %1.1fk", (float)dir[ idx ].size / 1024.0f ); else
+							sprintf( temp, " %3dk", dir[ idx ].size / 1024 );
+					}
 				} 
 
 				printC64( 32, lines + 3, temp, color, (idx == cursorPos) ? 0x80 : 0, convert );
@@ -340,6 +359,8 @@ int printFileTree( s32 cursorPos, s32 scrollPos )
 	return lastVisible;
 }
 
+int lastKeyDebug = 0;
+
 
 void printBrowserScreen()
 {
@@ -350,6 +371,14 @@ void printBrowserScreen()
 	//printC64(0,0,  "0123456789012345678901234567890123456789", 15, 0 );
 	printC64( 8,  1, ".- sidekick64-browser -.", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 	printC64( 0,  2, "           scanning directory           ", 0, 0 );
+
+/*	{
+	char b[20];
+	extern u32 temperature;
+	//sprintf( b, "%d", temperature );
+	sprintf( b, "%d", lastKeyDebug );
+	printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	}*/
 
 	if ( extraMsg == 0 )
 	{
@@ -373,6 +402,15 @@ void printBrowserScreen()
 		printC64( 1, 24, "M", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
 		printC64( 20, 24, "SHIFT-M", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
 	} 
+
+	if ( dir[ cursorPos ].f & DIR_MUSIC_FILE )
+	{
+    	//       (0,0,  "0123456789012345678901234567890123456789", 15, 0 );
+		printC64( 1, 24, "RETURN/SPACE play, +SHIFT for HDMI-out", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
+		printC64( 1, 24, "RETURN", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+		printC64( 8, 24, "SPACE", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+		printC64( 20, 24, "+SHIFT", skinValues.SKIN_BROWSER_TEXT_FOOTER, 128, 3 );
+	}
 
 	if ( modeC128 && ( dir[ cursorPos ].f & DIR_FILE_IN_D64 ) )
 		printC64( 0, 24, "SHIFT+RETURN to launch PRGs in C128-mode", skinValues.SKIN_BROWSER_TEXT_FOOTER, 0, 3 );
@@ -531,7 +569,6 @@ void applySIDSettings()
 						 settings[4], settings[5], settings[8], settings[9], settings[11], settings[12], settings[ 16 ], settings[13], settings[14], settings[15] );
 }
 
-int lastKeyDebug = 0;
 
 static int joyItem[ 4 * 50 ];
 static int nJoyItems = 0;
@@ -700,11 +737,18 @@ int checkForScreenFade( int k, char *menuItemStr, u32 *startC128 = NULL )
 			if ( fileExists( logger, DRIVE, filename ) <= 0 )
 				return 0; 
 
-			if ( !( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
-				  ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) ) // no SID-wire, FM emulation off
+			if ( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
+				 ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) // no SID-wire, FM emulation off
+			{
+				return 0;
+			}
+
+
+			//if ( !( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
+				//  ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) ) // no SID-wire, FM emulation off
 				return 3;
 
-			return 0;
+			//return 0;
 		case ACT_LAUNCH_KERNAL: // Kernal
 			if ( hasKernalAlready == tempHasKernal ) return 3; 
 			return 0;
@@ -718,10 +762,16 @@ int checkForScreenFade( int k, char *menuItemStr, u32 *startC128 = NULL )
 		if ( typeInName == 0 && ( k == VK_MOUNT || k == VK_MOUNT_START ) && dir[ cursorPos ].f & DIR_D64_FILE )
 			return 3; // we don't want to do all kind of checks just for fading the screen -- let's assume that D2EF will work
 		
+		if ( typeInName == 0 && (k == VK_SPACE || k == VK_SHIFT_SPACE) && dir[ cursorPos ].f & DIR_MUSIC_FILE )
+		{
+			if ( k == VK_SPACE ) k = VK_RETURN;
+			if ( k == VK_SHIFT_SPACE ) k = VK_SHIFT_RETURN;
+		}
+
 		if ( typeInName == 0 && (k == VK_RETURN || k == VK_SHIFT_RETURN) )
 		{
-			if ( !( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
-				  ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) ) // no SID-wire, FM emulation off
+			//if ( !( ( subSID && octaSIDMode && !wireSIDAvailable ) ||
+				//  ( subSID && !wireSIDAvailable && settings[10] == 0 ) ) ) // no SID-wire, FM emulation off
 			{
 				if ( startC128 && modeC128 )
 				{
@@ -808,7 +858,8 @@ int checkForScreenFade( int k, char *menuItemStr, u32 *startC128 = NULL )
 					}
 				}
 
-				if ( dir[ c ].f & DIR_SID_FILE  ) return 3;
+				if ( dir[ c ].f & DIR_SID_FILE ) return 3;
+				if ( dir[ c ].f & DIR_MUSIC_FILE ) return 3;
 			}
 		}
 
@@ -1163,6 +1214,12 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				}
 				lastRolled = -1;
 
+				if ( !modeC128 )
+				{
+					while ( dir[ cursorPos ].c64flags & DONT_SHOW_ON_C64 )
+						cursorPos = dir[ cursorPos ].next;
+				}
+
 				k = 0;
 			} else
 			// down
@@ -1170,6 +1227,7 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			{
 				typeInName = 0;
 				int oldPos = cursorPos;
+
 				if ( dir[ cursorPos ].f & DIR_DIRECTORY || dir[ cursorPos ].f & DIR_D64_FILE )
 				{
 					if ( dir[ cursorPos ].f & DIR_UNROLLED )
@@ -1177,6 +1235,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 						cursorPos = dir[ cursorPos ].next;
 				} else
 					cursorPos ++;
+
+				if ( !modeC128 )
+				{
+					while ( dir[ cursorPos ].c64flags & DONT_SHOW_ON_C64 )
+						cursorPos = dir[ cursorPos ].next;
+				}
+
 				if ( cursorPos >= nDirEntries )
 					cursorPos = oldPos;
 			} else
@@ -1184,7 +1249,11 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			if ( k == VK_UP )
 			{
 				typeInName = 0;
-				cursorPos --;
+				if ( !modeC128 && cursorPos > 0 && ( dir[ cursorPos - 1 ].c64flags & DONT_SHOW_ON_C64 ) )
+				{
+					cursorPos -= 3;
+				} else
+					cursorPos --;
 				if ( cursorPos < 0 ) cursorPos = 0;
 
 				// current item has parent(s) -> check if they are unrolled
@@ -1418,6 +1487,14 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			return;
 		} 
 
+		bool alternateMusicPlayer = false;
+		if ( typeInName == 0 && (k == VK_SPACE || k == VK_SHIFT_SPACE) && dir[ cursorPos ].f & DIR_MUSIC_FILE )
+		{
+			alternateMusicPlayer = true;
+			if ( k == VK_SPACE ) k = VK_RETURN;
+			if ( k == VK_SHIFT_SPACE ) k = VK_SHIFT_RETURN;
+		}
+
 		if ( typeInName == 0 && (k == VK_RETURN || k == VK_SHIFT_RETURN) )
 		{
 			//logger->WriteNoAlloc( "exec", LogNotice, "pressed return" );
@@ -1587,7 +1664,35 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 					}
 				}
 
+				if ( dir[ c ].f & DIR_MUSIC_FILE  )
+				{
+					*startC128 = 0;
 
+					logger->Write( "exec", LogNotice, "want to load music" );
+
+					while ( dir[ c ].parent != 0xffffffff )
+					{
+						c = nodes[ n ++ ] = dir[ c ].parent;
+					}
+
+					int stopPath = 0;
+
+					strcat( path, "SD:" );
+					for ( s32 i = n - 1; i >= stopPath; i -- )
+					{
+						if ( i != n-1 )
+							strcat( path, "\\" );
+						strcat( path, (char*)dir[ nodes[i] ].name );
+					}
+					logger->Write( "exec", LogNotice, "music file: '%s'", path );
+					strcpy( FILENAME, path );
+					if  ( k == VK_SHIFT_RETURN )
+						*launchKernel = 43; else
+						*launchKernel = 42;
+					if ( alternateMusicPlayer )
+						*launchKernel += 2;
+					return;
+				}
 
 				if ( dir[ c ].f & DIR_SID_FILE  )
 				{
@@ -1674,6 +1779,8 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 			return;
 		}
 
+		static int lastKey = 0;
+
 		if ( ( ( k == 'n' || k == 'N' ) || ( k == 13 && curSettingsLine == 1 ) )&& typeInName == 0 )
 		{
 			typeInName = 1;
@@ -1706,9 +1813,13 @@ void handleC64( int k, u32 *launchKernel, char *FILENAME, char *filenameKernal, 
 				break;
 			default:
 				// normal character
-				geoRAM_SlotNames[ settings[ 1 ] ][ typeCurPos ] = k;
-				if ( typeCurPos < 17 ) 
-					typeCurPos ++; 
+				if ( lastKey != key && key != 0 )
+				{
+					lastKey = key;
+					geoRAM_SlotNames[ settings[ 1 ] ][ typeCurPos ] = key;
+					if ( typeCurPos < 17 ) 
+						typeCurPos ++; 
+				}
 				break;
 			}
 		} else
@@ -1806,11 +1917,14 @@ void printMainMenu()
 	//               "012345678901234567890123456789012345XXXX"
 	printC64( 0,  1, "   .- Sidekick64 -- Frenetic -.         ", skinValues.SKIN_MENU_TEXT_HEADER, 0 );
 
-/*	char b[20];
+
+/*	{
+	char b[20];
 	extern u32 temperature;
-	sprintf( b, "%d", temperature );
-	//sprintf( b, "%d", lastKeyDebug );
-	printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );*/
+	//sprintf( b, "%d", temperature );
+	sprintf( b, "%d", lastKeyDebug );
+	printC64( 0, 0, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	}*/
 
 	if ( subGeoRAM && subHasKernal )
 	{
@@ -1983,6 +2097,16 @@ void printMainMenu()
 		printC64( (joyX-1+40)%40, (joyY%25), ">", 1, 0 );
 
 	printSidekickLogo();
+
+	// debug output (multi-)SID address detection
+	/*for ( int i = 0; i < 5; i++ )
+	{
+		char b[20];
+		extern u8 typeSIDAddr[ 5 ];
+		sprintf( b, "%d", typeSIDAddr[ i ] );
+		printC64( 0, i, b, skinValues.SKIN_MENU_TEXT_HEADER, 0 );
+	}*/
+
 
 	startInjectCode();
 	//injectPOKE( 53280, skinValues.SKIN_MENU_BORDER_COLOR );

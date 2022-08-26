@@ -335,7 +335,7 @@ static signed int tl_tab[TL_TAB_LEN];
 
 /* sin waveform table in 'decibel' scale */
 /* four waveforms on OPL2 type chips */
-static unsigned int sin_tab[SIN_LEN * 4];
+/*static */unsigned int sin_tab[SIN_LEN * 4];
 
 /* LFO Amplitude Modulation table (verified on real YM3812)
    27 output levels (triangle waveform); 1 level takes one of: 192, 256 or 448 samples

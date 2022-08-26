@@ -497,6 +497,9 @@ void CKernel::Run( void )
 	for ( u32 i = prgSize_l264; i > 0; i-- )
 		prgData_l264[ i ] = prgData_l264[ i - 1 ];
 	prgData_l264[0] = ( ( prgSize_l264 + 255 ) >> 8 );
+	int startAddr = prgData_l264[ 1 ] + prgData_l264[ 2 ] * 256;
+	prgData_l264[ prgData_l264[0] * 256 + 3 ] = ( startAddr + prgSize_l264 - 2 ) >> 8;
+	prgData_l264[ prgData_l264[0] * 256 + 3 + 1 ] = ( startAddr + prgSize_l264 - 2 ) & 255;
 
 	for ( int i = 0; i < NUM_SIDS; i++ )
 	{
