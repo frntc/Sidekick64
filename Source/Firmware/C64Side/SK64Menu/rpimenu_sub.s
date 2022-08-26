@@ -442,8 +442,8 @@ VDCOutput_nowait:
 
         ; send command #14 to SK64 (reset SID detection)
         sendSidekickCmd 14, 0
-	lda #$00
-	sta $d4ff       ;// some access to the SID address range
+	;lda #$00
+	lda $d400       ;// some access to the SID address range
 
         ldx enableVDC
         cpx #2
