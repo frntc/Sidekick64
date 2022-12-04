@@ -460,6 +460,48 @@ static void KernelEFFIQHandler_SimonsBasic( void *pParam );
 static void KernelEFFIQHandler_Comal80( void *pParam );
 static void KernelEFFIQHandler_EpyxFL( void *pParam );
 
+#define LRU_CACHE_ENTRIES	16
+
+u8 lruCache[ LRU_CACHE_ENTRIES ];
+u8 lruCurPreloadSlot = 0;
+u32 lruPreloadAddr = 0;
+
+static u8 isEyeOfTheBeholder = 0;
+
+
+// looks for parts of "The dwarf gasps out" and "Prince Keirgar"
+const u32 eobString1[] = { 0x64206568, 0x66726177, 0x73616720 };
+const u32 eobString2[] = { 0x65636e69, 0x69654b20, 0x72616772 };
+
+static void checkForEyeOfTheBeholder()
+{
+	extern u8 tempRAWCRTBuffer[ 1032 * 1024 ];
+
+	isEyeOfTheBeholder = 0;
+
+	u32 *r = (u32*)&tempRAWCRTBuffer[ 0 ];
+
+	u8 s1 = 0, s2 = 0;
+
+	for ( int i = 0; i < 512 * 1024 / 4; i ++ )
+	{
+		if ( r[ i   ] == eobString1[ 0 ] &&
+			 r[ i+1 ] == eobString1[ 1 ] &&
+			 r[ i+2 ] == eobString1[ 2 ] )
+			s1 = 1;
+		if ( r[ i   ] == eobString2[ 0 ] &&
+			 r[ i+1 ] == eobString2[ 1 ] &&
+			 r[ i+2 ] == eobString2[ 2 ] )
+			s2 = 1;
+
+		if ( s1 && s2 )
+		{
+			isEyeOfTheBeholder = 1;
+			return;
+		}
+	}
+}
+
 static void KernelEFFIQHandler( void *pParam );
 void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr, const char *FILENAME_KERNAL = NULL )
 #else
@@ -510,6 +552,8 @@ void CKernelEF::Run( void )
 		for ( u32 i = 0; i < 0x300; i++ )
 			ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+i) * 2 + 1 ] = eapiC64Code[ i ];
 	}
+
+	checkForEyeOfTheBeholder();
 
 	#ifdef COMPILE_MENU
 	if ( screenType == 0 )
@@ -665,22 +709,28 @@ void CKernelEF::Run( void )
 	if ( ef.bankswitchType == BS_SIMONSBASIC )
 		myHandler = KernelEFFIQHandler_SimonsBasic;
 	#endif
-	m_InputPin.ConnectInterrupt( myHandler, FIQ_PARENT );
+
+	if ( !isEyeOfTheBeholder )
+		m_InputPin.ConnectInterrupt( myHandler, FIQ_PARENT );
 
 	// different timing C64-longboards and C128 compared to 469-boards
 	ef.LONGBOARD = 0;
 	if ( modeC128 || modeVIC == 0 )
 		ef.LONGBOARD = 1; 
 
-	m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
+	if ( !isEyeOfTheBeholder )
+		m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
 
 	irqFallingEdge = true;
 
 	if ( ef.bankswitchType == BS_C64GS || ef.bankswitchType == BS_GMOD2 || ef.bankswitchType == BS_OCEAN || ef.bankswitchType == BS_HUCKY || ef.bankswitchType == BS_RGCD || ef.bankswitchType == BS_COMAL80 || ef.bankswitchType == BS_FUNPLAY || ef.bankswitchType == BS_EPYXFL || ef.bankswitchType == BS_SIMONSBASIC || ef.bankswitchType == BS_DINAMIC )
 		irqFallingEdge = false;
 
-	if ( irqFallingEdge )
-		m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
+	if ( !isEyeOfTheBeholder )
+	{
+		if ( irqFallingEdge )
+			m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
+	}
 
 	// determine how to and preload caches
 	if ( ef.bankswitchType == BS_MAGICDESK /*|| ef.bankswitchType == BS_GMOD2*/ )
@@ -733,11 +783,57 @@ void CKernelEF::Run( void )
 
 	// ready to go...
 
+	ef.c64CycleCount = ef.resetCounter2 = 0;
+
+	if ( isEyeOfTheBeholder )
+	{
+		void efPollingHandler();
+		void initLRUCache();
+
+		initLRUCache();
+
+		// this is actually unnecessary, but anyways...
+		#if 1
+		// const u8 nLRUInit = 6;
+		// const u8 lruInit[nLRUInit] = { 0x01, 0x00, 0x25, 0x12, 0x1f, 0x18 };
+		const u8 nLRUInit = 3;
+		const u8 lruInit[nLRUInit] = { 0x12, 0x18, 0x00 };
+
+		CACHE_PRELOAD_INSTRUCTION_CACHE( efPollingHandler, 4096 )
+
+		for ( int j = 0; j < nLRUInit; j++ )
+		{
+			void addLRUCache( u8 k );
+			addLRUCache( lruInit[ j ] );
+			CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruInit[ j ] * 16384 ], 16384, CACHE_PRELOADL2KEEP )
+			FORCE_READ_LINEAR64( &ef.flash_cacheoptimized[ lruInit[ j ] * 16384 ], 16384 )
+			CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruInit[ j ] * 16384 ], 16384, CACHE_PRELOADL2KEEP )
+			FORCE_READ_LINEAR64( &ef.flash_cacheoptimized[ lruInit[ j ] * 16384 ], 16384 )
+		}
+
+		lruCurPreloadSlot = 0;
+		lruPreloadAddr = 0;
+
+		//u8 lruCurPreloadBank = lruCache[ lruCurPreloadSlot ];
+		//CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruCurPreloadBank * 16384 ], 16384, CACHE_PRELOADL2KEEP )
+
+		#endif
+
+		CACHE_PRELOAD_INSTRUCTION_CACHE( efPollingHandler, 4096 )
+		latchSetClear( LED_INIT2_HIGH, LED_INIT2_LOW );
+		efPollingHandler();
+
+		if ( ef.eapiCRTModified ) 
+		{
+			writeChanges2CRTFile( logger, (char*)DRIVE, (char*)FILENAME, (u8*)ef.flash_cacheoptimized, false );
+		}
+
+		return;
+	}
+
 	if ( ef.hasKernal )
 		latchSetClear( LATCH_RESET | LED_INIT2_HIGH | LATCH_ENABLE_KERNAL, LED_INIT2_LOW ); else
 		latchSetClear( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
-
-	ef.c64CycleCount = ef.resetCounter2 = 0;
 
 	while ( true )
 	{
@@ -1802,3 +1898,304 @@ cleanup:
 	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 }
 
+
+#define PRELOAD_BUCKET_SIZE (128*4)
+#define PRELOAD_TOTAL_SIZE 16384
+
+static u32 lastEFAddr = 0;
+
+
+void initLRUCache()
+{
+	lruCurPreloadSlot = 0;
+	lruPreloadAddr = 0;
+	for ( int i = 0; i < LRU_CACHE_ENTRIES; i ++ )
+		lruCache[ i ] = 0xff;
+}
+
+u8 isInLRUCache( u8 k )
+{
+	for ( int i = 0; i < LRU_CACHE_ENTRIES; i ++ )
+		if ( lruCache[ i ] == k )
+		return i + 1;
+		
+	return 0;
+}
+
+void addLRUCache( u8 k )
+{
+	for ( int i = LRU_CACHE_ENTRIES - 1; i > 0; i -- )
+		lruCache[ i ] = lruCache[ i - 1 ];
+
+	lruCache[ 0 ] = k;
+}
+
+u8 addOrMoveFrontLRUCache( u8 k )
+{
+	u8 pos = isInLRUCache( k );
+	if ( pos == 0 )
+	{
+		addLRUCache( k );
+		return 1;
+	} else
+	if ( pos > 1 ) // = in cache, but not at front-most position
+	{
+		pos -= 1;
+		u8 t = lruCache[ 0 ];
+		lruCache[ 0 ] = lruCache[ pos ];
+		lruCache[ pos ] = t;
+	} 
+	return 0;
+}
+
+void efPollingHandler()
+{
+	register u32 g2, g3;
+	register u32 rs2 = 0;
+	
+	while ( 1 )
+	{
+		register u32 D, addr;
+		register u8 *flashBankR = ef.flashBank;
+
+		#define WAIT_FOR_CPU_HALFCYCLE {do { g2 = read32( ARM_GPIO_GPLEV0 ); } while ( VIC_HALF_CYCLE );}
+		#define WAIT_FOR_VIC_HALFCYCLE {do { g2 = read32( ARM_GPIO_GPLEV0 ); } while ( !VIC_HALF_CYCLE ); }
+
+		u8 lruCurPreloadBank = lruCache[ lruCurPreloadSlot ];
+
+		WAIT_FOR_VIC_HALFCYCLE
+
+		BEGIN_CYCLE_COUNTER
+		WAIT_UP_TO_CYCLE( WAIT_FOR_SIGNALS + 40-20 );
+		g2 = read32( ARM_GPIO_GPLEV0 );
+		write32( ARM_GPIO_GPSET0, bCTRL257 );
+
+		addr = GET_ADDRESS0to7 << 5;
+
+		WAIT_UP_TO_CYCLE( WAIT_CYCLE_MULTIPLEXER + 40-20 );
+		g3 = read32( ARM_GPIO_GPLEV0 );					
+
+		addr |= GET_ADDRESS8to12;
+		
+		if ( !VIC_BADLINE && ( ROML_OR_ROMH_ACCESS || IO1_ACCESS || IO2_ACCESS ) )
+		{
+			if ( ROML_OR_ROMH_ACCESS )
+			{
+				// get both ROML and ROMH with one read
+				D = *(u16*)&flashBankR[ addr * 2 ];
+				if ( ROMH_ACCESS ) D >>= 8;
+			} else
+			if ( IO2_ACCESS )
+			{
+				D = ef.ram[ GET_IO12_ADDRESS ];
+			} else
+			//if ( IO1_ACCESS )
+			{
+				D = easyflash_IO1_Read( GET_IO12_ADDRESS );
+			} 
+			WRITE_D0to7_TO_BUS( D );
+			FINISH_BUS_HANDLING
+		} else
+		{
+			write32( ARM_GPIO_GPCLR0, bCTRL257 );
+			if ( lruCurPreloadBank != 0xff )
+			{
+				u8 *curPrefetchAddr = &ef.flash_cacheoptimized[ lruCurPreloadBank * 16384 + lruPreloadAddr ];
+				FORCE_READ_LINEAR64( curPrefetchAddr, PRELOAD_BUCKET_SIZE )
+
+				u8 nextPreloadSlot = ( lruCurPreloadSlot + 1 ) % LRU_CACHE_ENTRIES;
+				u8 lruNextPreloadBank = lruCache[ nextPreloadSlot ];
+				CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruNextPreloadBank * 16384 + lruPreloadAddr ], PRELOAD_BUCKET_SIZE, CACHE_PRELOADL2KEEP )
+
+				lruPreloadAddr += PRELOAD_BUCKET_SIZE;
+				if ( lruPreloadAddr >= 16384 )
+				{
+					lruPreloadAddr = 0;
+					lruCurPreloadSlot = nextPreloadSlot;
+				}
+			} else
+				lruCurPreloadSlot = ( lruCurPreloadSlot + 1 ) % LRU_CACHE_ENTRIES;
+		}
+
+		WAIT_FOR_CPU_HALFCYCLE
+
+		// after this call we have some time (until signals are valid, multiplexers have switched, the RPi can/should read again)
+		RESTART_CYCLE_COUNTER
+		WAIT_UP_TO_CYCLE( WAIT_FOR_SIGNALS + 40 );
+		g2 = read32( ARM_GPIO_GPLEV0 );
+		write32( ARM_GPIO_GPSET0, bCTRL257 );
+
+		// we got the A0..A7 part of the address which we will access
+		addr = GET_ADDRESS0to7 << 5;
+
+		CACHE_PRELOADL1STRM( &flashBankR[ addr * 2 ] );
+		static u8 plRAM = 0;
+		CACHE_PRELOADL1KEEP( &ef.ram[ plRAM ] );
+		plRAM += 64; plRAM &= 255;
+
+		UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+		if ( ef.c64CycleCount == 100000 || ef.c64CycleCount == 200000 )
+			latchSetClearImm( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
+		if ( ef.c64CycleCount == 150000 )
+			latchSetClearImm( LED_INIT2_HIGH, LATCH_RESET | LED_INIT2_LOW );
+
+	//	if ( modeC128 && VIC_HALF_CYCLE )
+	//		WAIT_CYCLE_MULTIPLEXER += 15;
+		
+		ef.mainloopCount = 0;
+
+		// read the rest of the signals
+		//WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+		// +35, +25 works, +70 not
+		WAIT_UP_TO_CYCLE( WAIT_CYCLE_MULTIPLEXER + 40 );
+		g3 = read32( ARM_GPIO_GPLEV0 );					
+
+//40 170
+//120 235
+
+	//	if ( modeC128 && VIC_HALF_CYCLE )
+	//		WAIT_CYCLE_MULTIPLEXER -= 15;
+
+		// make our address complete
+		addr |= GET_ADDRESS8to12;
+
+		//
+		// starting from here: CPU communication
+		//
+		if ( CPU_READS_FROM_BUS )
+		{
+			if ( ( ~g3 & ef.ROM_LH ) )
+			{
+				D = *(u16*)&flashBankR[ addr * 2 ];
+				if ( ROMH_ACCESS )
+					D >>= 8; 
+
+				WRITE_D0to7_TO_BUS( D )
+				setLatchFIQ( LED_ROM_ACCESS );
+				lastEFAddr = addr;
+
+				goto cleanup;
+			}
+
+			if ( IO2_ACCESS )
+			{
+				WRITE_D0to7_TO_BUS( ef.ram[ GET_IO12_ADDRESS ] )
+				setLatchFIQ( LED_IO2 );
+				goto cleanup;
+			}
+
+			if ( IO1_ACCESS )
+			{
+				WRITE_D0to7_TO_BUS( easyflash_IO1_Read( GET_IO12_ADDRESS ) )
+				setLatchFIQ( LED_IO1 );
+				goto cleanup;
+			}
+		}
+
+		if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+		{
+			READ_D0to7_FROM_BUS( D )
+
+			// easyflash register in IO1
+			u8 *oldBank = ef.flashBank;
+			easyflash_IO1_Write( GET_IO12_ADDRESS, D );
+
+			if ( ( GET_IO12_ADDRESS & 2 ) == 0 && oldBank != ef.flashBank )
+			{
+				u8 newBank = ef.reg0;
+
+				/*u8 allFull = 1;
+
+				for ( int i = 0; i < LRU_CACHE_ENTRIES; i ++ )
+					if ( lruCache[ i ] == 0xff )
+						allFull = 0;
+				if ( allFull )
+				{
+					writeFile( logger, DRIVE, "firstcacheeob.bin", lruCache, 16 );
+					return;
+				}*/
+
+				u8 requiresPreload = addOrMoveFrontLRUCache( newBank );
+
+				if ( requiresPreload )
+				{
+					CLR_GPIO( bDMA ); 
+					// (4-1) cycles seem to be enough, 10 would be super-safe
+					ef.releaseDMA = 4 + 6;
+
+					if ( ef.c64CycleCount < 500000 )
+						ef.releaseDMA += 20;
+
+					for ( int i = 0; i < 32; i++ )
+						CACHE_PRELOADL1STRM( &oldBank[ lastEFAddr + ( i << 6 ) ] );
+
+					CACHE_PRELOAD_DATA_CACHE( ef.flashBank, PRELOAD_TOTAL_SIZE, CACHE_PRELOADL2KEEP )
+					
+					__attribute__((unused)) volatile u64 forceRead;
+					for ( int i = 0; i < 32; i++ )
+						forceRead = ((u64*)&oldBank[ lastEFAddr + ( i << 6 ) ])[ 0 ];
+
+					FORCE_READ_LINEAR64( &ef.flashBank[ 0 ], 16384 )
+
+					lruCurPreloadSlot = 1;
+					lruPreloadAddr = 0;
+
+					u8 lruCurPreloadBank = lruCache[ lruCurPreloadSlot ];
+					CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruCurPreloadBank * 16384 ], PRELOAD_TOTAL_SIZE, CACHE_PRELOADL2KEEP )
+				}
+			} else 
+				setGAMEEXROM();
+
+			setLatchFIQ( LED_IO1 );
+			goto cleanup;
+		}
+
+		if ( CPU_WRITES_TO_BUS && IO2_ACCESS )
+		{
+			READ_D0to7_FROM_BUS( D )
+			ef.ram[ GET_IO12_ADDRESS ] = D;
+			setLatchFIQ( LED_IO2 );
+			goto cleanup;
+		}
+
+		// reset handling: when button #2 is pressed together with #1 then the EF ram is erased, DMA is released as well
+		if ( !( g2 & bRESET ) ) 
+		{ 
+			ef.resetCounter ++; 
+			rs2 ++;
+		} else 
+		{ 
+			if ( rs2 > 500000 ) return; 
+			rs2 = ef.resetCounter = 0; 
+		}
+		if ( !( g3 & ( 1 << BUTTON ) ) && ef.resetCounter > 3 ) { ef.resetEFRAM = 1; }
+
+		if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+		{
+			ef.resetCounter = 0x8000000;
+			initEF();
+			if ( ef.resetEFRAM )
+				memset( (void*)ef.ram, 0, 256 );
+			ef.resetEFRAM = 0;
+			SET_GPIO( bDMA ); 
+			FINISH_BUS_HANDLING
+			continue;
+		}
+
+	cleanup:
+
+		if ( ef.releaseDMA > 0 && --ef.releaseDMA == 0 )
+		{
+			WAIT_UP_TO_CYCLE( WAIT_RELEASE_DMA ); 
+			SET_GPIO( bDMA ); 
+		}
+
+		//CLEAR_LEDS_EVERY_8K_CYCLES
+		static u32 cycleCount = 0;
+		if ( !((++cycleCount)&8191) )
+			clrLatchFIQ( LED_CLEAR );
+
+		OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+	}
+}
