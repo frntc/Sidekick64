@@ -31,6 +31,10 @@
 
 #define CONSOLE_DEBUG
 
+u8 tempRAWCRTBuffer[ 1032 * 1024 ];
+
+static u8 *rawCRT = tempRAWCRTBuffer;
+
 u32 swapBytesU32( u8 *buf )
 {
 	return buf[ 3 ] | ( buf[ 2 ] << 8 ) | ( buf[ 1 ] << 16 ) | ( buf[ 0 ] << 24 );
@@ -79,7 +83,7 @@ int readCRTHeader( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, co
 
 	// read data in one big chunk
 	u32 nBytesRead;
-	u8 rawCRT[ 64 ];
+	memset( rawCRT, 0, filesize );
 	result = f_read( &file, rawCRT, 64, &nBytesRead );
 
 	if ( result != FR_OK )
@@ -161,7 +165,7 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 
 	// read data in one big chunk
 	u32 nBytesRead;
-	u8 rawCRT[ 1032 * 1024 ];
+	memset( rawCRT, 0, filesize );
 	result = f_read( &file, rawCRT, filesize, &nBytesRead );
 
 	if ( result != FR_OK )
@@ -547,7 +551,7 @@ int  getVIC20CRTFileStartEndAddr( CLogger *logger, const char *FILENAME, u32 *ad
 
 	// read data in one big chunk
 	u32 nBytesRead;
-	u8 rawCRT[ 1032 * 1024 ];
+	memset( rawCRT, 0, filesize );
 	result = f_read( &file, rawCRT, filesize, &nBytesRead );
 
 	if ( result != FR_OK )
@@ -699,7 +703,7 @@ void writeChanges2CRTFile( CLogger *logger, const char *DRIVE, const char *FILEN
 
 	// read data in one big chunk
 	u32 nBytesRead;
-	u8 rawCRT[ 1025 * 1024 ];
+	memset( rawCRT, 0, filesize );
 	result = f_read( &file, rawCRT, filesize, &nBytesRead );
 
 	if ( result != FR_OK )
