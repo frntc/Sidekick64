@@ -22,6 +22,7 @@
 ;    misrepresented as being the original software.
 ; 3. This notice may not be removed or altered from any source distribution.
 
+USB_READY  = $de09
 USB_DATA   = $de0a
 
 ; Align with commands.h
@@ -63,6 +64,18 @@ EAPICodeBase:
 .endmacro
 
 .macro receive_byte
+.local testReady1
+.local testReady2
+
+    testReady1:
+        ldx USB_READY
+        cpx #$c0
+        bne testReady1
+    testReady2:
+        ldx USB_READY
+        cpx #$c0
+        bne testReady2
+
         ldx USB_DATA
 .endmacro
 
