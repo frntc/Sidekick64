@@ -40,6 +40,9 @@
 #include "latch.h"
 #include "helpers.h"
 
+extern u8 tftSlideShowNImages;
+extern unsigned char tftSlideShow[ 240 * 240 * 2 * 32 ];
+
 extern u32 rgb( u32 r, u32 g, u32 b );
 extern void tftSendFramebuffer16BitImm();
 extern void tftUse12BitColor();
@@ -65,6 +68,7 @@ extern void tftInitImm( int rot = -1 );
 extern u32 rgb24to16( u32 r, u32 g, u32 b );
 extern int tftLoadTGA( const char *drive, const char *name, unsigned char *dst, int *imgWidth, int *imgHeight, int wantAlpha );
 extern int tftLoadBackgroundTGA( const char *drive, const char *name, int dither = 0 );
+extern int tftLoadSlideShowTGA( const char *drive, const char *name, int dither = 0 );
 extern void tftConvertFrameBuffer12Bit();
 extern void tftBlendRGBA( unsigned char *rgba, unsigned char *dst, int dither = 0 );
 extern void tftBlendRGBA( u32 r_, u32 g_, u32 b_, u32 a, unsigned char *dst, int dither );

@@ -99,6 +99,14 @@ void prepareOnReset( bool refresh = false )
 
 static u32 nBytesRead, stage;
 
+static u8 showSlideShow = 0;
+static u8 curSlideShowImage = 0;
+static u16 curPixelRow = 0;
+static u16 curCopyRow = 0;
+static u32 pauseSlideShow = 0;
+static u8 timeSlideShow[ 32 ];
+
+
 #ifdef COMPILE_MENU
 void KernelLaunchRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, bool hasData = false, u8 *prgDataExt = NULL, u32 prgSizeExt = 0, u32 c128PRG = 0, u32 playingPSID = 0, u8 noInitStartup = 0 )
 #else
@@ -129,15 +137,19 @@ void CKernelLaunch::Run( void )
 	#ifdef COMPILE_MENU
 	_playingPSID = playingPSID;
 
+	showSlideShow = 0;
+	tftSlideShowNImages = 0;
+
 	if ( screenType == 0 )
 	{
 		splashScreen( sidekick_launch_oled );
 	} else
 	if ( screenType == 1 )
 	{
-		char fn[ 1024 ];
+		char fn[ 1024 ];//, fnslide[ 1024*2 ];
 		// attention: this assumes that the filename ending is always ".crt"!
 		memset( fn, 0, 1024 );
+
 		strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
 		strcat( fn, ".tga" );
 
@@ -160,6 +172,25 @@ void CKernelLaunch::Run( void )
 			}
 
 			tftCopyBackground2Framebuffer();
+		}
+
+		memset( fn, 0, 1024 );
+		strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
+		strcat( fn, "-slideshow.tga" );
+
+		if ( tftLoadSlideShowTGA( DRIVE, fn ) && tftSlideShowNImages > 0 )
+		{
+			showSlideShow = 1;
+			curSlideShowImage = tftSlideShowNImages - 1;
+			curCopyRow = curPixelRow = 0;
+			pauseSlideShow = 0;
+
+			fn[ strlen( fn ) - 3 ] = 0;
+			strcat( fn, "time" );
+			u32 size = 0;
+			for ( u32 i = 0; i < 32; i++ )
+				timeSlideShow[ i ] = 10;
+			readFile( logger, DRIVE, fn, timeSlideShow, &size, 32 );
 		}
 
 		tftInitImm();
@@ -324,6 +355,36 @@ void CKernelLaunch::FIQHandler (void *pParam)
 					latchSetClear( 0, LATCH_RESET );
 				}
 			}
+			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
+			return;
+		} else
+		{
+			if ( showSlideShow )
+			{
+				if ( pauseSlideShow )
+				{
+					pauseSlideShow --;
+				} else
+				if ( bufferEmptyI2C() )
+				{
+					extern void setMultiplePixels( u32 x, u32 y, u32 nx, u32 ny, u16 *c );
+					setMultiplePixels( curCopyRow, 0, 0, 239, (u16 *)&tftSlideShow[ (curSlideShowImage * 240 + curCopyRow ) * 240 * 2 ] );
+
+					do {
+						curPixelRow ++;
+						if ( curPixelRow > 255 )
+						{
+							curPixelRow = 0;
+							pauseSlideShow = (u32)timeSlideShow[ tftSlideShowNImages - 1 - curSlideShowImage ] * 500000;
+							curSlideShowImage = ( curSlideShowImage + tftSlideShowNImages - 1 ) % tftSlideShowNImages;
+						} 
+						curCopyRow = flipByte( curPixelRow );
+					} while ( curCopyRow >= 240 );
+				}
+			}
+
+			prepareOutputLatch4Bit();
+			outputLatch();
 			OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 			return;
 		}

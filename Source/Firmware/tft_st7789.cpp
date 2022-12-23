@@ -591,7 +591,10 @@ unsigned char rgbChars[ 256 * 16 * 16 ];
 unsigned char tftBackground[ 240 * 240 * 2 ];
 unsigned char tftFrameBuffer[ 240 * 240 * 2 ];
 unsigned char tftFrameBuffer12Bit[ 240 * 240 * 3 / 2 ];
-unsigned char tempTGA[ 256 * 256 * 4 ];
+unsigned char tempTGA[ 256 * 256 * 4 ]; 
+
+u8 tftSlideShowNImages = 0;
+unsigned char tftSlideShow[ 240 * 240 * 2 * 32 ];
 
 #define DIRTY_SIZE 4
 unsigned char tftDirty[ (240/DIRTY_SIZE) * (240/DIRTY_SIZE) ];
@@ -801,6 +804,66 @@ int tftLoadBackgroundTGA( const char *drive, const char *name, int dither )
 
 	//tftCopyBackground2Framebuffer();
 	return 1;
+}
+
+
+// loads a 24/32-bit, uncompressed Targa file
+// height expected to be a multiple of 240
+int tftLoadSlideShowTGA( const char *drive, const char *name, int dither )
+{
+	tftSlideShowNImages = 0;
+
+	int imgWidth, imgHeight;
+
+	memset( tftSlideShow, 0, 240 * 240 * 32 * 2 );
+
+	u8 tga[ 256 * 256 * 4 * 32 ];
+	u32 size;
+	extern CLogger *logger;
+	if ( readFile( logger, (char*)drive, name, tga, &size ) )
+	{
+		unsigned char *type = &tga[ 0 ];
+		if ( type[ 1 ] != 0 || ( type[ 2 ] != 2 && type[ 2 ] != 3 ) )
+			return 0;
+
+		unsigned char *info = &tga[ 12 ];
+		imgWidth    = info[ 0 ] + info[ 1 ] * 256;
+		imgHeight   = info[ 2 ] + info[ 3 ] * 256;
+		int imgBits = info[ 4 ];
+
+		tftSlideShowNImages = imgHeight / 240;
+
+		if ( ( imgBits != 32 && imgBits != 24 ) || tftSlideShowNImages == 0 || imgWidth != 240 || (imgHeight % 240) != 0 )
+			return -1;
+
+		int bytesPerPixel = imgBits / 8;
+
+		size = imgWidth * imgHeight;
+
+		u32 yp = 0;
+		u32 ofs = 0;
+		for ( int j = 0; j < imgHeight; j++ )
+		{
+			u32 xp = 0;
+			for ( int i = 0; i < min( 240, imgWidth ) * bytesPerPixel; i += bytesPerPixel )
+			{
+				unsigned char *p = &tga[ i + 0 + 18 + j * imgWidth * bytesPerPixel ];
+
+				/*if ( dither )
+					for ( int c = 0; c < 3; c++ )
+						p[ c ] = ditherColor( p[ c ], i, j, dither );*/
+
+				u32 t = yp % 240;
+				u32 ny = yp - t + ( 239 - t);
+				ofs = ( xp + ny * 240 ) * 2;
+				*(unsigned short*)&tftSlideShow[ ofs ] = rgb24to16( p[2], p[1], p[0] );
+				xp ++;
+			}
+			yp ++;
+		}
+		return 1;
+	}
+	return 0;
 }
 
 

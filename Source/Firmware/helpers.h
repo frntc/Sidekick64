@@ -33,7 +33,7 @@
 #include <SDCard/emmc.h>
 #include <fatfs/ff.h>
 
-extern int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size );
+extern int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size, u32 maxSize = 0x7fffffff );
 extern int getFileSize( CLogger *logger, const char *DRIVE, const char *FILENAME, u32 *size );
 extern int writeFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 size );
 
@@ -260,5 +260,13 @@ C64IsRunning:																						\
 
 #define min(a,b) (((a)<(b))?(a):(b))
 #define max(a,b) (((a)>(b))?(a):(b))
+
+__attribute__( ( always_inline ) ) inline u8 flipByte( u8 x )
+{
+	u32 t;
+	asm volatile( "rbit %w0, %w1" : "=r" ( t ) : "r" ( x ) );	// flip all bits in 32-bit-DWORD
+	asm volatile( "rev  %w0, %w1" : "=r" ( t ) : "r" ( t ) );	// reverse 4 bytes in 32-bit-DWORD
+	return *(u8*)&t;
+}
 
 #endif

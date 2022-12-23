@@ -29,9 +29,11 @@
 #include "helpers.h"
 
 // file reading
-int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size )
+int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data, u32 *size, u32 maxSize )
 {
 	FATFS m_FileSystem;
+
+	*size = 0;
 
 	// mount file system
 	if ( f_mount( &m_FileSystem, DRIVE, 1 ) != FR_OK )
@@ -54,6 +56,9 @@ int readFile( CLogger *logger, const char *DRIVE, const char *FILENAME, u8 *data
 
 		return 0;
 	}
+
+	if ( filesize > maxSize )
+		filesize = maxSize;
 
 	*size = filesize;
 

@@ -459,6 +459,7 @@ static void KernelEFFIQHandler_Dinamic( void *pParam );
 static void KernelEFFIQHandler_SimonsBasic( void *pParam );
 static void KernelEFFIQHandler_Comal80( void *pParam );
 static void KernelEFFIQHandler_EpyxFL( void *pParam );
+static void KernelMDOnlyFIQHandler( void *pParam );
 
 #define LRU_CACHE_ENTRIES	16
 
@@ -501,6 +502,13 @@ static void checkForEyeOfTheBeholder()
 		}
 	}
 }
+
+static u8 showSlideShow = 0;
+static u8 curSlideShowImage = 0;
+static u16 curPixelRow = 0;
+static u16 curCopyRow = 0;
+static u32 pauseSlideShow = 0;
+static u8 timeSlideShow[ 32 ];
 
 static void KernelEFFIQHandler( void *pParam );
 void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr, const char *FILENAME_KERNAL = NULL )
@@ -555,6 +563,9 @@ void CKernelEF::Run( void )
 
 	checkForEyeOfTheBeholder();
 
+	showSlideShow = 0;
+	tftSlideShowNImages = 0;
+
 	#ifdef COMPILE_MENU
 	if ( screenType == 0 )
 	{
@@ -568,9 +579,11 @@ void CKernelEF::Run( void )
 	} else
 	if ( screenType == 1 )
 	{
+
 		char fn[ 1024 ];
 		// attention: this assumes that the filename ending is always ".crt"!
 		memset( fn, 0, 1024 );
+
 		strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
 		strcat( fn, ".tga" );
 
@@ -664,6 +677,25 @@ void CKernelEF::Run( void )
 			tftCopyBackground2Framebuffer();
 		}
 
+		memset( fn, 0, 1024 );
+		strncpy( fn, FILENAME, strlen( FILENAME ) - 4 );
+		strcat( fn, "-slideshow.tga" );
+
+		if ( tftLoadSlideShowTGA( DRIVE, fn ) && tftSlideShowNImages > 0 )
+		{
+			showSlideShow = 1;
+			curSlideShowImage = tftSlideShowNImages - 1;
+			curCopyRow = curPixelRow = 0;
+			pauseSlideShow = 0;
+
+			fn[ strlen( fn ) - 3 ] = 0;
+			strcat( fn, "time" );
+			u32 size = 0;
+			for ( u32 i = 0; i < 32; i++ )
+				timeSlideShow[ i ] = 10;
+			readFile( logger, DRIVE, fn, timeSlideShow, &size, 32 );
+		}
+
 		tftInitImm();
 		tftSendFramebuffer16BitImm( tftFrameBuffer );
 	} 
@@ -708,6 +740,10 @@ void CKernelEF::Run( void )
 		myHandler = KernelEFFIQHandler_EpyxFL;
 	if ( ef.bankswitchType == BS_SIMONSBASIC )
 		myHandler = KernelEFFIQHandler_SimonsBasic;
+
+
+	if ( ef.bankswitchType == BS_MAGICDESK )
+		myHandler = KernelMDOnlyFIQHandler;
 	#endif
 
 	if ( !isEyeOfTheBeholder )
@@ -2198,4 +2234,206 @@ void efPollingHandler()
 
 		OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static void KernelMDOnlyFIQHandler( void *pParam )
+{
+	register u32 D, addr;
+	register u8 *flashBankR = ef.flashBank;
+
+	// after this call we have some time (until signals are valid, multiplexers have switched, the RPi can/should read again)
+	START_AND_READ_ADDR0to7_RW_RESET_CS
+
+	// we got the A0..A7 part of the address which we will access
+	addr = GET_ADDRESS0to7 << 5;
+
+	CACHE_PRELOADL2STRM( &flashBankR[ addr * 2 ] );
+	UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
+
+	//
+	//
+	//
+	if ( ef.reg2 != 4 && VIC_HALF_CYCLE )
+	{
+		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+//		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
+//		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
+
+		addr |= GET_ADDRESS8to12;
+
+		if ( ROML_OR_ROMH_ACCESS )
+		{
+			// get both ROML and ROMH with one read
+			D = *(u32*)&flashBankR[ addr * 2 ];
+			if ( ROMH_ACCESS ) D >>= 8;
+			WRITE_D0to7_TO_BUS_VIC( D )
+			setLatchFIQ( LED_ROM_ACCESS );
+		} else
+		if ( IO2_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
+		{
+			WRITE_D0to7_TO_BUS_VIC( ef.ram[ GET_IO12_ADDRESS ] );
+			setLatchFIQ( LED_IO2 );
+		} else
+		if ( IO1_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
+		{
+			WRITE_D0to7_TO_BUS_VIC( easyflash_IO1_Read( GET_IO12_ADDRESS ) );
+			setLatchFIQ( LED_IO1 );
+		}
+
+		FINISH_BUS_HANDLING
+		return;
+	}  
+
+	ef.mainloopCount = 0;
+
+	// read the rest of the signals
+	WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+
+	// make our address complete
+	addr |= GET_ADDRESS8to12;
+
+	// VIC2 read during badline?
+	if ( ef.reg2 != 4 && VIC_BADLINE )
+	{
+		if ( !ef.LONGBOARD )
+			READ_ADDR8to12_ROMLH_IO12_BA
+
+		if ( ROMH_ACCESS ) 
+		{
+			if ( ef.bankswitchType == BS_MAGICDESK )
+				D = *(u32*)&flashBankR[ addr ]; else
+				D = *(u8*)&flashBankR[ addr * 2 + 1 ];
+			WRITE_D0to7_TO_BUS_BADLINE( D )
+		}
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+	//
+	// starting from here: CPU communication
+	//
+	if ( ef.reg2 != 4 && CPU_READS_FROM_BUS )
+	{
+		if ( ( ~g3 & ef.ROM_LH ) )
+		{
+			D = *(u32*)&flashBankR[ addr ];
+
+			WRITE_D0to7_TO_BUS( D )
+			setLatchFIQ( LED_ROM_ACCESS );
+			goto cleanup;
+		}
+	}
+
+	if ( ef.reg2 != 4 && CPU_WRITES_TO_BUS && IO1_ACCESS )
+	{
+		READ_D0to7_FROM_BUS( D )
+
+		if( GET_IO12_ADDRESS == 0 )
+		{
+			if ( !( D & 128 ) )
+			{
+				if ( ef.nBanks <= 64 )
+					ef.reg0 = (u8)( D & 63 ); else
+					ef.reg0 = (u8)( D & 127 ); 
+				ef.reg2 = 128 + 4 + 2; 
+			} else
+				ef.reg2 = 4 + 0;
+		}		
+
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 ];
+
+		// if the EF-ROM does not fit into the RPi's cache: stall the CPU with a DMA and prefetch the data
+		if ( !ef.flashFitsInCache )
+		{
+			WAIT_UP_TO_CYCLE( WAIT_TRIGGER_DMA ); 
+			CLR_GPIO( bDMA ); 
+			ef.releaseDMA = NUM_DMA_CYCLES;
+			prefetchHeuristic();
+		}
+
+		setGAMEEXROM();
+
+		setLatchFIQ( LED_IO1 );
+		goto cleanup;
+	}
+
+	// reset handling
+	if ( !( g2 & bRESET ) ) { ef.resetCounter ++; } else { ef.resetCounter = 0; }
+
+	if ( ef.resetCounter > 3 && ef.resetCounter < 0x8000000 )
+	{
+		ef.resetCounter = 0x8000000;
+		initEF();
+		SET_GPIO( bDMA ); 
+		FINISH_BUS_HANDLING
+		return;
+	}
+
+cleanup:
+
+	if ( ef.releaseDMA > 0 && --ef.releaseDMA == 0 )
+	{
+		WAIT_UP_TO_CYCLE( WAIT_RELEASE_DMA ); 
+		SET_GPIO( bDMA ); 
+	}
+
+	if ( ef.reg2 == 4 ) // cartridge disabled (like this because of my mapping of MD to EF)
+	{
+		if ( showSlideShow )
+		{
+			if ( pauseSlideShow )
+			{
+				pauseSlideShow --;
+			} else
+			if ( bufferEmptyI2C() )
+			{
+				extern void setMultiplePixels( u32 x, u32 y, u32 nx, u32 ny, u16 *c );
+				setMultiplePixels( curCopyRow, 0, 0, 239, (u16 *)&tftSlideShow[ (curSlideShowImage * 240 + curCopyRow ) * 240 * 2 ] );
+
+				do {
+					curPixelRow ++;
+					if ( curPixelRow > 255 )
+					{
+						curPixelRow = 0;
+						pauseSlideShow = (u32)timeSlideShow[ tftSlideShowNImages - 1 - curSlideShowImage ] * 500000 * 2;
+						curSlideShowImage = ( curSlideShowImage + tftSlideShowNImages - 1 ) % tftSlideShowNImages;
+					} 
+					curCopyRow = flipByte( curPixelRow );
+				} while ( curCopyRow >= 240 );
+			}
+		}
+
+		prepareOutputLatch4Bit();
+	}
+
+/*	if ( bufferEmptyI2C() )
+	{
+		if ( mode & 1 )
+			setLatchFIQ( LATCH_LED0 );
+		if (!( mode & 1 ))
+			setLatchFIQ( LATCH_LED1 );
+	}*/
+
+
+	//CLEAR_LEDS_EVERY_8K_CYCLES
+	static u32 cycleCount = 0;
+	if ( !((++cycleCount)&8191) )
+		clrLatchFIQ( LED_CLEAR );
+
+	OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 }
