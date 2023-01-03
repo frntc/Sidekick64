@@ -32,6 +32,8 @@
 #define CONSOLE_DEBUG
 
 u8 tempRAWCRTBuffer[ 1032 * 1024 ];
+u8 gmod2EEPROM[ 2048 ];
+u8 gmod2EEPROM_data;
 
 static u8 *rawCRT = tempRAWCRTBuffer;
 
@@ -192,6 +194,8 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 	{
 		logger->Write( "RaspiFlash", LogPanic, "no CRT file." );
 	}
+
+	gmod2EEPROM_data = 0;
 
 	readCRT( &header.length, 4 );
 	readCRT( &header.version, 2 );
@@ -432,16 +436,25 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 				{
 					nBytes = min( 8192, chip.rom_length );
 
-					if ( getRAW )
+					// EEPROM data, not really supported in .CRTs
+					if ( nBytes == 2048 && chip.bank == 0 && chip.adr == 0xde00 )
 					{
 						for ( register u32 i = 0; i < nBytes; i++ )
-							flash[ chip.bank * 8192 + i ] = crt[ i ];
+							gmod2EEPROM[ i ] = crt[ i ];
+						gmod2EEPROM_data = 1;
 					} else
 					{
-						for ( register u32 i = 0; i < nBytes; i++ )
+						if ( getRAW )
 						{
-							u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
-							flash[ chip.bank * 8192 + realAdr ] = crt[ i ];
+							for ( register u32 i = 0; i < nBytes; i++ )
+								flash[ chip.bank * 8192 + i ] = crt[ i ];
+						} else
+						{
+							for ( register u32 i = 0; i < nBytes; i++ )
+							{
+								u32 realAdr = ( ( i & 255 ) << 5 ) | ( ( i >> 8 ) & 31 );
+								flash[ chip.bank * 8192 + realAdr ] = crt[ i ];
+							}
 						}
 					}
 				}

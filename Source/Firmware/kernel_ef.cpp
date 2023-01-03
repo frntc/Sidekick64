@@ -791,7 +791,10 @@ void CKernelEF::Run( void )
 		extern CLogger *logger;
 		CACHE_PRELOAD_DATA_CACHE( m93c86_data, 2048, CACHE_PRELOADL1STRMW )
 		memset( m93c86_data, 0, 2048 );
-		readFile( logger, DRIVE, fn, m93c86_data, &size );
+		if ( !readFile( logger, DRIVE, fn, m93c86_data, &size ) && gmod2EEPROM_data )
+		{
+			memcpy( m93c86_data, gmod2EEPROM, min( 2048, M93C86_SIZE ) );
+		}
 	}
 
 	// wait forever
