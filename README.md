@@ -271,6 +271,15 @@ I added two videos showing life captures of the C64 screen where the RPi is used
 
 Be careful not to damage your RPi or 8-bit computer, or anything attached to it. I am not responsible if you or your hardware gets damaged. In principle, you can attach the RPi and other cartridges at the same time, as long as they do not conflict (e.g. in IO ranges or driving signals). I recommend to NOT do this. For example, using Sidekick64 and an Easyflash 3 will very likely destroy the EF3's CPLD. Again, I'm not taking any responsibility -- if you don't know what you're doing, better don't... use everything at your own risk.
 
+## Where did you get your Sidekick64? How to get one?
+
+You've built it yourself? Cool, this project is for tinkerers!
+
+If you can't build one yourself, there are official sellers of Sidekick64/RAD/SIDKick: www.restore-store.de (all three projects) and [www.retro-updates.com](http://www.retro-updates.com) (Sidekick64).
+
+*It is also perfectly fine and appreciated* if someone sells spare PCBs (populated or not) of a PCB-order or manufactures a small batch and offers them on a forum, but I expect the price tag to be lower than that of the aforementioned official sellers.
+
+If you bought a Sidekick64/RAD/SIDKick for the same price or even more, this clearly is a violation of the license and you should ask the seller why they are not respecting open source/CC developers' licenses.
   
 
 ## License
