@@ -167,7 +167,8 @@ void readCRTFile( CLogger *logger, CRT_HEADER *crtHeader, const char *DRIVE, con
 
 	// read data in one big chunk
 	u32 nBytesRead;
-	memset( rawCRT, 0, filesize );
+//	memset( rawCRT, 0, filesize );
+	memset( rawCRT, 0, 1032 * 1024 );
 	result = f_read( &file, rawCRT, filesize, &nBytesRead );
 
 	if ( result != FR_OK )

@@ -30,6 +30,7 @@
 #include <SDCard/emmc.h>
 #include <fatfs/ff.h>
 #include <circle/util.h>
+#include <circle/machineinfo.h>
 #include "lowlevel_arm64.h"
 #include "264config.h"
 #include "helpers.h"
@@ -205,6 +206,13 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 					{
 						screenType = 1;
 						screenRotation = 1;
+					}
+					if ( strstr( ptr, "ST7789_AUTOROTATE" ) )
+					{
+						screenType = 1;
+						CMachineInfo *m_pMachineInfo;
+						if ( m_pMachineInfo->Get()->GetMachineModel() == MachineModelZero2W )
+							screenRotation = 1;
 					}
 				}
 			}

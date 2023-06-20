@@ -267,6 +267,20 @@ __attribute__( ( always_inline ) ) inline u8 easyflash_IO1_Read( u32 addr )
 	return ( addr & 2 ) ? ef.reg2 : ef.reg0;
 }
 
+__attribute__( ( always_inline ) ) inline u8 easyflash_IO1_Read_NoUSB( u32 addr )
+{
+	if ( (addr & 0xff) == 0x09 ) // EF3 USB control 
+	{
+		return 0x40 + 0x80; // always ready
+	} 
+	if ( (addr & 0xff) == 0x0a ) // EF3 USB data 
+	{
+		return 0;
+	} 
+	return ( addr & 2 ) ? ef.reg2 : ef.reg0;
+}
+
+
 __attribute__( ( always_inline ) ) inline void easyflash_IO1_Write( u32 addr, u8 value )
 {
 	if ( (addr & 0xff) == 0x0a ) // EF3 USB data
@@ -286,7 +300,26 @@ __attribute__( ( always_inline ) ) inline void easyflash_IO1_Write( u32 addr, u8
 	}
 }
 
+__attribute__( ( always_inline ) ) inline void easyflash_IO1_Write_NoUSB( u32 addr, u8 value )
+{
+	if ( (addr & 0xff) == 0x0a ) // EF3 USB data
+	{
+		return;
+	}
+
+	if ( ( addr & 2 ) == 0 )
+	{
+		ef.reg0old = ef.reg0;
+		ef.reg0 = (u8)( value & EASYFLASH_BANK_MASK );
+		ef.flashBank = &ef.flash_cacheoptimized[ ef.reg0 * 8192 * 2 ];
+	} else
+	{
+		ef.reg2 = value & 0x87;
+	}
+}
+
 static u32 epyxDisable = 0;
+static u8 	gmod2FF = 1;
 
 void initEF()
 {
@@ -345,10 +378,9 @@ void initEF()
 
 	if ( ef.bankswitchType == BS_GMOD2 )
 	{
-		static int ff = 1;
-		if ( ff )
+		if ( gmod2FF )
 		{
-			ff = 0;
+			gmod2FF = 0;
 			ef.eeprom_cs = 0;
 			ef.eeprom_data = 0;
 			ef.eeprom_clock = 0;
@@ -363,6 +395,19 @@ void initEF()
 }
 
 
+// count = # of 4 byte tuples
+void FORCE_READ_LINEAR64_REG9( const u8 *src, int count )
+{
+	asm volatile (
+		"1: 							\n"
+		"ldr x9, [%[src]], #8 			\n"
+		"subs %[count], %[count], #8 	\n"
+		"bgt 1b 						\n"
+		: : [src] "r" (src), [count] "r" (count)
+		: "memory", "v0", "v1"
+	);
+}
+
 __attribute__( ( always_inline ) ) inline void prefetchHeuristic()
 {
 	//prefetchBank( ef.reg0, 1 );
@@ -376,8 +421,11 @@ __attribute__( ( always_inline ) ) inline void prefetchHeuristic()
 
 	// RPi 2 Zero
 	//FORCE_READ_LINEAR32_SKIP( ef.flashBank, 16384*4 )
+	
 	FORCE_READ_LINEAR64( ef.flashBank, 16384*2 )
 	FORCE_READ_LINEAR32( ef.ram, 256 )
+	//FORCE_READ_LINEAR64_REG9( ef.flashBank, 16384*2 );
+	//FORCE_READ_LINEAR64_REG9( (const u8*)ef.ram, 256 );
 
 	if ( ef.hasKernal )
 		CACHE_PRELOAD_DATA_CACHE( kernalROM, 8192, CACHE_PRELOADL2KEEP );
@@ -467,22 +515,26 @@ u8 lruCache[ LRU_CACHE_ENTRIES ];
 u8 lruCurPreloadSlot = 0;
 u32 lruPreloadAddr = 0;
 
-static u8 isEyeOfTheBeholder = 0;
+static u8 usePollingEFHandler = 0;
 
 
 // looks for parts of "The dwarf gasps out" and "Prince Keirgar"
 const u32 eobString1[] = { 0x64206568, 0x66726177, 0x73616720 };
 const u32 eobString2[] = { 0x65636e69, 0x69654b20, 0x72616772 };
 
-static void checkForEyeOfTheBeholder()
+// checking for "Prince of Persia"
+const u32 popString1[] = { 0x4e495270, 0x4f204543, 0x45702046, 0x41495352 }; // pRINCE OF pERSIA
+const u32 popString2[] = { 0x124d202d, 0x4449532e };
+
+static void checkForEOTB_POP()
 {
 	extern u8 tempRAWCRTBuffer[ 1032 * 1024 ];
 
-	isEyeOfTheBeholder = 0;
+	usePollingEFHandler = 0;
 
 	u32 *r = (u32*)&tempRAWCRTBuffer[ 0 ];
 
-	u8 s1 = 0, s2 = 0;
+	u8 s1 = 0, s2 = 0, s3 = 0, s4 = 0;
 
 	for ( int i = 0; i < 512 * 1024 / 4; i ++ )
 	{
@@ -495,13 +547,23 @@ static void checkForEyeOfTheBeholder()
 			 r[ i+2 ] == eobString2[ 2 ] )
 			s2 = 1;
 
-		if ( s1 && s2 )
+		if ( r[ i   ] == popString1[ 0 ] &&
+			 r[ i+1 ] == popString1[ 1 ] &&
+			 r[ i+2 ] == popString1[ 2 ] &&
+			 r[ i+3 ] == popString1[ 3 ] )
+			s3 = 1;
+		if ( r[ i   ] == popString2[ 0 ] &&
+			 r[ i+1 ] == popString2[ 1 ] )
+			s4 = 1;
+
+		if ( ( s1 && s2 ) || ( s3 && s4 ) )
 		{
-			isEyeOfTheBeholder = 1;
+			usePollingEFHandler = 1;
 			return;
 		}
 	}
 }
+
 
 static u8 showSlideShow = 0;
 static u8 curSlideShowImage = 0;
@@ -510,12 +572,29 @@ static u16 curCopyRow = 0;
 static u32 pauseSlideShow = 0;
 static u8 timeSlideShow[ 32 ];
 
+void initEFGlobals()
+{
+	usePollingEFHandler = 0;
+	showSlideShow = 0;
+	curSlideShowImage = 0;
+	curPixelRow = 0;
+	curCopyRow = 0;
+	pauseSlideShow = 0;
+	lruCurPreloadSlot = 0;
+	lruPreloadAddr = 0;
+	irqFallingEdge = true;
+	epyxDisable = 0;
+ 	gmod2FF = 1;
+}
+
 static void KernelEFFIQHandler( void *pParam );
 void KernelEFRun( CGPIOPinFIQ m_InputPin, CKernelMenu *kernelMenu, const char *FILENAME, const char *menuItemStr, const char *FILENAME_KERNAL = NULL )
 #else
 void CKernelEF::Run( void )
 #endif
 {
+	initEFGlobals();
+
 	// initialize latch and software I2C buffer
 	initLatch();
 
@@ -561,7 +640,8 @@ void CKernelEF::Run( void )
 			ef.flash_cacheoptimized[ ADDR_LINEAR2CACHE(EAPI_OFFSET+i) * 2 + 1 ] = eapiC64Code[ i ];
 	}
 
-	checkForEyeOfTheBeholder();
+	checkForEOTB_POP();
+	//usePollingEFHandler = 1;// only for testing
 
 	showSlideShow = 0;
 	tftSlideShowNImages = 0;
@@ -746,7 +826,7 @@ void CKernelEF::Run( void )
 		myHandler = KernelMDOnlyFIQHandler;
 	#endif
 
-	if ( !isEyeOfTheBeholder )
+	if ( !usePollingEFHandler )
 		m_InputPin.ConnectInterrupt( myHandler, FIQ_PARENT );
 
 	// different timing C64-longboards and C128 compared to 469-boards
@@ -754,7 +834,7 @@ void CKernelEF::Run( void )
 	if ( modeC128 || modeVIC == 0 )
 		ef.LONGBOARD = 1; 
 
-	if ( !isEyeOfTheBeholder )
+	if ( !usePollingEFHandler )
 		m_InputPin.EnableInterrupt ( GPIOInterruptOnRisingEdge );
 
 	irqFallingEdge = true;
@@ -762,7 +842,7 @@ void CKernelEF::Run( void )
 	if ( ef.bankswitchType == BS_C64GS || ef.bankswitchType == BS_GMOD2 || ef.bankswitchType == BS_OCEAN || ef.bankswitchType == BS_HUCKY || ef.bankswitchType == BS_RGCD || ef.bankswitchType == BS_COMAL80 || ef.bankswitchType == BS_FUNPLAY || ef.bankswitchType == BS_EPYXFL || ef.bankswitchType == BS_SIMONSBASIC || ef.bankswitchType == BS_DINAMIC )
 		irqFallingEdge = false;
 
-	if ( !isEyeOfTheBeholder )
+	if ( !usePollingEFHandler )
 	{
 		if ( irqFallingEdge )
 			m_InputPin.EnableInterrupt2( GPIOInterruptOnFallingEdge );
@@ -824,7 +904,7 @@ void CKernelEF::Run( void )
 
 	ef.c64CycleCount = ef.resetCounter2 = 0;
 
-	if ( isEyeOfTheBeholder )
+	if ( usePollingEFHandler )
 	{
 		void efPollingHandler();
 		void initLRUCache();
@@ -842,8 +922,9 @@ void CKernelEF::Run( void )
 
 		for ( int j = 0; j < nLRUInit; j++ )
 		{
-			void addLRUCache( u8 k );
-			addLRUCache( lruInit[ j ] );
+			//void addLRUCache( u8 k );
+			//addLRUCache( lruInit[ j ] );
+			lruCache[ nLRUInit - j - 1 ] = lruInit[ j ];
 			CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruInit[ j ] * 16384 ], 16384, CACHE_PRELOADL2KEEP )
 			FORCE_READ_LINEAR64( &ef.flash_cacheoptimized[ lruInit[ j ] * 16384 ], 16384 )
 			CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruInit[ j ] * 16384 ], 16384, CACHE_PRELOADL2KEEP )
@@ -1952,7 +2033,7 @@ void initLRUCache()
 		lruCache[ i ] = 0xff;
 }
 
-u8 isInLRUCache( u8 k )
+__attribute__( ( always_inline ) ) inline u8 isInLRUCache( u8 k )
 {
 	for ( int i = 0; i < LRU_CACHE_ENTRIES; i ++ )
 		if ( lruCache[ i ] == k )
@@ -1961,7 +2042,7 @@ u8 isInLRUCache( u8 k )
 	return 0;
 }
 
-void addLRUCache( u8 k )
+__attribute__( ( always_inline ) ) inline void addLRUCache( u8 k )
 {
 	for ( int i = LRU_CACHE_ENTRIES - 1; i > 0; i -- )
 		lruCache[ i ] = lruCache[ i - 1 ];
@@ -1969,7 +2050,7 @@ void addLRUCache( u8 k )
 	lruCache[ 0 ] = k;
 }
 
-u8 addOrMoveFrontLRUCache( u8 k )
+__attribute__( ( always_inline ) ) inline u8 addOrMoveFrontLRUCache( u8 k )
 {
 	u8 pos = isInLRUCache( k );
 	if ( pos == 0 )
@@ -1980,18 +2061,91 @@ u8 addOrMoveFrontLRUCache( u8 k )
 	if ( pos > 1 ) // = in cache, but not at front-most position
 	{
 		pos -= 1;
-		u8 t = lruCache[ 0 ];
+		for ( int i = pos; i > 0; i -- )
+			lruCache[ i ] = lruCache[ i - 1 ];
+		lruCache[ 0 ] = k;
+
+		/*u8 t = lruCache[ 0 ];
 		lruCache[ 0 ] = lruCache[ pos ];
-		lruCache[ pos ] = t;
+		lruCache[ pos ] = t;*/
 	} 
 	return 0;
 }
+
+//#define FORCE_READ_LINEAR64_REG( p, size ) {				\
+//		for ( register u32 i = 0; i < size/8; i++ )			\
+//			forceRead = ((u64*)p)[ i ];						\
+//	}
+
+void add_float_neon3(float* dst, float* src1, float* src2, int count)
+{
+asm volatile (
+"1: \n"
+"ld1 {v0.4s}, [%[src1]], #16 \n"
+"ld1 {v1.4s}, [%[src2]], #16 \n"
+"fadd v0.4s, v0.4s, v1.4s \n"
+"subs %[count], %[count], #4 \n"
+"st1 {v0.4s}, [%[dst]], #16 \n"
+"bgt 1b \n"
+: [dst] "+r" (dst)
+: [src1] "r" (src1), [src2] "r" (src2), [count] "r" (count)
+: "memory", "v0", "v1"
+);
+}
+
+// count = # of 4 byte tuples
+void FORCE_READ_LINEAR64_REG( const u8 *src, int count )
+{
+	asm volatile (
+		"1: 							\n"
+		"ldr x9, [%[src]], #8 			\n"
+		"subs %[count], %[count], #8 	\n"
+		"bgt 1b 						\n"
+		: : [src] "r" (src), [count] "r" (count)
+		: "memory", "v0", "v1"
+	);
+}
+
+
 
 void efPollingHandler()
 {
 	register u32 g2, g3;
 	register u32 rs2 = 0;
-	
+
+
+	u32 _POLL_FOR_SIGNALS_VIC = POLL_FOR_SIGNALS_VIC;
+	u32 _POLL_FOR_SIGNALS_CPU = POLL_FOR_SIGNALS_CPU;
+	u32 _POLL_CYCLE_MULTIPLEXER_VIC = POLL_CYCLE_MULTIPLEXER_VIC; 
+	u32 _POLL_CYCLE_MULTIPLEXER_CPU = POLL_CYCLE_MULTIPLEXER_CPU;
+	u32 _POLL_READ = POLL_READ;
+	u32 _POLL_READ_VIC2 = POLL_READ_VIC2;
+	u32 _POLL_WAIT_CYCLE_WRITEDATA = POLL_WAIT_CYCLE_WRITEDATA;
+	u32 _POLL_TRIGGER_DMA = POLL_TRIGGER_DMA;
+	u32 _POLL_RELEASE_DMA = POLL_RELEASE_DMA;
+
+	const u32 _POLL_OFFSET_CPU_HALFCYCLE = 650*0;
+
+// PAL
+/*
+const u32 ofs = 20;
+const u32 _POLL_READ = 441+ofs;
+const u32 _POLL_READ_VIC2 = 413 + ofs;
+const u32 _POLL_WAIT_CYCLE_WRITEDATA = 436 + ofs;
+*/
+/*const u32 ofs = 120; // 50 doesnt work, 120 has been chosen for PAL, 170 still works for NTSC => not critical it seems
+const u32 _POLL_READ = 430+ofs - 100;
+const u32 _POLL_READ_VIC2 = 393 + ofs - 100;
+const u32 _POLL_WAIT_CYCLE_WRITEDATA = 420 + ofs - 100;
+const u32 _POLL_TRIGGER_DMA = 475; // must not be larger!?
+const u32 _POLL_RELEASE_DMA = 475;*/
+//auf jeden fall auch das trigger-dma-delay wieder testen!
+
+	latchSetClearImm( LATCH_RESET | LED_INIT2_HIGH, LED_INIT2_LOW );
+
+	CACHE_PRELOADL1KEEP( (u64)&lruCache&~63 );
+	CACHE_PRELOADL1KEEP( ((u64)&lruCache&~63)+64 );
+
 	while ( 1 )
 	{
 		register u32 D, addr;
@@ -2002,27 +2156,38 @@ void efPollingHandler()
 
 		u8 lruCurPreloadBank = lruCache[ lruCurPreloadSlot ];
 
+		/*static u16 preLoadIC = 0;
+		CACHE_PRELOAD_INSTRUCTION_CACHE( (u8*)efPollingHandler + preLoadIC, 64 )
+		preLoadIC += 64;
+		preLoadIC %= 4096;*/
+
+		//
+		// VIC half-cycle
+		//
 		WAIT_FOR_VIC_HALFCYCLE
-
 		BEGIN_CYCLE_COUNTER
-		WAIT_UP_TO_CYCLE( WAIT_FOR_SIGNALS + 40-20 );
+
+		WAIT_UP_TO_CYCLE( _POLL_FOR_SIGNALS_VIC );
 		g2 = read32( ARM_GPIO_GPLEV0 );
+
+		addr = GET_ADDRESS0to7 << (5+1);
+		//CACHE_PRELOADL2KEEP( &flashBankR[ addr ] ); don't do this!
+
 		write32( ARM_GPIO_GPSET0, bCTRL257 );
+		//CACHE_PRELOADL1KEEP( &ef.ram[ (GET_IO12_ADDRESS)&~63 ] ); don't do this!
 
-		addr = GET_ADDRESS0to7 << 5;
-
-		WAIT_UP_TO_CYCLE( WAIT_CYCLE_MULTIPLEXER + 40-20 );
+		WAIT_UP_TO_CYCLE( _POLL_CYCLE_MULTIPLEXER_VIC );
 		g3 = read32( ARM_GPIO_GPLEV0 );					
+		CLR_GPIO( bCTRL257 ); 
 
-		addr |= GET_ADDRESS8to12;
-		
-		if ( !VIC_BADLINE && ( ROML_OR_ROMH_ACCESS || IO1_ACCESS || IO2_ACCESS ) )
+		addr |= GET_ADDRESS8to12 << 1;
+
+		if ( ROML_OR_ROMH_ACCESS || IO1_ACCESS || IO2_ACCESS )
 		{
 			if ( ROML_OR_ROMH_ACCESS )
 			{
-				// get both ROML and ROMH with one read
-				D = *(u16*)&flashBankR[ addr * 2 ];
-				if ( ROMH_ACCESS ) D >>= 8;
+				if ( ROMH_ACCESS ) addr ++;
+				D = flashBankR[ addr ];
 			} else
 			if ( IO2_ACCESS )
 			{
@@ -2030,21 +2195,28 @@ void efPollingHandler()
 			} else
 			//if ( IO1_ACCESS )
 			{
-				D = easyflash_IO1_Read( GET_IO12_ADDRESS );
+				D = easyflash_IO1_Read_NoUSB( GET_IO12_ADDRESS );
 			} 
-			WRITE_D0to7_TO_BUS( D );
-			FINISH_BUS_HANDLING
+
+			//register u32 DD = ( (D) & 255 ) << D0;
+			D <<= D0;
+			write32( ARM_GPIO_GPSET0, D  );
+			write32( ARM_GPIO_GPCLR0, (D_FLAG & ( ~D )) | (1 << GPIO_OE) | bCTRL257 );
+			WAIT_UP_TO_CYCLE( _POLL_READ_VIC2 );
+			write32( ARM_GPIO_GPSET0, (1 << GPIO_OE) );
 		} else
 		{
 			write32( ARM_GPIO_GPCLR0, bCTRL257 );
 			if ( lruCurPreloadBank != 0xff )
 			{
 				u8 *curPrefetchAddr = &ef.flash_cacheoptimized[ lruCurPreloadBank * 16384 + lruPreloadAddr ];
-				FORCE_READ_LINEAR64( curPrefetchAddr, PRELOAD_BUCKET_SIZE )
+				FORCE_READ_LINEAR64_REG( curPrefetchAddr, PRELOAD_BUCKET_SIZE );
 
 				u8 nextPreloadSlot = ( lruCurPreloadSlot + 1 ) % LRU_CACHE_ENTRIES;
 				u8 lruNextPreloadBank = lruCache[ nextPreloadSlot ];
 				CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruNextPreloadBank * 16384 + lruPreloadAddr ], PRELOAD_BUCKET_SIZE, CACHE_PRELOADL2KEEP )
+
+				//CACHE_PRELOAD_DATA_CACHE( &flashBankR[ lruPreloadAddr ], PRELOAD_BUCKET_SIZE, CACHE_PRELOADL2KEEP )
 
 				lruPreloadAddr += PRELOAD_BUCKET_SIZE;
 				if ( lruPreloadAddr >= 16384 )
@@ -2055,22 +2227,22 @@ void efPollingHandler()
 			} else
 				lruCurPreloadSlot = ( lruCurPreloadSlot + 1 ) % LRU_CACHE_ENTRIES;
 		}
-
+		//
+		// CPU half-cycle
+		//
 		WAIT_FOR_CPU_HALFCYCLE
-
-		// after this call we have some time (until signals are valid, multiplexers have switched, the RPi can/should read again)
 		RESTART_CYCLE_COUNTER
-		WAIT_UP_TO_CYCLE( WAIT_FOR_SIGNALS + 40 );
+		WAIT_UP_TO_CYCLE( _POLL_OFFSET_CPU_HALFCYCLE+_POLL_FOR_SIGNALS_CPU );
 		g2 = read32( ARM_GPIO_GPLEV0 );
 		write32( ARM_GPIO_GPSET0, bCTRL257 );
 
 		// we got the A0..A7 part of the address which we will access
-		addr = GET_ADDRESS0to7 << 5;
+		addr = GET_ADDRESS0to7 << (5+1);
+		//CACHE_PRELOADL2KEEP( &flashBankR[ addr ] ); don't do this!
 
-		CACHE_PRELOADL1STRM( &flashBankR[ addr * 2 ] );
 		static u8 plRAM = 0;
-		CACHE_PRELOADL1KEEP( &ef.ram[ plRAM ] );
-		plRAM += 64; plRAM &= 255;
+		//CACHE_PRELOADL1KEEP( &ef.ram[ plRAM ] ); don't do this!
+		plRAM += 64; //plRAM &= 255;
 
 		UPDATE_COUNTERS_MIN( ef.c64CycleCount, ef.resetCounter2 )
 
@@ -2079,123 +2251,104 @@ void efPollingHandler()
 		if ( ef.c64CycleCount == 150000 )
 			latchSetClearImm( LED_INIT2_HIGH, LATCH_RESET | LED_INIT2_LOW );
 
-	//	if ( modeC128 && VIC_HALF_CYCLE )
-	//		WAIT_CYCLE_MULTIPLEXER += 15;
-		
 		ef.mainloopCount = 0;
 
 		// read the rest of the signals
-		//WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
-		// +35, +25 works, +70 not
-		WAIT_UP_TO_CYCLE( WAIT_CYCLE_MULTIPLEXER + 40 );
+		WAIT_UP_TO_CYCLE( _POLL_OFFSET_CPU_HALFCYCLE+_POLL_CYCLE_MULTIPLEXER_CPU );
 		g3 = read32( ARM_GPIO_GPLEV0 );					
 
-//40 170
-//120 235
-
-	//	if ( modeC128 && VIC_HALF_CYCLE )
-	//		WAIT_CYCLE_MULTIPLEXER -= 15;
-
 		// make our address complete
-		addr |= GET_ADDRESS8to12;
+		addr |= GET_ADDRESS8to12 << 1;
+		CLR_GPIO( bCTRL257 ); 
 
 		//
 		// starting from here: CPU communication
 		//
-		if ( CPU_READS_FROM_BUS )
+		if ( CPU_READS_FROM_BUS && ( ROML_OR_ROMH_ACCESS || IO1_ACCESS || IO2_ACCESS ) )
 		{
-			if ( ( ~g3 & ef.ROM_LH ) )
+			if ( ROML_OR_ROMH_ACCESS )
 			{
-				D = *(u16*)&flashBankR[ addr * 2 ];
-				if ( ROMH_ACCESS )
-					D >>= 8; 
-
-				WRITE_D0to7_TO_BUS( D )
-				setLatchFIQ( LED_ROM_ACCESS );
 				lastEFAddr = addr;
+				if ( ROMH_ACCESS ) addr ++;
+				D = flashBankR[ addr ];
+			} else
+			if ( IO2_ACCESS )
+			{
+				D = ef.ram[ GET_IO12_ADDRESS ];
+			} else
+			//if ( IO1_ACCESS )
+			{
+				D = easyflash_IO1_Read_NoUSB( GET_IO12_ADDRESS );
+			} 
+			//setLatchFIQ( LED_ROM_ACCESS );
+			D <<= D0;
+			write32( ARM_GPIO_GPSET0, D  );
+			write32( ARM_GPIO_GPCLR0, (D_FLAG & ( ~D )) | (1 << GPIO_OE) | bCTRL257 );
+			WAIT_UP_TO_CYCLE( _POLL_OFFSET_CPU_HALFCYCLE+_POLL_READ );
+			write32( ARM_GPIO_GPSET0, (1 << GPIO_OE) );
 
+			goto cleanup;
+		}
+
+		if ( CPU_WRITES_TO_BUS && (IO1_ACCESS || IO2_ACCESS) )
+		{
+			SET_BANK2_INPUT															
+			write32( ARM_GPIO_GPCLR0, (1 << GPIO_OE) | bCTRL257 );					
+			WAIT_UP_TO_CYCLE( _POLL_OFFSET_CPU_HALFCYCLE+_POLL_WAIT_CYCLE_WRITEDATA );								
+			D = ( read32( ARM_GPIO_GPLEV0 ) >> D0 ) & 255;							
+			write32( ARM_GPIO_GPSET0, 1 << GPIO_OE );								
+			SET_BANK2_OUTPUT	
+
+			if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
+			{
+				// easyflash register in IO1
+				u8 *oldBank = ef.flashBank;
+				easyflash_IO1_Write_NoUSB( GET_IO12_ADDRESS, D );
+
+				if ( ( GET_IO12_ADDRESS & 2 ) == 0 && oldBank != ef.flashBank )
+				{
+					u8 newBank = ef.reg0 & 63;
+					//u32 evictBank = lruCache[ LRU_CACHE_ENTRIES - 1 ];
+					u8 requiresPreload = addOrMoveFrontLRUCache( newBank );
+
+					if ( requiresPreload )
+					{
+						WAIT_UP_TO_CYCLE( _POLL_OFFSET_CPU_HALFCYCLE+_POLL_TRIGGER_DMA );
+						CLR_GPIO( bDMA );
+						ef.releaseDMA = 4 + 6;
+
+						//#define CACHE_INVALIDATE( ptr )	{ asm volatile ("dc ivac, %0" :: "r" (ptr)); } // dc ivac oder dc isw
+						//if ( evictBank != 0xff )
+						//for ( int i = 0; i < 16384; i += 64 )
+						//	CACHE_INVALIDATE( &ef.flashBank[ evictBank * 16384 + i ] );
+
+						CACHE_PRELOAD_DATA_CACHE( &ef.flashBank[ lastEFAddr & ~63 ], 512 * 8, CACHE_PRELOADL2KEEP )
+						CACHE_PRELOAD_DATA_CACHE( ef.flashBank, PRELOAD_TOTAL_SIZE, CACHE_PRELOADL2KEEP )
+						
+						FORCE_READ_LINEAR64_REG( &ef.flashBank[ lastEFAddr & ~63 ], 512 * 8 );
+						FORCE_READ_LINEAR64_REG( &ef.flashBank[ 0 ], 16384 );
+
+						lruCurPreloadSlot = 1;
+						lruPreloadAddr = 0;
+
+						u8 lruCurPreloadBank = lruCache[ lruCurPreloadSlot ];
+						CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruCurPreloadBank * 16384 ], PRELOAD_TOTAL_SIZE, CACHE_PRELOADL2KEEP )
+
+						//asm volatile ("dsb ish" ::);
+					}
+				} else 
+					setGAMEEXROM();
+
+				//setLatchFIQ( LED_IO1 );
 				goto cleanup;
-			}
+			} 
 
 			if ( IO2_ACCESS )
 			{
-				WRITE_D0to7_TO_BUS( ef.ram[ GET_IO12_ADDRESS ] )
-				setLatchFIQ( LED_IO2 );
+				ef.ram[ GET_IO12_ADDRESS ] = D;
+				//setLatchFIQ( LED_IO2 );
 				goto cleanup;
 			}
-
-			if ( IO1_ACCESS )
-			{
-				WRITE_D0to7_TO_BUS( easyflash_IO1_Read( GET_IO12_ADDRESS ) )
-				setLatchFIQ( LED_IO1 );
-				goto cleanup;
-			}
-		}
-
-		if ( CPU_WRITES_TO_BUS && IO1_ACCESS )
-		{
-			READ_D0to7_FROM_BUS( D )
-
-			// easyflash register in IO1
-			u8 *oldBank = ef.flashBank;
-			easyflash_IO1_Write( GET_IO12_ADDRESS, D );
-
-			if ( ( GET_IO12_ADDRESS & 2 ) == 0 && oldBank != ef.flashBank )
-			{
-				u8 newBank = ef.reg0;
-
-				/*u8 allFull = 1;
-
-				for ( int i = 0; i < LRU_CACHE_ENTRIES; i ++ )
-					if ( lruCache[ i ] == 0xff )
-						allFull = 0;
-				if ( allFull )
-				{
-					writeFile( logger, DRIVE, "firstcacheeob.bin", lruCache, 16 );
-					return;
-				}*/
-
-				u8 requiresPreload = addOrMoveFrontLRUCache( newBank );
-
-				if ( requiresPreload )
-				{
-					CLR_GPIO( bDMA ); 
-					// (4-1) cycles seem to be enough, 10 would be super-safe
-					ef.releaseDMA = 4 + 6;
-
-					if ( ef.c64CycleCount < 500000 )
-						ef.releaseDMA += 20;
-
-					for ( int i = 0; i < 32; i++ )
-						CACHE_PRELOADL1STRM( &oldBank[ lastEFAddr + ( i << 6 ) ] );
-
-					CACHE_PRELOAD_DATA_CACHE( ef.flashBank, PRELOAD_TOTAL_SIZE, CACHE_PRELOADL2KEEP )
-					
-					__attribute__((unused)) volatile u64 forceRead;
-					for ( int i = 0; i < 32; i++ )
-						forceRead = ((u64*)&oldBank[ lastEFAddr + ( i << 6 ) ])[ 0 ];
-
-					FORCE_READ_LINEAR64( &ef.flashBank[ 0 ], 16384 )
-
-					lruCurPreloadSlot = 1;
-					lruPreloadAddr = 0;
-
-					u8 lruCurPreloadBank = lruCache[ lruCurPreloadSlot ];
-					CACHE_PRELOAD_DATA_CACHE( &ef.flash_cacheoptimized[ lruCurPreloadBank * 16384 ], PRELOAD_TOTAL_SIZE, CACHE_PRELOADL2KEEP )
-				}
-			} else 
-				setGAMEEXROM();
-
-			setLatchFIQ( LED_IO1 );
-			goto cleanup;
-		}
-
-		if ( CPU_WRITES_TO_BUS && IO2_ACCESS )
-		{
-			READ_D0to7_FROM_BUS( D )
-			ef.ram[ GET_IO12_ADDRESS ] = D;
-			setLatchFIQ( LED_IO2 );
-			goto cleanup;
 		}
 
 		// reset handling: when button #2 is pressed together with #1 then the EF ram is erased, DMA is released as well
@@ -2203,6 +2356,7 @@ void efPollingHandler()
 		{ 
 			ef.resetCounter ++; 
 			rs2 ++;
+			if ( rs2 > 500000 ) latchSetClearImm( LATCH_LED0to1, 0 );
 		} else 
 		{ 
 			if ( rs2 > 500000 ) return; 
@@ -2222,36 +2376,18 @@ void efPollingHandler()
 			continue;
 		}
 
-	cleanup:
-
 		if ( ef.releaseDMA > 0 && --ef.releaseDMA == 0 )
 		{
-			WAIT_UP_TO_CYCLE( WAIT_RELEASE_DMA ); 
+			write32( ARM_GPIO_GPCLR0, bCTRL257 );
+			WAIT_UP_TO_CYCLE( _POLL_OFFSET_CPU_HALFCYCLE+_POLL_RELEASE_DMA ); 
 			SET_GPIO( bDMA ); 
 		}
 
-		//CLEAR_LEDS_EVERY_8K_CYCLES
-		static u32 cycleCount = 0;
-		if ( !((++cycleCount)&8191) )
-			clrLatchFIQ( LED_CLEAR );
+	cleanup:
 
 		OUTPUT_LATCH_AND_FINISH_BUS_HANDLING
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 static void KernelMDOnlyFIQHandler( void *pParam )
@@ -2271,36 +2407,42 @@ static void KernelMDOnlyFIQHandler( void *pParam )
 	//
 	//
 	//
-	if ( ef.reg2 != 4 && VIC_HALF_CYCLE )
+	if ( VIC_HALF_CYCLE )
 	{
-		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
-//		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
-//		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
+		if ( ef.reg2 != 4 && VIC_HALF_CYCLE )
+		{
+			WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA
+	//		READ_ADDR0to7_RW_RESET_CS_AND_MULTIPLEX
+	//		WAIT_AND_READ_ADDR8to12_ROMLH_IO12_BA_VIC2
 
-		addr |= GET_ADDRESS8to12;
+			addr |= GET_ADDRESS8to12;
 
-		if ( ROML_OR_ROMH_ACCESS )
-		{
-			// get both ROML and ROMH with one read
-			D = *(u32*)&flashBankR[ addr * 2 ];
-			if ( ROMH_ACCESS ) D >>= 8;
-			WRITE_D0to7_TO_BUS_VIC( D )
-			setLatchFIQ( LED_ROM_ACCESS );
-		} else
-		if ( IO2_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
-		{
-			WRITE_D0to7_TO_BUS_VIC( ef.ram[ GET_IO12_ADDRESS ] );
-			setLatchFIQ( LED_IO2 );
-		} else
-		if ( IO1_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
-		{
-			WRITE_D0to7_TO_BUS_VIC( easyflash_IO1_Read( GET_IO12_ADDRESS ) );
-			setLatchFIQ( LED_IO1 );
+			if ( ROML_OR_ROMH_ACCESS )
+			{
+				// get both ROML and ROMH with one read
+				D = *(u32*)&flashBankR[ addr * 2 ];
+				if ( ROMH_ACCESS ) D >>= 8;
+				WRITE_D0to7_TO_BUS_VIC( D )
+				setLatchFIQ( LED_ROM_ACCESS );
+			} else
+			if ( IO2_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
+			{
+				WRITE_D0to7_TO_BUS_VIC( ef.ram[ GET_IO12_ADDRESS ] );
+				setLatchFIQ( LED_IO2 );
+			} else
+			if ( IO1_ACCESS && ( ef.bankswitchType == BS_EASYFLASH ) )
+			{
+				WRITE_D0to7_TO_BUS_VIC( easyflash_IO1_Read( GET_IO12_ADDRESS ) );
+				setLatchFIQ( LED_IO1 );
+			}
+			FINISH_BUS_HANDLING
+			return;
 		}
 
 		FINISH_BUS_HANDLING
 		return;
 	}  
+
 
 	ef.mainloopCount = 0;
 
@@ -2330,9 +2472,9 @@ static void KernelMDOnlyFIQHandler( void *pParam )
 	//
 	// starting from here: CPU communication
 	//
-	if ( ef.reg2 != 4 && CPU_READS_FROM_BUS )
+	if ( ef.reg2 != 4 && CPU_READS_FROM_BUS && ROML_ACCESS )
 	{
-		if ( ( ~g3 & ef.ROM_LH ) )
+		//if ( ( ~g3 & ef.ROM_LH ) )
 		{
 			D = *(u32*)&flashBankR[ addr ];
 
@@ -2342,7 +2484,8 @@ static void KernelMDOnlyFIQHandler( void *pParam )
 		}
 	}
 
-	if ( ef.reg2 != 4 && CPU_WRITES_TO_BUS && IO1_ACCESS )
+	// MD does not disable IO1 reading!
+	if ( /*ef.reg2 != 4 && */CPU_WRITES_TO_BUS && IO1_ACCESS )
 	{
 		READ_D0to7_FROM_BUS( D )
 

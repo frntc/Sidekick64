@@ -30,6 +30,7 @@
 #include <SDCard/emmc.h>
 #include <fatfs/ff.h>
 #include <circle/util.h>
+#include <circle/machineinfo.h>
 #include "lowlevel_arm64.h"
 #include "config.h"
 #include "helpers.h"
@@ -295,6 +296,13 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 						screenType = 1;
 						screenRotation = 1;
 					}
+					if ( strstr( ptr, "ST7789_AUTOROTATE" ) )
+					{
+						screenType = 1;
+						CMachineInfo *m_pMachineInfo;
+						if ( m_pMachineInfo->Get()->GetMachineModel() == MachineModelZero2W )
+							screenRotation = 1;
+					}
 				}
 			}
 		}
@@ -310,6 +318,16 @@ int readConfig( CLogger *logger, char *DRIVE, char *FILENAME )
 	if ( timingValues[ 7 ] ) WAIT_CYCLE_MULTIPLEXER_VIC2 = timingValues[ 7 ];
 	if ( timingValues[ 8 ] ) WAIT_TRIGGER_DMA = timingValues[ 8 ];
 	if ( timingValues[ 9 ] ) WAIT_RELEASE_DMA = timingValues[ 9 ];
+
+	if ( timingValues[ 10 ] ) POLL_FOR_SIGNALS_VIC = timingValues[ 10 ];
+	if ( timingValues[ 11 ] ) POLL_FOR_SIGNALS_CPU = timingValues[ 11 ];
+	if ( timingValues[ 12 ] ) POLL_CYCLE_MULTIPLEXER_VIC = timingValues[ 12 ];
+	if ( timingValues[ 13 ] ) POLL_CYCLE_MULTIPLEXER_CPU = timingValues[ 13 ];
+	if ( timingValues[ 14 ] ) POLL_READ = timingValues[ 14 ];
+	if ( timingValues[ 15 ] ) POLL_READ_VIC2 = timingValues[ 15 ];
+	if ( timingValues[ 16 ] ) POLL_WAIT_CYCLE_WRITEDATA = timingValues[ 16 ];
+	if ( timingValues[ 17 ] ) POLL_TRIGGER_DMA = timingValues[ 17 ];
+	if ( timingValues[ 18 ] ) POLL_RELEASE_DMA = timingValues[ 18 ];
 
 	#ifndef SIDEKICK20 
 

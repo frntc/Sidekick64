@@ -45,16 +45,26 @@ extern void setDefaultTimings( int mode );
 extern void setDefaultTimings264( int mode );
 
 #ifndef MACHINE_C264
-extern u32 WAIT_FOR_SIGNALS;
-extern u32 WAIT_CYCLE_MULTIPLEXER;
-extern u32 WAIT_CYCLE_READ;
-extern u32 WAIT_CYCLE_READ_BADLINE;
-extern u32 WAIT_CYCLE_READ_VIC2;
-extern u32 WAIT_CYCLE_WRITEDATA;
-extern u32 WAIT_CYCLE_WRITEDATA_VIC2;
-extern u32 WAIT_CYCLE_MULTIPLEXER_VIC2;
-extern u32 WAIT_TRIGGER_DMA;
-extern u32 WAIT_RELEASE_DMA;
+extern u16 WAIT_FOR_SIGNALS;
+extern u16 WAIT_CYCLE_MULTIPLEXER;
+extern u16 WAIT_CYCLE_READ;
+extern u16 WAIT_CYCLE_READ_BADLINE;
+extern u16 WAIT_CYCLE_READ_VIC2;
+extern u16 WAIT_CYCLE_WRITEDATA;
+extern u16 WAIT_CYCLE_WRITEDATA_VIC2;
+extern u16 WAIT_CYCLE_MULTIPLEXER_VIC2;
+extern u16 WAIT_TRIGGER_DMA;
+extern u16 WAIT_RELEASE_DMA;
+
+extern u16 POLL_FOR_SIGNALS_VIC;
+extern u16 POLL_FOR_SIGNALS_CPU;
+extern u16 POLL_CYCLE_MULTIPLEXER_VIC; 
+extern u16 POLL_CYCLE_MULTIPLEXER_CPU;
+extern u16 POLL_READ;
+extern u16 POLL_READ_VIC2;
+extern u16 POLL_WAIT_CYCLE_WRITEDATA;
+extern u16	POLL_TRIGGER_DMA;
+extern u16 POLL_RELEASE_DMA;
 
 extern u32 modeC128;
 extern u32 modeVIC, modePALNTSC;
@@ -97,13 +107,13 @@ extern u32 machine264;
 								u64 cc2; \
 								do { \
 									asm volatile( "MRS %0, PMCCNTR_EL0" : "=r" (cc2) ); \
-								} while ( (cc2) < (wc+armCycleCounter) ); }
+								} while ( (cc2) < ((u64)wc+armCycleCounter) ); }
 
 #define WAIT_UP_TO_CYCLE_AFTER( wc, cc ) { \
 								u64 cc2; \
 								do { \
 									asm volatile( "MRS %0, PMCCNTR_EL0" : "=r" (cc2) ); \
-								} while ( (cc2-cc) < (wc) ); }
+								} while ( (cc2-(u64)cc) < ((u64)wc) ); }
 
 #define CACHE_PRELOADL1KEEP( ptr )	{ asm volatile ("prfm PLDL1KEEP, [%0]" :: "r" (ptr)); }
 #define CACHE_PRELOADL1STRM( ptr )	{ asm volatile ("prfm PLDL1STRM, [%0]" :: "r" (ptr)); }

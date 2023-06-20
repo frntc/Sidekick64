@@ -508,13 +508,13 @@ startHereAfterReset:
 	first = 1;
 	#ifdef HDMI_SOUND
 	extern CHDMISoundBaseDevice *hdmiSoundDevice;
-	hdmiSoundDevice->Cancel();
+	/*hdmiSoundDevice->Cancel();
 //	hdmiSoundDevice->Start();
 	while ( hdmiSoundDevice->IsWritable() )
 	{
 		hdmiSoundDevice->WriteSample( 0 );
 		hdmiSoundDevice->WriteSample( 0 );
-	}
+	}*/
 	//hdmiSoundDevice->Cancel();
 	#endif
 
@@ -539,11 +539,11 @@ startHereAfterReset:
 		if ( cycleCountC64 > 2000000 && resetCounter > 500000 ) {
 			CVCHIQ_CB_Manual = false;
 			//logger->Write( "", LogNotice, "adjusted sample rate: %u Hz", (u32)SAMPLERATE_ADJUSTED );
-			while ( hdmiSoundDevice->IsWritable() )
+			/*while ( hdmiSoundDevice->IsWritable() )
 			{
 				hdmiSoundDevice->WriteSample( 0 );
 				hdmiSoundDevice->WriteSample( 0 );
-			}
+			}*/
 			quitSID8();
 			EnableIRQs();
 			m_InputPin.DisableInterrupt();

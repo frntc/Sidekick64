@@ -68,7 +68,7 @@ SID *sid[ NUM_SIDS ];
 #ifdef EMULATE_OPL2
 FM_OPL *pOPL;
 u32 fmOutRegister;
-u16 hack_OPL_Sample_Value;
+u16 hack_OPL_Sample_Value[ 2 ];
 u8 hack_OPL_Sample_Enabled;
 #endif
 
@@ -267,7 +267,7 @@ void initSID()
 	{
 		pOPL = ym3812_init( 3579545, SAMPLERATE );
 		ym3812_reset_chip( pOPL );
-		hack_OPL_Sample_Value = 0;
+		hack_OPL_Sample_Value[ 0 ] = hack_OPL_Sample_Value[ 1 ] = 0;
 		hack_OPL_Sample_Enabled = 0;
 		fmFakeOutput = 0;
 	}
@@ -950,9 +950,9 @@ startHereAfterReset:
 										hack_OPL_Sample_Enabled = 1;  else
 										hack_OPL_Sample_Enabled = 0;
 								}
-								if ( hack_OPL_Sample_Enabled && pOPL->address == 0xa0 ) // enable digi hack
-									hack_OPL_Sample_Value = D; else
-									hack_OPL_Sample_Value = 0;
+								if ( hack_OPL_Sample_Enabled && ( pOPL->address == 0xa0 || pOPL->address == 0xa1 ) ) // digi hack
+									hack_OPL_Sample_Value[ pOPL->address - 0xa0 ] = D; else
+									hack_OPL_Sample_Value[ 0 ] = hack_OPL_Sample_Value[ 1 ] = 0;
 							}
 						} else
 						#endif
@@ -1011,7 +1011,7 @@ startHereAfterReset:
 			}
 
 			if ( hack_OPL_Sample_Enabled )
-				valOPL = hack_OPL_Sample_Value << 5;
+		        valOPL = ( hack_OPL_Sample_Value[ 0 ] << 5 ) + ( hack_OPL_Sample_Value[ 1 ] << 5 );
 		#endif
 
 			//
