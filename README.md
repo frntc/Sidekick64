@@ -77,7 +77,14 @@ The Sidekick64 software provides a main menu for frequently used features, progr
 
 This section summarizes building and setting up the hardware. If you're not into building one yourself: [Restore Store](https://restore-store.de) (not my shop) offers pre-assembled Sidekick64s at fair prices.
 
-  
+### PCB ordering
+
+If you want to support my projects, feel free to order the PCBs from PCBWay: [Here are PCBs for my projects](https://www.pcbway.com/project/member/?bmbno=B5CDD8BE-199B-47)
+
+In case you don't have an account at PCBWay yet: [register via this link](https://pcbway.com/g/x1UjP0) and get "$5 of New User Free Credit".
+
+The Gerber files for PCB-production are also available in this repository if you want to order from another PCB manufacturer.
+    
 
 ### PCBs, BOM and assembly information
 
